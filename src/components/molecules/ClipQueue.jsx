@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Trash2, VideoOff, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
-import { useObjectUrl } from '../../hooks/use_object_url.js'
-import { get_clip_blob } from '../../modules/storage/journal_storage.js'
+import {
+    get_clip_blob,
+    get_clip_thumbnail_blob
+} from '../../modules/storage/journal_storage.js'
 import { format_duration, format_time } from '../../modules/media/time.js'
 
 const Queue = styled.div`
@@ -101,7 +103,27 @@ const PreviewMessage = styled.p`
 `
 
 function ClipThumbnail( { clip, on_preview } ) {
-    const thumbnail_url = useObjectUrl( clip.thumbnail_blob )
+    const [ thumbnail_url, set_thumbnail_url ] = useState( null )
+
+    useEffect( () => {
+        let cancelled = false
+        let object_url = null
+
+        const load_thumbnail = async () => {
+            const blob = await get_clip_thumbnail_blob( clip.id ).catch( () => null )
+            if( !blob || cancelled ) return
+
+            object_url = URL.createObjectURL( blob )
+            set_thumbnail_url( object_url )
+        }
+
+        load_thumbnail()
+
+        return () => {
+            cancelled = true
+            if( object_url ) URL.revokeObjectURL( object_url )
+        }
+    }, [ clip.id ] )
 
     return <Thumb type="button" aria-label="Preview clip" onClick={ on_preview }>
         { thumbnail_url ? <img src={ thumbnail_url } alt="" /> : <VideoOff size={ 22 } aria-hidden="true" /> }

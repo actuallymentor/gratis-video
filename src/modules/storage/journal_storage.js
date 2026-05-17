@@ -1,4 +1,5 @@
 import { log } from 'mentie/modules/logging.js'
+import { create_export_hashes } from '../export/cache.js'
 import {
     clear_all_records,
     delete_record,
@@ -74,22 +75,46 @@ const sort_projects = ( projects ) => [ ...projects ].sort( ( first, second ) =>
     return new Date( second.updated_at ).getTime() - new Date( first.updated_at ).getTime()
 } )
 
+const strip_clip_blob_fields = ( clip ) => {
+    const metadata = { ...clip }
+
+    delete metadata.blob
+    delete metadata.thumbnail_blob
+
+    return metadata
+}
+
+const sort_clips = ( clips ) => [ ...clips ]
+    .filter( ( { deleted_at } ) => !deleted_at )
+    .sort( ( first, second ) => first.order_index - second.order_index )
+    .map( strip_clip_blob_fields )
+
 const with_project_export_status = async ( project ) => {
-    const exports = await get_index_records( `exports`, `project_id`, project.id )
-    const [ latest_export = null ] = [ ...exports ].sort( ( first, second ) => {
+    const [ exports, clips, settings ] = await Promise.all( [
+        get_index_records( `exports`, `project_id`, project.id ),
+        get_index_records( `clips`, `project_id`, project.id ),
+        load_settings()
+    ] )
+    const current_clips = sort_clips( clips )
+    const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+        clips: current_clips,
+        settings
+    } )
+    const valid_exports = exports.filter( ( export_record ) => {
+        return export_record.settings_hash === settings_hash
+            && export_record.clip_manifest_hash === clip_manifest_hash
+    } )
+    const [ latest_export = null ] = [ ...valid_exports ].sort( ( first, second ) => {
         return new Date( second.created_at ).getTime() - new Date( first.created_at ).getTime()
     } )
 
     return {
         ...project,
         export_count: exports.length,
+        valid_export_count: valid_exports.length,
         last_exported_at: latest_export?.created_at ?? null
     }
 }
-
-const sort_clips = ( clips ) => [ ...clips ]
-    .filter( ( { deleted_at } ) => !deleted_at )
-    .sort( ( first, second ) => first.order_index - second.order_index )
 
 const next_clip_order_index = ( clips ) => {
     const highest_order_index = clips.reduce( ( highest, { order_index = -1 } ) => {
@@ -221,13 +246,14 @@ export async function rename_project( project_id, title ) {
 export async function delete_project( project_id ) {
     const clips = await get_index_records( `clips`, `project_id`, project_id )
     const exports = await get_index_records( `exports`, `project_id`, project_id )
-    const store_names = [ `projects`, `clips`, `clip_blobs`, `exports`, `export_blobs` ]
+    const store_names = [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails`, `exports`, `export_blobs` ]
 
     await write_transaction( store_names, ( stores ) => {
         stores.projects.delete( project_id )
         clips.forEach( ( { id } ) => {
             stores.clips.delete( id )
             stores.clip_blobs.delete( id )
+            stores.clip_thumbnails.delete( id )
         } )
         exports.forEach( ( { id } ) => {
             stores.exports.delete( id )
@@ -271,7 +297,6 @@ export async function add_clip_to_project( {
         width,
         height,
         created_at: timestamp,
-        thumbnail_blob,
         deleted_at: null
     }
     const updated_project = {
@@ -281,9 +306,10 @@ export async function add_clip_to_project( {
         updated_at: timestamp
     }
 
-    await write_transaction( [ `projects`, `clips`, `clip_blobs` ], ( stores ) => {
+    await write_transaction( [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails` ], ( stores ) => {
         stores.clips.put( clip )
         stores.clip_blobs.put( { id: clip.id, project_id, blob } )
+        if( thumbnail_blob ) stores.clip_thumbnails.put( { id: clip.id, project_id, blob: thumbnail_blob } )
         stores.projects.put( updated_project )
     } )
 
@@ -312,6 +338,16 @@ export async function get_clip_blob( clip_id ) {
 }
 
 /**
+ * Loads one clip's thumbnail blob.
+ * @param {string} clip_id - Clip id.
+ * @returns {Promise<Blob|null>} Thumbnail blob.
+ */
+export async function get_clip_thumbnail_blob( clip_id ) {
+    const record = await get_record( `clip_thumbnails`, clip_id )
+    return record?.blob ?? null
+}
+
+/**
  * Marks a clip as deleted and removes its video blob.
  * @param {string} clip_id - Clip id.
  * @returns {Promise<void>}
@@ -321,7 +357,10 @@ export async function delete_clip( clip_id ) {
     if( !clip || clip.deleted_at ) return
 
     const project = await get_project( clip.project_id )
-    const updated_clip = { ...clip, deleted_at: now_iso() }
+    const updated_clip = {
+        ...strip_clip_blob_fields( clip ),
+        deleted_at: now_iso()
+    }
     const updated_project = {
         ...project,
         clip_count: Math.max( 0, project.clip_count - 1 ),
@@ -329,9 +368,10 @@ export async function delete_clip( clip_id ) {
         updated_at: now_iso()
     }
 
-    await write_transaction( [ `projects`, `clips`, `clip_blobs` ], ( stores ) => {
+    await write_transaction( [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails` ], ( stores ) => {
         stores.clips.put( updated_clip )
         stores.clip_blobs.delete( clip_id )
+        stores.clip_thumbnails.delete( clip_id )
         stores.projects.put( updated_project )
     } )
 }
@@ -452,7 +492,13 @@ export async function delete_all_data() {
  */
 export async function estimate_storage() {
     if( !globalThis.navigator?.storage?.estimate ) return null
-    return navigator.storage.estimate()
+
+    try {
+        return await navigator.storage.estimate()
+    } catch ( error ) {
+        log.warn( `Storage estimate failed`, error )
+        return null
+    }
 }
 
 /**
@@ -476,7 +522,13 @@ export async function request_persistent_storage() {
  */
 export async function persisted_storage() {
     if( !globalThis.navigator?.storage?.persisted ) return null
-    return navigator.storage.persisted()
+
+    try {
+        return await navigator.storage.persisted()
+    } catch ( error ) {
+        log.warn( `Storage persistence check failed`, error )
+        return null
+    }
 }
 
 /**

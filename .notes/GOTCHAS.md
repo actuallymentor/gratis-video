@@ -6,3 +6,5 @@
 - Import `log` from `mentie/modules/logging.js` in browser code; the `mentie` barrel import can pull in a Node crypto helper and trigger Vite browser externalization warnings.
 - Browser walkthroughs use Playwright Chromium. If the default Vite port is busy, Vite may move from 5173 to the next open port.
 - ExportPanel starts export work from a React effect. In development StrictMode, stale effect aborts must be ignored or the UI can show `Export cancelled` even while the current export run should continue.
+- IndexedDB version 2 moves thumbnail blobs from clip metadata into the `clip_thumbnails` store. Keep clip metadata lightweight so React state does not retain Blob objects.
+- Project rows should only show “Export ready” for cached exports whose settings and clip-manifest hashes still match the current project state.

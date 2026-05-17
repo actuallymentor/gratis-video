@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.1] - 2026-05-17
+
+### Added
+- add regression coverage for recording startup cancel and export cleanup
+
+### Fixed
+- stop recordings that finish opening after startup cancellation
+- avoid activating invalid project URLs
+- keep thumbnail blobs out of React clip queue state
+- show export-ready status only for current clips and settings
+- clean up export streams on cancellation and recorder startup failure
+- isolate optional storage API failures from app startup routing
+- improve offline media messaging, keyboard repeat, focus, and touch targets
+
 ## [0.2.0] - 2026-05-17
 
 ### Added

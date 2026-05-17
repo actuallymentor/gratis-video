@@ -74,6 +74,7 @@ export function RecordButton( {
         if( event.key !== `Enter` && event.key !== ` ` ) return
 
         event.preventDefault()
+        if( event.repeat ) return
         on_toggle()
     }
 

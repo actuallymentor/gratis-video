@@ -14,6 +14,7 @@ import { useAppStore } from '../../stores/app_store.js'
 import {
     delete_clip,
     get_export_blob,
+    get_clip_thumbnail_blob,
     get_project,
     get_project_clips,
     get_valid_cached_export,
@@ -51,6 +52,7 @@ vi.mock( '../molecules/ExportPanel.jsx', () => ( {
 vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     delete_clip: vi.fn(),
     get_export_blob: vi.fn(),
+    get_clip_thumbnail_blob: vi.fn(),
     get_project: vi.fn(),
     get_project_clips: vi.fn(),
     get_valid_cached_export: vi.fn(),
@@ -111,6 +113,7 @@ describe( `project capture page`, () => {
     beforeEach( () => {
         vi.mocked( delete_clip ).mockResolvedValue()
         vi.mocked( get_export_blob ).mockResolvedValue( new Blob( [ `export` ], { type: `video/webm` } ) )
+        vi.mocked( get_clip_thumbnail_blob ).mockResolvedValue( null )
         vi.mocked( get_project ).mockResolvedValue( project )
         vi.mocked( get_project_clips ).mockResolvedValue( [ clip ] )
         vi.mocked( get_valid_cached_export ).mockResolvedValue( null )
@@ -159,10 +162,12 @@ describe( `project capture page`, () => {
     } )
 
     test( `redirects to project history when the project cannot be loaded`, async () => {
+        useAppStore.setState( { active_project_id: `stale-project` } )
         vi.mocked( get_project ).mockResolvedValue( null )
 
         render_capture()
 
         expect( await screen.findByText( `/projects` ) ).toBeTruthy()
+        expect( useAppStore.getState().active_project_id ).toBe( null )
     } )
 } )

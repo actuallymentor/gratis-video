@@ -65,6 +65,12 @@ const make_track = ( kind = `video` ) => ( {
     stop: vi.fn( () => stopped_tracks.push( kind ) )
 } )
 
+const default_settings = {
+    export_quality: `standard`,
+    export_resolution: `source`,
+    preferred_mime_type: null
+}
+
 describe( `export compiler`, () => {
     beforeEach( () => {
         stopped_tracks.length = 0
@@ -101,15 +107,62 @@ describe( `export compiler`, () => {
                     height: 360
                 }
             ],
-            settings: {
-                export_quality: `standard`,
-                export_resolution: `source`,
-                preferred_mime_type: null
-            },
+            settings: default_settings,
             signal: new AbortController().signal
         } ) ).rejects.toThrow( /missing from local storage/ )
 
         expect( stopped_tracks ).toContain( `video` )
+    } )
+
+    test( `stops export streams when recorder construction fails`, async () => {
+        class ThrowingMediaRecorder {
+
+            static isTypeSupported() {
+                return true
+            }
+
+            constructor() {
+                throw new Error( `No recorder` )
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, ThrowingMediaRecorder )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).rejects.toThrow( /No recorder/ )
+
+        expect( stopped_tracks ).toContain( `video` )
+    } )
+
+    test( `stops before allocating export streams when already cancelled`, async () => {
+        const abort_controller = new AbortController()
+        abort_controller.abort()
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: abort_controller.signal
+        } ) ).rejects.toMatchObject( { name: `AbortError` } )
+
+        expect( HTMLCanvasElement.prototype.captureStream ).not.toHaveBeenCalled()
     } )
 
     test( `shows only source resolution when canvas capture cannot be proved`, () => {

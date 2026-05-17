@@ -11,7 +11,7 @@ const Group = styled.div`
 `
 
 const Segment = styled.button`
-    min-height: 2.75rem;
+    min-height: 3rem;
     padding: 0.35rem 0.6rem;
     border: 0;
     border-radius: 0.35rem;

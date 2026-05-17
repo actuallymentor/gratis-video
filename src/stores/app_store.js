@@ -5,7 +5,8 @@ export const default_permission_status = {
     microphone: `unknown`,
     secure_context: true,
     media_devices: `unknown`,
-    media_recorder: `unknown`
+    media_recorder: `unknown`,
+    offline: false
 }
 
 export const default_export_progress = {

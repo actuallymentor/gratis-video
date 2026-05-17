@@ -1,10 +1,11 @@
 const DATABASE_NAME = `daily_video_journal`
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 
 const STORE_NAMES = [
     `projects`,
     `clips`,
     `clip_blobs`,
+    `clip_thumbnails`,
     `exports`,
     `export_blobs`,
     `settings`
@@ -38,6 +39,28 @@ const upgrade_database = ( database, transaction ) => {
 
     const clip_blobs = create_store( database, transaction, `clip_blobs`, { keyPath: `id` } )
     if( !clip_blobs.indexNames.contains( `project_id` ) ) clip_blobs.createIndex( `project_id`, `project_id` )
+
+    const clip_thumbnails = create_store( database, transaction, `clip_thumbnails`, { keyPath: `id` } )
+    if( !clip_thumbnails.indexNames.contains( `project_id` ) ) clip_thumbnails.createIndex( `project_id`, `project_id` )
+
+    // Move legacy thumbnail blobs out of clip metadata so React state only sees lightweight records.
+    clips.openCursor().onsuccess = ( event ) => {
+        const cursor = event.target.result
+        if( !cursor ) return
+
+        const { thumbnail_blob, ...clip_metadata } = cursor.value
+
+        if( thumbnail_blob ) {
+            clip_thumbnails.put( {
+                id: clip_metadata.id,
+                project_id: clip_metadata.project_id,
+                blob: thumbnail_blob
+            } )
+            cursor.update( clip_metadata )
+        }
+
+        cursor.continue()
+    }
 
     const exports = create_store( database, transaction, `exports`, { keyPath: `id` } )
     if( !exports.indexNames.contains( `project_id` ) ) exports.createIndex( `project_id`, `project_id` )

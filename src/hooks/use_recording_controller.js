@@ -11,6 +11,7 @@ import {
     generate_video_thumbnail,
     get_capture_error_message,
     get_video_metadata,
+    play_sound_feedback,
     pulse_haptic,
     request_capture_stream,
     stop_media_stream
@@ -87,20 +88,19 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         } )
 
         on_clip_saved?.( clip )
-        toast.success( `Clip saved` )
         return clip
     }, [ on_clip_saved, project_id ] )
 
     const stop_recording = useCallback( async () => {
+        if( phase_ref.current === `starting` ) {
+            pending_release_duration_ref.current = HOLD_THRESHOLD_MS
+            return null
+        }
+
         if( stopping_ref.current ) return stopping_ref.current
 
         const stop_work = async () => {
             const recorder = recorder_ref.current
-
-            if( phase_ref.current === `starting` ) {
-                pending_release_duration_ref.current = HOLD_THRESHOLD_MS
-                return null
-            }
 
             if( !recorder ) return null
 
@@ -109,6 +109,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
             try {
                 if( recorder.state !== `inactive` ) recorder.stop()
+                play_sound_feedback( settings.sounds_enabled, `stop` )
                 const result = await ( stop_promise_ref.current ?? Promise.resolve( empty_recording_result ) )
                 return await save_recorded_clip( result )
             } catch ( error ) {
@@ -135,13 +136,17 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         clear_current_stream,
         save_recorded_clip,
         set_phase,
-        settings.haptics_enabled
+        settings.haptics_enabled,
+        settings.sounds_enabled
     ] )
 
     const start_recording = useCallback( async ( { classify_later = false } = {} ) => {
         if( phase_ref.current !== `idle` || !project_id ) return
 
         set_error_message( null )
+        pending_release_duration_ref.current = null
+        recording_mode_ref.current = null
+        set_recording_mode( null )
         set_phase( `starting` )
         pulse_haptic( settings.haptics_enabled )
 
@@ -150,6 +155,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             const recorder = create_media_recorder( next_stream )
             const chunks = []
             const started_at = Date.now()
+            const stop_when_track_ends = () => {
+                if( phase_ref.current === `recording` || phase_ref.current === `starting` ) stop_recording()
+            }
 
             const stopped = new Promise( ( resolve, reject ) => {
                 recorder.ondataavailable = ( event ) => {
@@ -166,9 +174,13 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             stream_ref.current = next_stream
             recorder_ref.current = recorder
             stop_promise_ref.current = stopped
+            next_stream.getTracks().forEach( ( track ) => {
+                track.addEventListener?.( `ended`, stop_when_track_ends, { once: true } )
+            } )
             set_stream( next_stream )
             set_recording_started_at( started_at )
 
+            play_sound_feedback( settings.sounds_enabled, `start` )
             recorder.start( 250 )
             set_phase( `recording` )
 
@@ -194,6 +206,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         } catch ( error ) {
             set_error_message( get_capture_error_message( error ) )
             toast.error( `Recording unavailable` )
+            pending_release_duration_ref.current = null
+            recording_mode_ref.current = null
+            set_recording_mode( null )
             clear_current_stream()
             set_phase( `idle` )
         }
@@ -202,6 +217,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         project_id,
         set_phase,
         settings.haptics_enabled,
+        settings.sounds_enabled,
         stop_recording
     ] )
 

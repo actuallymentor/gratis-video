@@ -11,6 +11,7 @@ import {
     estimate_storage,
     get_active_project,
     get_clip_blob,
+    get_clip_thumbnail_blob,
     get_export_blob,
     get_project,
     get_valid_cached_export,
@@ -24,6 +25,7 @@ import {
     save_settings,
     set_active_project
 } from './journal_storage.js'
+import { create_export_hashes } from '../export/cache.js'
 
 describe( `journal storage`, () => {
     beforeEach( async () => {
@@ -37,6 +39,7 @@ describe( `journal storage`, () => {
     } )
 
     test( `creates projects and stores clip blobs outside metadata`, async () => {
+        const thumbnail_blob = new Blob( [ `thumb` ], { type: `image/jpeg` } )
         const project = await create_project()
         const clip = await add_clip_to_project( {
             project_id: project.id,
@@ -45,17 +48,20 @@ describe( `journal storage`, () => {
             duration_ms: 1200,
             width: 640,
             height: 360,
-            thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
+            thumbnail_blob
         } )
 
         const [ stored_project ] = await list_projects()
         const clips = await get_project_clips( project.id )
         const blob = await get_clip_blob( clip.id )
+        const stored_thumbnail_blob = await get_clip_thumbnail_blob( clip.id )
 
         expect( stored_project.clip_count ).toBe( 1 )
         expect( clips ).toHaveLength( 1 )
         expect( clips[ 0 ].blob ).toBeUndefined()
+        expect( clips[ 0 ].thumbnail_blob ).toBeUndefined()
         expect( blob.type ).toBe( `video/webm` )
+        expect( await stored_thumbnail_blob.text() ).toBe( `thumb` )
     } )
 
     test( `creates duplicate same-day project titles without a naming step`, async () => {
@@ -92,19 +98,21 @@ describe( `journal storage`, () => {
         expect( fallback_project.title ).toBe( `Pocket Walk` )
     } )
 
-    test( `deleting a clip removes it from the queue and blob store`, async () => {
+    test( `deleting a clip removes it from the queue and blob stores`, async () => {
         const project = await create_project()
         const clip = await add_clip_to_project( {
             project_id: project.id,
             blob: new Blob( [ `video` ], { type: `video/webm` } ),
             mime_type: `video/webm`,
-            duration_ms: 1200
+            duration_ms: 1200,
+            thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
         } )
 
         await delete_clip( clip.id )
 
         expect( await get_project_clips( project.id ) ).toEqual( [] )
         expect( await get_clip_blob( clip.id ) ).toBe( null )
+        expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
     } )
 
     test( `keeps queue order stable when a clip is deleted before another is added`, async () => {
@@ -138,24 +146,35 @@ describe( `journal storage`, () => {
 
     test( `stores, finds, loads, and deletes cached exports`, async () => {
         const project = await create_project()
+        const settings = await load_settings()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings
+        } )
         const export_record = await save_export_record( {
             project_id: project.id,
             blob: new Blob( [ `export` ], { type: `video/webm` } ),
             mime_type: `video/webm`,
-            settings_hash: `settings-a`,
-            clip_manifest_hash: `clips-a`,
+            settings_hash,
+            clip_manifest_hash,
             duration_ms: 2200
         } )
 
         const cached_export = await get_valid_cached_export( {
             project_id: project.id,
-            settings_hash: `settings-a`,
-            clip_manifest_hash: `clips-a`
+            settings_hash,
+            clip_manifest_hash
         } )
         const stale_export = await get_valid_cached_export( {
             project_id: project.id,
             settings_hash: `settings-b`,
-            clip_manifest_hash: `clips-a`
+            clip_manifest_hash
         } )
         const export_blob = await get_export_blob( export_record.id )
 
@@ -164,6 +183,15 @@ describe( `journal storage`, () => {
         expect( await export_blob.text() ).toBe( `export` )
         expect( ( await list_projects() )[ 0 ].last_exported_at ).toBe( export_record.created_at )
         expect( ( await list_projects() )[ 0 ].export_count ).toBe( 1 )
+
+        await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `second` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 800
+        } )
+
+        expect( ( await list_projects() )[ 0 ].last_exported_at ).toBe( null )
 
         await delete_export( export_record.id )
 
@@ -197,6 +225,12 @@ describe( `journal storage`, () => {
         await expect( estimate_storage() ).resolves.toEqual( { usage: 128, quota: 1024 } )
         await expect( persisted_storage() ).resolves.toBe( true )
         await expect( request_persistent_storage() ).resolves.toBe( false )
+
+        estimate.mockRejectedValue( new Error( `Estimate failed` ) )
+        persisted.mockRejectedValue( new Error( `Persisted failed` ) )
+
+        await expect( estimate_storage() ).resolves.toBe( null )
+        await expect( persisted_storage() ).resolves.toBe( null )
     } )
 
     test( `deleting a project removes its clips and cached exports`, async () => {
@@ -221,6 +255,7 @@ describe( `journal storage`, () => {
         expect( await list_projects() ).toEqual( [] )
         expect( await get_project_clips( project.id ) ).toEqual( [] )
         expect( await get_clip_blob( clip.id ) ).toBe( null )
+        expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
         expect( await get_export_blob( export_record.id ) ).toBe( null )
     } )
 } )

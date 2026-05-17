@@ -20,9 +20,55 @@ export const export_resolution_options = [
     { value: `1080p`, label: `1080p` }
 ]
 
-const wait_for_event = ( target, event_name ) => new Promise( ( resolve, reject ) => {
-    target.addEventListener( event_name, resolve, { once: true } )
-    target.addEventListener( `error`, () => reject( new Error( `Media playback failed.` ) ), { once: true } )
+const make_abort_error = () => new DOMException( `Export cancelled`, `AbortError` )
+
+const throw_if_aborted = ( signal ) => {
+    if( signal?.aborted ) throw make_abort_error()
+}
+
+const wait_for_event = ( target, event_name, signal ) => new Promise( ( resolve, reject ) => {
+    let complete = null
+    let fail = null
+    let abort = null
+    const cleanup = () => {
+        target.removeEventListener( event_name, complete )
+        target.removeEventListener( `error`, fail )
+        signal?.removeEventListener( `abort`, abort )
+    }
+    complete = () => {
+        cleanup()
+        resolve()
+    }
+    fail = () => {
+        cleanup()
+        reject( new Error( `Media playback failed.` ) )
+    }
+    abort = () => {
+        cleanup()
+        reject( make_abort_error() )
+    }
+
+    if( signal?.aborted ) {
+        abort()
+        return
+    }
+
+    target.addEventListener( event_name, complete, { once: true } )
+    target.addEventListener( `error`, fail, { once: true } )
+    signal?.addEventListener( `abort`, abort, { once: true } )
+} )
+
+const wait_for_abortable = ( promise, signal ) => new Promise( ( resolve, reject ) => {
+    const abort = () => reject( make_abort_error() )
+    const cleanup = () => signal?.removeEventListener( `abort`, abort )
+
+    if( signal?.aborted ) {
+        reject( make_abort_error() )
+        return
+    }
+
+    signal?.addEventListener( `abort`, abort, { once: true } )
+    Promise.resolve( promise ).then( resolve, reject ).finally( cleanup )
 } )
 
 const wait_for_recorder_stop = ( recorder, chunks ) => new Promise( ( resolve, reject ) => {
@@ -69,7 +115,7 @@ const choose_export_mime_type = ( settings ) => {
     const preferred = settings.preferred_mime_type
 
     if( preferred && globalThis.MediaRecorder?.isTypeSupported?.( preferred ) ) return preferred
-    return select_supported_mime_type( recording_mime_candidates ) ?? `video/webm`
+    return select_supported_mime_type( recording_mime_candidates )
 }
 
 const create_audio_graph = () => {
@@ -98,16 +144,33 @@ const connect_video_audio = ( audio_graph, video ) => {
     }
 }
 
-const start_video_playback = async ( video ) => {
+const start_video_playback = async ( video, signal ) => {
     try {
-        await video.play()
+        await wait_for_abortable( video.play(), signal )
     } catch ( error ) {
         if( error.name !== `NotAllowedError` ) throw error
 
         // Mobile autoplay rules can reject detached videos after React effects.
         // Retrying muted preserves video export instead of failing the whole job.
+        throw_if_aborted( signal )
         video.muted = true
-        await video.play()
+        await wait_for_abortable( video.play(), signal )
+    }
+}
+
+const create_export_recorder = ( { stream, mime_type, settings } ) => {
+    const base_options = {
+        videoBitsPerSecond: quality_bits[ settings.export_quality ] ?? quality_bits.standard
+    }
+    const recorder_options = mime_type
+        ? { ...base_options, mimeType: mime_type }
+        : base_options
+
+    try {
+        return new MediaRecorder( stream, recorder_options )
+    } catch ( error ) {
+        if( mime_type ) return new MediaRecorder( stream, base_options )
+        throw error
     }
 }
 
@@ -128,8 +191,11 @@ const play_clip_to_canvas = async ( {
     signal,
     on_progress
 } ) => {
+    throw_if_aborted( signal )
+
     const blob = await get_clip_blob( clip.id )
     if( !blob ) throw new Error( `Clip ${ clip_index + 1 } is missing from local storage. Export stopped to avoid creating an incomplete video.` )
+    throw_if_aborted( signal )
 
     const object_url = URL.createObjectURL( blob )
     const video = document.createElement( `video` )
@@ -138,7 +204,7 @@ const play_clip_to_canvas = async ( {
         video.src = object_url
         video.playsInline = true
         video.preload = `auto`
-        await wait_for_event( video, `loadedmetadata` )
+        await wait_for_event( video, `loadedmetadata`, signal )
         connect_video_audio( audio_graph, video )
 
         const duration_ms = clip.duration_ms || Math.round( ( video.duration || 0 ) * 1000 )
@@ -147,10 +213,10 @@ const play_clip_to_canvas = async ( {
             return total + ( next_clip.duration_ms || 0 )
         }, 0 )
 
-        await start_video_playback( video )
+        await start_video_playback( video, signal )
 
         while( !video.ended ) {
-            if( signal.aborted ) throw new DOMException( `Export cancelled`, `AbortError` )
+            throw_if_aborted( signal )
 
             draw_video_frame( context, video, canvas )
 
@@ -219,6 +285,7 @@ export function get_supported_export_resolutions() {
 export async function compile_project_export( { clips, settings, signal, on_progress } ) {
     if( !clips.length ) throw new Error( `Record at least one clip before exporting.` )
     if( !globalThis.MediaRecorder ) throw new Error( `This browser cannot compile video exports.` )
+    throw_if_aborted( signal )
 
     const { width, height } = calculate_canvas_size( clips, settings )
     const canvas = document.createElement( `canvas` )
@@ -234,23 +301,14 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     ] )
     const mime_type = choose_export_mime_type( settings )
     const chunks = []
-    const recorder_options = {
-        mimeType: mime_type,
-        videoBitsPerSecond: quality_bits[ settings.export_quality ] ?? quality_bits.standard
-    }
-    let recorder
+    let recorder = null
 
     try {
-        recorder = new MediaRecorder( mixed_stream, recorder_options )
-    } catch {
-        recorder = new MediaRecorder( mixed_stream, {
-            videoBitsPerSecond: recorder_options.videoBitsPerSecond
-        } )
-    }
-    const stopped = wait_for_recorder_stop( recorder, chunks )
+        recorder = create_export_recorder( { stream: mixed_stream, mime_type, settings } )
+        const stopped = wait_for_recorder_stop( recorder, chunks )
 
-    try {
         if( audio_graph?.audio_context.state === `suspended` ) await audio_graph.audio_context.resume()
+        throw_if_aborted( signal )
 
         recorder.start( 250 )
         on_progress?.( { percent: 1, message: `Preparing export` } )
@@ -273,7 +331,7 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         await stopped
         on_progress?.( { percent: 100, message: `Export ready` } )
 
-        const output_type = recorder.mimeType || mime_type
+        const output_type = recorder.mimeType || mime_type || chunks.at( 0 )?.type || `video/webm`
         const blob = new Blob( chunks, { type: output_type } )
         const duration_ms = clips.reduce( ( total, clip ) => total + ( clip.duration_ms || 0 ), 0 )
 
@@ -283,7 +341,7 @@ export async function compile_project_export( { clips, settings, signal, on_prog
             duration_ms
         }
     } finally {
-        if( recorder.state !== `inactive` ) recorder.stop()
+        if( recorder && recorder.state !== `inactive` ) recorder.stop()
         stop_media_stream( video_stream )
         stop_media_stream( mixed_stream )
         await audio_graph?.audio_context.close?.()

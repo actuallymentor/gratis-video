@@ -27,7 +27,8 @@ describe( `permission helpers`, () => {
             microphone: `granted`,
             secure_context: true,
             media_devices: `supported`,
-            media_recorder: `supported`
+            media_recorder: `supported`,
+            offline: false
         } )
         expect( query ).toHaveBeenCalledWith( { name: `camera` } )
         expect( query ).toHaveBeenCalledWith( { name: `microphone` } )
@@ -65,5 +66,14 @@ describe( `permission helpers`, () => {
             camera: `denied`,
             microphone: `prompt`
         } ) ).toMatch( /Camera access is blocked/ )
+
+        expect( media_status_message( {
+            secure_context: true,
+            media_devices: `unsupported`,
+            media_recorder: `supported`,
+            camera: `unsupported`,
+            microphone: `unsupported`,
+            offline: true
+        } ) ).toMatch( /available offline/ )
     } )
 } )

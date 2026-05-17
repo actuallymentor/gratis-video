@@ -46,6 +46,8 @@ const Field = styled.label`
     }
 
     select {
+        width: 100%;
+        min-width: 0;
         min-height: 3rem;
         padding: 0.5rem 0.75rem;
         border: 1px solid var(--color-border);

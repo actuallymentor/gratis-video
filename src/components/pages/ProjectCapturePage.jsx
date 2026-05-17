@@ -128,6 +128,14 @@ export function ProjectCapturePage() {
     useEffect( () => {
         const activate_project = async () => {
             try {
+                const loaded_project = await get_project( project_id )
+
+                if( !loaded_project ) {
+                    set_active_project_id( null )
+                    navigate( `/projects`, { replace: true } )
+                    return
+                }
+
                 await set_active_project( project_id )
                 set_active_project_id( project_id )
                 await refresh_project()
@@ -137,7 +145,7 @@ export function ProjectCapturePage() {
         }
 
         activate_project()
-    }, [ project_id, refresh_project, set_active_project_id ] )
+    }, [ navigate, project_id, refresh_project, set_active_project_id ] )
 
     useEffect( () => {
         if( !preview_ref.current ) return

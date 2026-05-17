@@ -25,6 +25,7 @@ npm test
 - Projects, clips, thumbnails, settings, and cached exports are stored in IndexedDB.
 - No backend, account, sync, analytics, or upload path is included.
 - Recording supports tap-to-start/tap-to-stop and press-and-hold.
+- Settings include haptics and optional sound feedback for recording state changes.
 - Export compiles clips on demand in queue order, then offers native sharing when available or a download fallback.
-- Project rows show when a cached export is ready.
+- Project rows show when a cached export is ready for the current clips and settings.
 - The PWA service worker caches the app shell for offline startup after first load.

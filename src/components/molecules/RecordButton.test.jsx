@@ -37,4 +37,15 @@ describe( `record button`, () => {
 
         expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
     } )
+
+    test( `ignores repeated keyboard activation while a key is held`, () => {
+        render( <RecordButton { ...default_props } recording_state="idle" /> )
+
+        const button = screen.getByRole( `button`, { name: `Record clip` } )
+
+        fireEvent.keyDown( button, { key: ` ` } )
+        fireEvent.keyDown( button, { key: ` `, repeat: true } )
+
+        expect( default_props.on_toggle ).toHaveBeenCalledTimes( 1 )
+    } )
 } )

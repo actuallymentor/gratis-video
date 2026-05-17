@@ -25,7 +25,8 @@ export async function check_media_permissions() {
         microphone,
         secure_context: globalThis.isSecureContext !== false,
         media_devices: globalThis.navigator?.mediaDevices?.getUserMedia ? `supported` : `unsupported`,
-        media_recorder: globalThis.MediaRecorder ? `supported` : `unsupported`
+        media_recorder: globalThis.MediaRecorder ? `supported` : `unsupported`,
+        offline: globalThis.navigator?.onLine === false
     }
 }
 
@@ -36,6 +37,9 @@ export async function check_media_permissions() {
  */
 export function media_status_message( permission_status ) {
     if( !permission_status.secure_context ) return `Recording requires HTTPS, localhost, or another secure browser origin.`
+    if( permission_status.offline && permission_status.media_devices === `unsupported` ) {
+        return `Saved projects are available offline, but this browser cannot open the camera or microphone while offline.`
+    }
     if( permission_status.media_devices === `unsupported` ) return `This browser cannot open the camera or microphone.`
     if( permission_status.media_recorder === `unsupported` ) return `This browser cannot record video with MediaRecorder.`
     if( permission_status.camera === `denied` && permission_status.microphone === `denied` ) return `Camera and microphone access are blocked for this site.`

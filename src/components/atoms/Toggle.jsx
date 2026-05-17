@@ -53,6 +53,11 @@ const Switch = styled.span`
 const Input = styled.input`
     position: absolute;
     opacity: 0;
+
+    &:focus-visible + ${ Switch } {
+        outline: 3px solid rgba( 44, 120, 136, 0.32 );
+        outline-offset: 3px;
+    }
 `
 
 /**

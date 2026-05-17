@@ -211,3 +211,41 @@ export async function generate_video_thumbnail( blob ) {
 export function pulse_haptic( enabled ) {
     if( enabled && globalThis.navigator?.vibrate ) navigator.vibrate( 24 )
 }
+
+/**
+ * Plays optional short sound feedback for recording state changes.
+ * @param {boolean} enabled - Whether sound feedback is enabled.
+ * @param {string} kind - Sound variant.
+ * @returns {void}
+ */
+export function play_sound_feedback( enabled, kind = `start` ) {
+    if( !enabled ) return
+
+    const AudioContextConstructor = globalThis.AudioContext || globalThis.webkitAudioContext
+    if( !AudioContextConstructor ) return
+
+    let audio_context = null
+
+    try {
+        audio_context = new AudioContextConstructor()
+        const oscillator = audio_context.createOscillator()
+        const gain = audio_context.createGain()
+        const now = audio_context.currentTime
+        const frequency = kind === `stop` ? 520 : 760
+
+        oscillator.type = `sine`
+        oscillator.frequency.setValueAtTime( frequency, now )
+        gain.gain.setValueAtTime( 0.0001, now )
+        gain.gain.exponentialRampToValueAtTime( 0.045, now + 0.015 )
+        gain.gain.exponentialRampToValueAtTime( 0.0001, now + 0.12 )
+
+        oscillator.connect( gain )
+        gain.connect( audio_context.destination )
+        oscillator.start( now )
+        oscillator.stop( now + 0.14 )
+        oscillator.onended = () => audio_context.close?.()
+    } catch {
+        audio_context?.close?.()
+        // Browsers can deny Web Audio outside user activation; recording still works.
+    }
+}
