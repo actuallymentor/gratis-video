@@ -73,6 +73,39 @@ const default_settings = {
     preferred_mime_type: null
 }
 
+class FakeVideoElement extends EventTarget {
+
+    constructor() {
+        super()
+        this.videoWidth = 640
+        this.videoHeight = 360
+        this.duration = 1
+        this.currentTime = 0
+        this.ended = false
+    }
+
+    set src( value ) {
+        this.src_value = value
+        setTimeout( () => this.dispatchEvent( new Event( `loadedmetadata` ) ), 0 )
+    }
+
+    get src() {
+        return this.src_value
+    }
+
+    play() {
+        this.ended = true
+        return Promise.resolve()
+    }
+
+    pause() {}
+
+    removeAttribute() {}
+
+    load() {}
+
+}
+
 describe( `export compiler`, () => {
     beforeEach( () => {
         stopped_tracks.length = 0
@@ -143,6 +176,33 @@ describe( `export compiler`, () => {
             settings: default_settings,
             signal: new AbortController().signal
         } ) ).rejects.toThrow( /No recorder/ )
+
+        expect( stopped_tracks ).toContain( `video` )
+    } )
+
+    test( `fails instead of caching an empty export file`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).rejects.toThrow( /did not produce a video file/ )
 
         expect( stopped_tracks ).toContain( `video` )
     } )

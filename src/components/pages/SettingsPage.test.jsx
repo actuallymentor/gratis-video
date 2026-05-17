@@ -134,6 +134,7 @@ describe( `settings page`, () => {
 
         await user.selectOptions( screen.getByLabelText( /Format/ ), `video/webm` )
         await user.click( screen.getByRole( `button`, { name: `High` } ) )
+        await user.click( screen.getByRole( `button`, { name: `720p` } ) )
         await user.click( screen.getByLabelText( `Haptics` ) )
 
         await waitFor( () => {
@@ -143,6 +144,9 @@ describe( `settings page`, () => {
         } )
         expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
             export_quality: `high`
+        } ) )
+        expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
+            export_resolution: `720p`
         } ) )
         expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
             haptics_enabled: false

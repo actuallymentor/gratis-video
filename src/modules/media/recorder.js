@@ -9,6 +9,30 @@ export const recording_mime_candidates = [
 export const HOLD_THRESHOLD_MS = 250
 export const MINIMUM_CLIP_MS = 400
 
+const capture_video_constraints = {
+    facingMode: { ideal: `environment` },
+    width: { ideal: 1280 },
+    height: { ideal: 720 }
+}
+
+const capture_audio_constraints = {
+    echoCancellation: true,
+    noiseSuppression: true
+}
+
+const video_only_retry_errors = [
+    `NotAllowedError`,
+    `PermissionDeniedError`,
+    `NotFoundError`,
+    `DevicesNotFoundError`,
+    `NotReadableError`,
+    `TrackStartError`,
+    `OverconstrainedError`,
+    `ConstraintNotSatisfiedError`
+]
+
+const should_retry_video_only = ( error ) => video_only_retry_errors.includes( error?.name )
+
 /**
  * Selects the first MediaRecorder MIME type supported by this browser.
  * @param {Array<string>} candidates - Candidate MIME types in priority order.
@@ -62,17 +86,21 @@ export async function request_capture_stream() {
         throw new Error( `This browser does not support camera or microphone capture.` )
     }
 
-    return navigator.mediaDevices.getUserMedia( {
-        video: {
-            facingMode: { ideal: `environment` },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-        },
-        audio: {
-            echoCancellation: true,
-            noiseSuppression: true
-        }
-    } )
+    const capture_constraints = {
+        video: capture_video_constraints,
+        audio: capture_audio_constraints
+    }
+
+    try {
+        return await navigator.mediaDevices.getUserMedia( capture_constraints )
+    } catch ( error ) {
+        if( !should_retry_video_only( error ) ) throw error
+
+        return navigator.mediaDevices.getUserMedia( {
+            video: capture_video_constraints,
+            audio: false
+        } )
+    }
 }
 
 /**

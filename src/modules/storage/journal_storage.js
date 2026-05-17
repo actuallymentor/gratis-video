@@ -89,6 +89,54 @@ const sort_clips = ( clips ) => [ ...clips ]
     .sort( ( first, second ) => first.order_index - second.order_index )
     .map( strip_clip_blob_fields )
 
+const delete_export_records = async ( export_records ) => {
+    if( !export_records.length ) return
+
+    await write_transaction( [ `exports`, `export_blobs` ], ( stores ) => {
+        export_records.forEach( ( { id } ) => {
+            stores.exports.delete( id )
+            stores.export_blobs.delete( id )
+        } )
+    } )
+}
+
+const filter_exports_with_existing_blobs = async ( export_records ) => {
+    const export_states = await Promise.all(
+        export_records.map( async ( export_record ) => ( {
+            export_record,
+            blob: await get_record( `export_blobs`, export_record.id )
+        } ) )
+    )
+    const missing_export_records = export_states
+        .filter( ( { blob } ) => !blob )
+        .map( ( { export_record } ) => export_record )
+
+    await delete_export_records( missing_export_records )
+
+    return export_states
+        .filter( ( { blob } ) => Boolean( blob ) )
+        .map( ( { export_record } ) => export_record )
+}
+
+const prune_stale_project_exports = async ( project_id ) => {
+    const [ exports, clips, settings ] = await Promise.all( [
+        get_index_records( `exports`, `project_id`, project_id ),
+        get_index_records( `clips`, `project_id`, project_id ),
+        load_settings()
+    ] )
+    const current_clips = sort_clips( clips )
+    const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+        clips: current_clips,
+        settings
+    } )
+    const stale_export_records = exports.filter( ( export_record ) => {
+        return export_record.settings_hash !== settings_hash
+            || export_record.clip_manifest_hash !== clip_manifest_hash
+    } )
+
+    await delete_export_records( stale_export_records )
+}
+
 const with_project_export_status = async ( project ) => {
     const [ exports, clips, settings ] = await Promise.all( [
         get_index_records( `exports`, `project_id`, project.id ),
@@ -100,18 +148,19 @@ const with_project_export_status = async ( project ) => {
         clips: current_clips,
         settings
     } )
-    const valid_exports = exports.filter( ( export_record ) => {
+    const existing_exports = await filter_exports_with_existing_blobs( exports )
+    const matching_exports = existing_exports.filter( ( export_record ) => {
         return export_record.settings_hash === settings_hash
             && export_record.clip_manifest_hash === clip_manifest_hash
     } )
-    const [ latest_export = null ] = [ ...valid_exports ].sort( ( first, second ) => {
+    const [ latest_export = null ] = [ ...matching_exports ].sort( ( first, second ) => {
         return new Date( second.created_at ).getTime() - new Date( first.created_at ).getTime()
     } )
 
     return {
         ...project,
-        export_count: exports.length,
-        valid_export_count: valid_exports.length,
+        export_count: existing_exports.length,
+        valid_export_count: matching_exports.length,
         last_exported_at: latest_export?.created_at ?? null
     }
 }
@@ -314,6 +363,10 @@ export async function add_clip_to_project( {
     } )
 
     await request_persistent_storage()
+    await prune_stale_project_exports( project_id ).catch( ( error ) => {
+        log.warn( `Could not prune stale exports after clip save`, error )
+    } )
+
     return clip
 }
 
@@ -373,6 +426,9 @@ export async function delete_clip( clip_id ) {
         stores.clip_blobs.delete( clip_id )
         stores.clip_thumbnails.delete( clip_id )
         stores.projects.put( updated_project )
+    } )
+    await prune_stale_project_exports( clip.project_id ).catch( ( error ) => {
+        log.warn( `Could not prune stale exports after clip deletion`, error )
     } )
 }
 
@@ -463,8 +519,9 @@ export async function get_valid_cached_export( { project_id, settings_hash, clip
                 && export_record.clip_manifest_hash === clip_manifest_hash
         } )
         .sort( ( first, second ) => new Date( second.created_at ).getTime() - new Date( first.created_at ).getTime() )
+    const valid_exports = await filter_exports_with_existing_blobs( matching_exports )
 
-    return matching_exports.at( 0 ) ?? null
+    return valid_exports.at( 0 ) ?? null
 }
 
 /**

@@ -383,6 +383,10 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         const blob = new Blob( chunks, { type: output_type } )
         const duration_ms = clips.reduce( ( total, clip ) => total + ( clip.duration_ms || 0 ), 0 )
 
+        if( chunks.length === 0 || blob.size === 0 ) {
+            throw new Error( `Export failed because this browser did not produce a video file.` )
+        }
+
         return {
             blob,
             mime_type: output_type,

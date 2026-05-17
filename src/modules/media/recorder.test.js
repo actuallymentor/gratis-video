@@ -3,6 +3,7 @@ import {
     HOLD_THRESHOLD_MS,
     classify_recording_gesture,
     get_capture_error_message,
+    request_capture_stream,
     select_supported_mime_type
 } from './recorder.js'
 
@@ -44,5 +45,29 @@ describe( `recorder helpers`, () => {
         vi.stubGlobal( `navigator`, { onLine: false } )
 
         expect( get_capture_error_message( new Error( `Offline media failed` ) ) ).toMatch( /available offline/ )
+    } )
+
+    test( `retries capture as video-only when microphone capture fails`, async () => {
+        const video_only_stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn()
+            .mockRejectedValueOnce( new DOMException( `No microphone`, `NotFoundError` ) )
+            .mockResolvedValueOnce( video_only_stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream() ).resolves.toBe( video_only_stream )
+        expect( getUserMedia ).toHaveBeenCalledTimes( 2 )
+        expect( getUserMedia.mock.calls[ 0 ][ 0 ] ).toMatchObject( {
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true
+            }
+        } )
+        expect( getUserMedia.mock.calls[ 1 ][ 0 ] ).toMatchObject( {
+            audio: false
+        } )
     } )
 } )

@@ -10,7 +10,10 @@ import {
     get_export_blob,
     save_export_record
 } from '../../modules/storage/journal_storage.js'
-import { share_export_file } from '../../modules/sharing/share.js'
+import {
+    download_export_file,
+    share_export_file
+} from '../../modules/sharing/share.js'
 import { useAppStore } from '../../stores/app_store.js'
 
 vi.mock( 'react-hot-toast', () => {
@@ -135,6 +138,24 @@ describe( `export panel`, () => {
             export_record: saved_export,
             blob: compiled_export.blob
         } )
+    } )
+
+    test( `downloads from the ready share action when native file sharing is unavailable`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ saved_export }
+            on_close={ vi.fn() }
+        /> )
+
+        await user.click( await screen.findByRole( `button`, { name: `Share` } ) )
+
+        expect( download_export_file ).toHaveBeenCalledWith( saved_export, compiled_export.blob )
     } )
 
     test( `aborts compile work when the user cancels`, async () => {

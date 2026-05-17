@@ -199,6 +199,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             next_stream = await request_capture_stream()
             stream_ref.current = next_stream
             set_media_stream_state( `active` )
+            if( next_stream.getAudioTracks?.().length === 0 ) {
+                set_error_message( `Microphone could not be used, so this clip is recording video only.` )
+            }
 
             const recorder = create_media_recorder( next_stream )
             const chunks = []

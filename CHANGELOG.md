@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.5] - 2026-05-17
+
+### Added
+- add capture delete, export fallback, and resolution setting path tests
+
+### Fixed
+- reject empty browser export output before caching or sharing
+- prune stale and missing cached export records after clip changes
+- fall back to video-only capture when microphone capture fails
+
 ## [0.2.4] - 2026-05-17
 
 ### Added

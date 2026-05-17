@@ -143,6 +143,7 @@ describe( `project capture page`, () => {
 
     afterEach( () => {
         cleanup()
+        vi.restoreAllMocks()
         vi.resetAllMocks()
         useAppStore.setState( {
             active_project_id: undefined,
@@ -263,6 +264,19 @@ describe( `project capture page`, () => {
 
         expect( await screen.findByText( /Camera access is blocked/ ) ).toBeTruthy()
         expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings` )
+    } )
+
+    test( `deletes a clip from the capture queue after confirmation`, async () => {
+        const user = userEvent.setup()
+
+        vi.spyOn( window, `confirm` ).mockReturnValue( true )
+
+        render_capture()
+
+        expect( await screen.findByText( `Clip 1` ) ).toBeTruthy()
+        await user.click( screen.getByRole( `button`, { name: `Delete clip` } ) )
+
+        expect( delete_clip ).toHaveBeenCalledWith( clip.id )
     } )
 
     test( `redirects to project history when the project cannot be loaded`, async () => {
