@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { log } from 'mentie'
+import { log } from 'mentie/modules/logging.js'
 import { useAppStore } from '../stores/app_store.js'
 import { add_clip_to_project } from '../modules/storage/journal_storage.js'
 import {
@@ -9,6 +9,7 @@ import {
     classify_recording_gesture,
     create_media_recorder,
     generate_video_thumbnail,
+    get_capture_error_message,
     get_video_metadata,
     pulse_haptic,
     request_capture_stream,
@@ -191,8 +192,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 set_recording_mode( `tap` )
             }
         } catch ( error ) {
-            log.error( `Could not start recording`, error )
-            set_error_message( error.message || `Recording could not start.` )
+            set_error_message( get_capture_error_message( error ) )
             toast.error( `Recording unavailable` )
             clear_current_stream()
             set_phase( `idle` )

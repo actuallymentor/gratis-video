@@ -1,6 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { log } from 'mentie'
+import { log } from 'mentie/modules/logging.js'
 import App from './App.jsx'
 import './index.css'
 

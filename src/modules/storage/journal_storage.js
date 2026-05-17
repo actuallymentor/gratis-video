@@ -1,4 +1,4 @@
-import { log } from 'mentie'
+import { log } from 'mentie/modules/logging.js'
 import {
     clear_all_records,
     delete_record,
@@ -77,6 +77,14 @@ const sort_projects = ( projects ) => [ ...projects ].sort( ( first, second ) =>
 const sort_clips = ( clips ) => [ ...clips ]
     .filter( ( { deleted_at } ) => !deleted_at )
     .sort( ( first, second ) => first.order_index - second.order_index )
+
+const next_clip_order_index = ( clips ) => {
+    const highest_order_index = clips.reduce( ( highest, { order_index = -1 } ) => {
+        return Math.max( highest, order_index )
+    }, -1 )
+
+    return highest_order_index + 1
+}
 
 const make_filename = ( title, mime_type ) => {
     const extension = mime_type.includes( `mp4` ) ? `mp4` : `webm`
@@ -238,11 +246,12 @@ export async function add_clip_to_project( {
     thumbnail_blob = null
 } ) {
     const project = await get_project( project_id )
+    const existing_clips = await get_index_records( `clips`, `project_id`, project_id )
     const timestamp = now_iso()
     const clip = {
         id: new_id(),
         project_id,
-        order_index: project.clip_count,
+        order_index: next_clip_order_index( existing_clips ),
         mime_type,
         duration_ms,
         width,

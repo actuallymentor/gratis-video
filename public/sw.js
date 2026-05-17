@@ -8,11 +8,30 @@ const APP_SHELL = [
 ]
 
 self.addEventListener( `install`, ( event ) => {
-    event.waitUntil(
-        caches.open( CACHE_NAME ).then( ( cache ) => cache.addAll( APP_SHELL ) )
-    )
+    event.waitUntil( cache_app_shell() )
     self.skipWaiting()
 } )
+
+const get_build_asset_urls = ( html ) => {
+    const matches = Array.from( html.matchAll( /(?:src|href)="([^"]+\.(?:js|css))"/g ) )
+
+    return matches
+        .map( ( [ , asset_path ] ) => new URL( asset_path, self.location.origin ).pathname )
+        .filter( ( asset_path ) => asset_path.startsWith( `/assets/` ) )
+}
+
+const cache_app_shell = async () => {
+    const cache = await caches.open( CACHE_NAME )
+
+    await cache.addAll( APP_SHELL )
+
+    const index_response = await fetch( `/index.html`, { cache: `reload` } )
+    const html = await index_response.clone().text()
+    const build_asset_urls = get_build_asset_urls( html )
+
+    await cache.put( `/index.html`, index_response )
+    if( build_asset_urls.length ) await cache.addAll( build_asset_urls )
+}
 
 self.addEventListener( `activate`, ( event ) => {
     event.waitUntil(

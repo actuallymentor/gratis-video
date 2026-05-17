@@ -23,10 +23,6 @@ import {
     load_settings,
     set_active_project
 } from '../../modules/storage/journal_storage.js'
-import {
-    download_export_file,
-    share_export_file
-} from '../../modules/sharing/share.js'
 import { useAppStore } from '../../stores/app_store.js'
 
 const CaptureGrid = styled.div`
@@ -96,6 +92,7 @@ export function ProjectCapturePage() {
     const [ clips, set_clips ] = useState( [] )
     const [ settings, set_settings ] = useState( null )
     const [ storage_error, set_storage_error ] = useState( null )
+    const [ cached_export_record, set_cached_export_record ] = useState( null )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
 
@@ -178,20 +175,13 @@ export function ProjectCapturePage() {
 
         const blob = await get_export_blob( cached_export.id )
         if( !blob ) {
+            set_cached_export_record( null )
             set_panel( `export` )
             return
         }
 
-        try {
-            const result = await share_export_file( { project, export_record: cached_export, blob } )
-            if( result !== `unsupported` ) return
-
-            download_export_file( cached_export, blob )
-            toast( `Native sharing is unavailable here. Download started.` )
-        } catch {
-            download_export_file( cached_export, blob )
-            toast( `Sharing failed. Download started.` )
-        }
+        set_cached_export_record( cached_export )
+        set_panel( `export` )
     }
 
     if( storage_error && ( !project || !settings ) ) {
@@ -258,7 +248,11 @@ export function ProjectCapturePage() {
             project={ project }
             clips={ clips }
             settings={ settings }
-            on_close={ () => set_panel( undefined ) }
+            initial_export_record={ cached_export_record }
+            on_close={ () => {
+                set_cached_export_record( null )
+                set_panel( undefined )
+            } }
         /> : null }
     </AppFrame>
 }

@@ -98,9 +98,9 @@ const TextButton = styled.button`
  * @param {Object} props - Export flow props.
  * @returns {JSX.Element} Export panel.
  */
-export function ExportPanel( { project, clips, settings, on_close } ) {
-    const [ status, set_status ] = useState( `compiling` )
-    const [ export_record, set_export_record ] = useState( null )
+export function ExportPanel( { project, clips, settings, initial_export_record = null, on_close } ) {
+    const [ status, set_status ] = useState( initial_export_record ? `ready` : `compiling` )
+    const [ export_record, set_export_record ] = useState( initial_export_record )
     const [ error_message, set_error_message ] = useState( null )
     const abort_controller_ref = useRef( null )
     const export_progress = useAppStore( ( state ) => state.export_progress )
@@ -163,10 +163,19 @@ export function ExportPanel( { project, clips, settings, on_close } ) {
             }
         }
 
+        if( initial_export_record ) {
+            set_export_progress( {
+                active: false,
+                percent: 100,
+                message: `Export ready`
+            } )
+            return undefined
+        }
+
         run_export()
 
         return () => abort_controller.abort()
-    }, [ clips, project.id, set_export_progress, settings ] )
+    }, [ clips, initial_export_record, project.id, set_export_progress, settings ] )
 
     const cancel_export = () => {
         abort_controller_ref.current?.abort()

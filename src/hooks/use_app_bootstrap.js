@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { log } from 'mentie'
+import { log } from 'mentie/modules/logging.js'
 import { useAppStore } from '../stores/app_store.js'
 import { check_media_permissions } from '../modules/permissions/permissions.js'
 import {
