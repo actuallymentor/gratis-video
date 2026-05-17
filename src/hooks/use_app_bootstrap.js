@@ -21,6 +21,15 @@ export function useAppBootstrap() {
     useEffect( () => {
         let cancelled = false
 
+        const refresh_permissions = async () => {
+            try {
+                const permission_status = await check_media_permissions()
+                if( !cancelled ) set_permission_status( permission_status )
+            } catch ( error ) {
+                log.warn( `Permission refresh failed`, error )
+            }
+        }
+
         const load_boot_state = async () => {
             try {
                 const [
@@ -48,9 +57,15 @@ export function useAppBootstrap() {
         }
 
         load_boot_state()
+        window.addEventListener( `focus`, refresh_permissions )
+        window.addEventListener( `online`, refresh_permissions )
+        window.addEventListener( `offline`, refresh_permissions )
 
         return () => {
             cancelled = true
+            window.removeEventListener( `focus`, refresh_permissions )
+            window.removeEventListener( `online`, refresh_permissions )
+            window.removeEventListener( `offline`, refresh_permissions )
         }
     }, [
         set_active_project_id,

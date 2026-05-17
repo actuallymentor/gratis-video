@@ -10,7 +10,10 @@ import {
     useLocation
 } from 'react-router'
 import { ProjectCapturePage } from './ProjectCapturePage.jsx'
-import { useAppStore } from '../../stores/app_store.js'
+import {
+    default_permission_status,
+    useAppStore
+} from '../../stores/app_store.js'
 import {
     delete_clip,
     get_export_blob,
@@ -36,12 +39,16 @@ vi.mock( '../../hooks/use_recording_controller.js', () => ( {
     } )
 } ) )
 
+const query_state = vi.hoisted( () => ( {
+    initial_panel: undefined
+} ) )
+
 vi.mock( 'use-query-params', async () => {
     const { useState } = await vi.importActual( 'react' )
 
     return {
         StringParam: {},
-        useQueryParam: () => useState( undefined )
+        useQueryParam: () => useState( query_state.initial_panel )
     }
 } )
 
@@ -120,13 +127,22 @@ describe( `project capture page`, () => {
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( set_active_project ).mockResolvedValue()
         vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
-        useAppStore.setState( { active_project_id: null } )
+        query_state.initial_panel = undefined
+        useAppStore.setState( {
+            active_project_id: null,
+            permission_status: default_permission_status,
+            storage_estimate: null
+        } )
     } )
 
     afterEach( () => {
         cleanup()
         vi.resetAllMocks()
-        useAppStore.setState( { active_project_id: undefined } )
+        useAppStore.setState( {
+            active_project_id: undefined,
+            permission_status: default_permission_status,
+            storage_estimate: null
+        } )
     } )
 
     test( `opens the export panel when no valid cached export exists`, async () => {
@@ -159,6 +175,46 @@ describe( `project capture page`, () => {
             } )
         } )
         expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+    } )
+
+    test( `does not auto-open export from restored URL state`, async () => {
+        query_state.initial_panel = `export`
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+    } )
+
+    test( `blocks recording when MediaRecorder is known unavailable`, async () => {
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                media_devices: `supported`,
+                media_recorder: `unsupported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
+    } )
+
+    test( `shows a settings recovery route for denied media permission`, async () => {
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `denied`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /Camera access is blocked/ ) ).toBeTruthy()
+        expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings` )
     } )
 
     test( `redirects to project history when the project cannot be loaded`, async () => {

@@ -39,4 +39,10 @@ describe( `recorder helpers`, () => {
         expect( get_capture_error_message( new DOMException( `No device`, `NotFoundError` ) ) ).toMatch( /No camera or microphone/ )
         expect( get_capture_error_message( new DOMException( `Not supported`, `NotSupportedError` ) ) ).toMatch( /cannot start/ )
     } )
+
+    test( `maps offline capture failures to offline guidance`, () => {
+        vi.stubGlobal( `navigator`, { onLine: false } )
+
+        expect( get_capture_error_message( new Error( `Offline media failed` ) ) ).toMatch( /available offline/ )
+    } )
 } )

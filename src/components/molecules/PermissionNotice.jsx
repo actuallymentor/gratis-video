@@ -1,4 +1,5 @@
 import styled from 'styled-components'
+import { Link } from 'react-router'
 import { AlertCircle } from 'lucide-react'
 
 const Notice = styled.div`
@@ -18,16 +19,33 @@ const Notice = styled.div`
     }
 `
 
+const NoticeContent = styled.span`
+    display: grid;
+    gap: 0.45rem;
+`
+
+const NoticeAction = styled( Link )`
+    width: fit-content;
+    min-height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-ink);
+    font-weight: 900;
+`
+
 /**
  * Shows media permission or capability guidance near recording controls.
  * @param {Object} props - Notice props.
  * @returns {JSX.Element|null} Permission notice.
  */
-export function PermissionNotice( { message } ) {
+export function PermissionNotice( { message, action_to = null, action_label = null } ) {
     if( !message ) return null
 
     return <Notice role="status">
         <AlertCircle size={ 18 } aria-hidden="true" />
-        <span>{ message }</span>
+        <NoticeContent>
+            <span>{ message }</span>
+            { action_to && action_label ? <NoticeAction to={ action_to }>{ action_label }</NoticeAction> : null }
+        </NoticeContent>
     </Notice>
 }

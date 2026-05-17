@@ -100,6 +100,10 @@ export function create_media_recorder( stream ) {
  * @returns {string} User-facing capture failure message.
  */
 export function get_capture_error_message( error ) {
+    if( globalThis.navigator?.onLine === false ) {
+        return `Saved projects are available offline, but this browser could not open the camera or microphone while offline.`
+    }
+
     if( error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError` ) {
         return `Camera or microphone access is blocked for this site. Check browser site settings, then try recording again.`
     }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Trash2, VideoOff, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
+import { useModalFocus } from '../../hooks/use_modal_focus.js'
 import {
     get_clip_blob,
     get_clip_thumbnail_blob
@@ -168,18 +169,16 @@ export function ClipQueue( { clips, on_delete } ) {
         set_preview_error( null )
         replace_preview_url( null )
     }, [ replace_preview_url ] )
+    const preview_dialog_ref = useModalFocus( {
+        active: Boolean( preview_clip ),
+        on_close: close_preview
+    } )
 
     useEffect( () => {
-        const close_on_escape = ( event ) => {
-            if( event.key === `Escape` ) close_preview()
-        }
-
-        window.addEventListener( `keydown`, close_on_escape )
         return () => {
-            window.removeEventListener( `keydown`, close_on_escape )
             if( preview_url_ref.current ) URL.revokeObjectURL( preview_url_ref.current )
         }
-    }, [ close_preview ] )
+    }, [] )
 
     if( !clips.length ) {
         return <EmptyQueue>
@@ -204,7 +203,7 @@ export function ClipQueue( { clips, on_delete } ) {
         </Queue>
 
         { preview_clip ? <Dialog role="dialog" aria-modal="true" aria-label="Clip preview" onClick={ close_preview }>
-            <Preview onClick={ ( event ) => event.stopPropagation() }>
+            <Preview ref={ preview_dialog_ref } tabIndex={ -1 } onClick={ ( event ) => event.stopPropagation() }>
                 { preview_url ? <video src={ preview_url } controls playsInline autoPlay /> : null }
                 { preview_error ? <PreviewMessage>{ preview_error }</PreviewMessage> : null }
                 <IconButton icon={ X } label="Close preview" onClick={ close_preview } />

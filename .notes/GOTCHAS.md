@@ -9,3 +9,5 @@
 - IndexedDB version 2 moves thumbnail blobs from clip metadata into the `clip_thumbnails` store. Keep clip metadata lightweight so React state does not retain Blob objects.
 - Project rows should only show “Export ready” for cached exports whose settings and clip-manifest hashes still match the current project state.
 - If Playwright Chromium fails with missing shared libraries, run `npx playwright install-deps chromium`; this workspace has needed those system packages before browser walkthroughs can run.
+- Export compilation is intentionally gated by an in-memory user-action flag. Do not let `?panel=export` or restored URL state start compilation by itself.
+- When changing recording startup, keep the `getUserMedia()` stream cleanup path covered for failures that happen after stream acquisition but before `MediaRecorder.start()`.

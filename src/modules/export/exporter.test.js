@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
     compile_project_export,
+    get_export_support_message,
     get_supported_export_resolutions
 } from './exporter.js'
 import { get_clip_blob } from '../storage/journal_storage.js'
@@ -165,11 +166,27 @@ describe( `export compiler`, () => {
         expect( HTMLCanvasElement.prototype.captureStream ).not.toHaveBeenCalled()
     } )
 
-    test( `shows only source resolution when canvas capture cannot be proved`, () => {
+    test( `hides resolution settings when canvas capture cannot be proved`, () => {
         delete HTMLCanvasElement.prototype.captureStream
 
-        expect( get_supported_export_resolutions() ).toEqual( [
-            { value: `source`, label: `Source` }
-        ] )
+        expect( get_supported_export_resolutions() ).toEqual( [] )
+        expect( get_export_support_message() ).toMatch( /capture a video export/ )
+    } )
+
+    test( `fails clearly before export when canvas capture is unsupported`, async () => {
+        delete HTMLCanvasElement.prototype.captureStream
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).rejects.toThrow( /capture a video export/ )
     } )
 } )

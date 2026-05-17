@@ -238,10 +238,9 @@ const play_clip_to_canvas = async ( {
 }
 
 const can_record_canvas_resolution = ( { width, height } ) => {
-    if( !globalThis.document?.createElement || !globalThis.MediaRecorder ) return false
+    if( get_export_support_message() ) return false
 
     const canvas = document.createElement( `canvas` )
-    if( !canvas.captureStream ) return false
 
     canvas.width = width
     canvas.height = height
@@ -261,10 +260,35 @@ const can_record_canvas_resolution = ( { width, height } ) => {
 }
 
 /**
+ * Explains why browser-native export compilation is unavailable.
+ * @returns {string|null} User-facing unavailable message, or null when supported.
+ */
+export function get_export_support_message() {
+    if( !globalThis.MediaRecorder ) return `This browser cannot compile video exports.`
+    if( !globalThis.MediaStream ) return `This browser cannot build a combined export stream.`
+    if( !globalThis.document?.createElement ) return `This browser cannot prepare the export canvas.`
+
+    const canvas = document.createElement( `canvas` )
+    if( !canvas.captureStream ) return `This browser cannot capture a video export from the canvas.`
+
+    return null
+}
+
+/**
+ * Checks if this browser has the primitives needed for MVP export compilation.
+ * @returns {boolean} Whether export compilation is available.
+ */
+export function can_compile_project_exports() {
+    return !get_export_support_message()
+}
+
+/**
  * Lists export resolution options this browser can prove through canvas capture.
  * @returns {Array<Object>} Supported resolution options.
  */
 export function get_supported_export_resolutions() {
+    if( !can_compile_project_exports() ) return []
+
     const [ source_option, ...scaled_options ] = export_resolution_options
     const supported_scaled_options = scaled_options.filter( ( { value } ) => {
         return can_record_canvas_resolution( resolution_limits[ value ] )
@@ -284,7 +308,8 @@ export function get_supported_export_resolutions() {
  */
 export async function compile_project_export( { clips, settings, signal, on_progress } ) {
     if( !clips.length ) throw new Error( `Record at least one clip before exporting.` )
-    if( !globalThis.MediaRecorder ) throw new Error( `This browser cannot compile video exports.` )
+    const export_support_message = get_export_support_message()
+    if( export_support_message ) throw new Error( export_support_message )
     throw_if_aborted( signal )
 
     const { width, height } = calculate_canvas_size( clips, settings )

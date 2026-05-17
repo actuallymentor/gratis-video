@@ -27,5 +27,7 @@ npm test
 - Recording supports tap-to-start/tap-to-stop and press-and-hold.
 - Settings include haptics and optional sound feedback for recording state changes.
 - Export compiles clips on demand in queue order, then offers native sharing when available or a download fallback.
+- Export compilation starts only from an explicit Share/Export action.
+- Known media blockers disable recording and show recovery guidance near capture.
 - Project rows show when a cached export is ready for the current clips and settings.
 - The PWA service worker caches the app shell for offline startup after first load.

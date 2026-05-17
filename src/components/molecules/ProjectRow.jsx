@@ -39,6 +39,7 @@ const Title = styled.h2`
     font-family: var(--font-heading);
     font-size: 1.05rem;
     font-weight: 700;
+    overflow-wrap: anywhere;
 `
 
 const Meta = styled.div`

@@ -48,3 +48,27 @@ export function media_status_message( permission_status ) {
 
     return null
 }
+
+/**
+ * Checks if a known media status should block recording before a permission prompt.
+ * @param {Object} permission_status - Permission and capability state.
+ * @returns {boolean} Whether recording can be attempted.
+ */
+export function can_attempt_recording( permission_status ) {
+    if( permission_status.secure_context === false ) return false
+    if( permission_status.media_devices === `unsupported` ) return false
+    if( permission_status.media_recorder === `unsupported` ) return false
+    if( permission_status.camera === `denied` ) return false
+    if( permission_status.microphone === `denied` ) return false
+
+    return true
+}
+
+/**
+ * Checks if permission guidance should include a recovery route.
+ * @param {Object} permission_status - Permission and capability state.
+ * @returns {boolean} Whether media access is blocked by site permission.
+ */
+export function has_denied_media_permission( permission_status ) {
+    return permission_status.camera === `denied` || permission_status.microphone === `denied`
+}

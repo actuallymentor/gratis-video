@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { log } from 'mentie/modules/logging.js'
 import { useAppStore } from '../stores/app_store.js'
-import { add_clip_to_project } from '../modules/storage/journal_storage.js'
+import { check_media_permissions } from '../modules/permissions/permissions.js'
+import {
+    add_clip_to_project,
+    estimate_storage,
+    persisted_storage
+} from '../modules/storage/journal_storage.js'
 import {
     HOLD_THRESHOLD_MS,
     MINIMUM_CLIP_MS,
@@ -23,6 +28,13 @@ const empty_recording_result = {
     started_at: 0
 }
 
+const is_storage_quota_error = ( error ) => {
+    return error?.name === `QuotaExceededError`
+        || error?.name === `NS_ERROR_DOM_QUOTA_REACHED`
+        || error?.code === 22
+        || error?.code === 1014
+}
+
 /**
  * Coordinates pointer/keyboard recording, clip validation, and local persistence.
  * @param {Object} options - Recording options.
@@ -40,6 +52,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
     const set_recording_state = useAppStore( ( state ) => state.set_recording_state )
     const recording_state = useAppStore( ( state ) => state.recording_state )
+    const set_media_stream_state = useAppStore( ( state ) => state.set_media_stream_state )
+    const set_permission_status = useAppStore( ( state ) => state.set_permission_status )
+    const set_storage_estimate = useAppStore( ( state ) => state.set_storage_estimate )
+    const set_storage_persisted = useAppStore( ( state ) => state.set_storage_persisted )
 
     const recorder_ref = useRef( null )
     const stream_ref = useRef( null )
@@ -59,7 +75,28 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         stop_media_stream( stream_ref.current )
         stream_ref.current = null
         set_stream( null )
-    }, [] )
+        set_media_stream_state( `idle` )
+    }, [ set_media_stream_state ] )
+
+    const refresh_environment_state = useCallback( async () => {
+        const [
+            permission_status,
+            storage_estimate,
+            storage_persisted
+        ] = await Promise.all( [
+            check_media_permissions(),
+            estimate_storage(),
+            persisted_storage()
+        ] )
+
+        set_permission_status( permission_status )
+        set_storage_estimate( storage_estimate )
+        set_storage_persisted( storage_persisted )
+    }, [
+        set_permission_status,
+        set_storage_estimate,
+        set_storage_persisted
+    ] )
 
     const save_recorded_clip = useCallback( async ( { chunks, mime_type, started_at } ) => {
         const measured_duration_ms = Date.now() - started_at
@@ -88,8 +125,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         } )
 
         on_clip_saved?.( clip )
+        refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
         return clip
-    }, [ on_clip_saved, project_id ] )
+    }, [ on_clip_saved, project_id, refresh_environment_state ] )
 
     const stop_recording = useCallback( async () => {
         if( phase_ref.current === `starting` ) {
@@ -114,8 +152,12 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 return await save_recorded_clip( result )
             } catch ( error ) {
                 log.error( `Could not save recording`, error )
-                set_error_message( `The clip could not be saved.` )
-                toast.error( `Clip save failed` )
+                const message = is_storage_quota_error( error )
+                    ? `Local browser storage is full. Export or delete old clips before recording more.`
+                    : `The clip could not be saved.`
+
+                set_error_message( message )
+                toast.error( is_storage_quota_error( error ) ? `Storage is full` : `Clip save failed` )
                 return null
             } finally {
                 recorder_ref.current = null
@@ -148,10 +190,16 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         recording_mode_ref.current = null
         set_recording_mode( null )
         set_phase( `starting` )
+        set_media_stream_state( `opening` )
         pulse_haptic( settings.haptics_enabled )
 
+        let next_stream = null
+
         try {
-            const next_stream = await request_capture_stream()
+            next_stream = await request_capture_stream()
+            stream_ref.current = next_stream
+            set_media_stream_state( `active` )
+
             const recorder = create_media_recorder( next_stream )
             const chunks = []
             const started_at = Date.now()
@@ -171,7 +219,6 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 } )
             } )
 
-            stream_ref.current = next_stream
             recorder_ref.current = recorder
             stop_promise_ref.current = stopped
             next_stream.getTracks().forEach( ( track ) => {
@@ -183,6 +230,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             play_sound_feedback( settings.sounds_enabled, `start` )
             recorder.start( 250 )
             set_phase( `recording` )
+            refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
 
             if( classify_later ) {
                 const pending_duration = pending_release_duration_ref.current
@@ -206,16 +254,20 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         } catch ( error ) {
             set_error_message( get_capture_error_message( error ) )
             toast.error( `Recording unavailable` )
+            if( next_stream && stream_ref.current !== next_stream ) stop_media_stream( next_stream )
             pending_release_duration_ref.current = null
             recording_mode_ref.current = null
             set_recording_mode( null )
             clear_current_stream()
             set_phase( `idle` )
+            refresh_environment_state().catch( ( refresh_error ) => log.warn( `Environment refresh failed`, refresh_error ) )
         }
     }, [
         clear_current_stream,
         project_id,
+        refresh_environment_state,
         set_phase,
+        set_media_stream_state,
         settings.haptics_enabled,
         settings.sounds_enabled,
         stop_recording

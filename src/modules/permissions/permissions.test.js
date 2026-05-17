@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+    can_attempt_recording,
     check_media_permissions,
+    has_denied_media_permission,
     media_status_message
 } from './permissions.js'
 
@@ -75,5 +77,43 @@ describe( `permission helpers`, () => {
             microphone: `unsupported`,
             offline: true
         } ) ).toMatch( /available offline/ )
+    } )
+
+    test( `blocks recording attempts only for known hard media failures`, () => {
+        expect( can_attempt_recording( {
+            secure_context: true,
+            media_devices: `supported`,
+            media_recorder: `supported`,
+            camera: `prompt`,
+            microphone: `unknown`
+        } ) ).toBe( true )
+
+        expect( can_attempt_recording( {
+            secure_context: true,
+            media_devices: `supported`,
+            media_recorder: `unsupported`,
+            camera: `prompt`,
+            microphone: `prompt`
+        } ) ).toBe( false )
+
+        expect( can_attempt_recording( {
+            secure_context: true,
+            media_devices: `supported`,
+            media_recorder: `supported`,
+            camera: `denied`,
+            microphone: `prompt`
+        } ) ).toBe( false )
+    } )
+
+    test( `detects denied media permission for recovery guidance`, () => {
+        expect( has_denied_media_permission( {
+            camera: `prompt`,
+            microphone: `denied`
+        } ) ).toBe( true )
+
+        expect( has_denied_media_permission( {
+            camera: `prompt`,
+            microphone: `granted`
+        } ) ).toBe( false )
     } )
 } )

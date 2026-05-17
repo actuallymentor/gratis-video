@@ -35,6 +35,7 @@ export const HeaderText = styled.div`
         font-size: 1.45rem;
         font-weight: 600;
         line-height: 1.15;
+        overflow-wrap: anywhere;
     }
 
     p {

@@ -8,7 +8,10 @@ import { Content, HeaderBar, HeaderText, AppFrame, SectionTitle } from '../atoms
 import { IconButton } from '../atoms/IconButton.jsx'
 import { SegmentedControl } from '../atoms/SegmentedControl.jsx'
 import { Toggle } from '../atoms/Toggle.jsx'
-import { get_supported_export_resolutions } from '../../modules/export/exporter.js'
+import {
+    get_export_support_message,
+    get_supported_export_resolutions
+} from '../../modules/export/exporter.js'
 import { get_supported_mime_types } from '../../modules/media/recorder.js'
 import {
     default_settings,
@@ -109,6 +112,7 @@ export function SettingsPage() {
     const [ settings, set_settings ] = useState( null )
     const [ supported_mime_types, set_supported_mime_types ] = useState( [] )
     const [ supported_resolution_options, set_supported_resolution_options ] = useState( [] )
+    const [ export_support_message, set_export_support_message ] = useState( null )
     const [ storage_error, set_storage_error ] = useState( null )
     const navigate = useNavigate()
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
@@ -129,6 +133,7 @@ export function SettingsPage() {
                 set_settings( loaded_settings )
                 set_supported_mime_types( get_supported_mime_types() )
                 set_supported_resolution_options( get_supported_export_resolutions() )
+                set_export_support_message( get_export_support_message() )
                 set_storage_estimate( estimate )
                 set_storage_persisted( persisted )
                 set_storage_error( null )
@@ -136,6 +141,7 @@ export function SettingsPage() {
                 set_storage_error( `Local browser storage is unavailable, so settings cannot be saved here.` )
                 set_settings( default_settings )
                 set_supported_resolution_options( get_supported_export_resolutions() )
+                set_export_support_message( get_export_support_message() )
             }
         }
 
@@ -240,12 +246,12 @@ export function SettingsPage() {
                     />
 
                     <SectionTitle>Resolution</SectionTitle>
-                    <SegmentedControl
+                    { supported_resolution_options.length ? <SegmentedControl
                         label="Export resolution"
                         options={ supported_resolution_options }
                         value={ selected_export_resolution }
                         on_change={ ( export_resolution ) => update_setting( { export_resolution } ) }
-                    />
+                    /> : <StorageText>{ export_support_message }</StorageText> }
                 </SettingGroup>
 
                 <SettingGroup>

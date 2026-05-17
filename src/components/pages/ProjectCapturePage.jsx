@@ -13,7 +13,11 @@ import { PermissionNotice } from '../molecules/PermissionNotice.jsx'
 import { RecordButton } from '../molecules/RecordButton.jsx'
 import { useRecordingController } from '../../hooks/use_recording_controller.js'
 import { create_export_hashes } from '../../modules/export/cache.js'
-import { media_status_message } from '../../modules/permissions/permissions.js'
+import {
+    can_attempt_recording,
+    has_denied_media_permission,
+    media_status_message
+} from '../../modules/permissions/permissions.js'
 import { share_export_file } from '../../modules/sharing/share.js'
 import {
     delete_clip,
@@ -94,7 +98,9 @@ export function ProjectCapturePage() {
     const [ settings, set_settings ] = useState( null )
     const [ storage_error, set_storage_error ] = useState( null )
     const [ cached_export_record, set_cached_export_record ] = useState( null )
+    const [ export_requested, set_export_requested ] = useState( false )
     const permission_status = useAppStore( ( state ) => state.permission_status )
+    const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
 
     const refresh_project = useCallback( async () => {
@@ -152,6 +158,10 @@ export function ProjectCapturePage() {
         preview_ref.current.srcObject = recording.stream
     }, [ recording.stream ] )
 
+    useEffect( () => {
+        if( panel === `export` && !export_requested ) set_panel( undefined )
+    }, [ export_requested, panel, set_panel ] )
+
     const remove_clip = async ( clip ) => {
         const confirmed = window.confirm( `Delete this clip from the project?` )
         if( !confirmed ) return
@@ -178,6 +188,7 @@ export function ProjectCapturePage() {
         } ).catch( () => null )
 
         if( !cached_export ) {
+            set_export_requested( true )
             set_panel( `export` )
             return
         }
@@ -185,6 +196,7 @@ export function ProjectCapturePage() {
         const blob = await get_export_blob( cached_export.id )
         if( !blob ) {
             set_cached_export_record( null )
+            set_export_requested( true )
             set_panel( `export` )
             return
         }
@@ -202,6 +214,7 @@ export function ProjectCapturePage() {
         }
 
         set_cached_export_record( cached_export )
+        set_export_requested( true )
         set_panel( `export` )
     }
 
@@ -219,7 +232,15 @@ export function ProjectCapturePage() {
         </AppFrame>
     }
 
-    const status_message = recording.error_message || media_status_message( permission_status )
+    const storage_ratio = storage_estimate?.quota
+        ? ( storage_estimate.usage ?? 0 ) / storage_estimate.quota
+        : 0
+    const storage_warning = storage_ratio >= 0.85
+        ? `Local browser storage is almost full. Export or delete old clips before recording more.`
+        : null
+    const status_message = recording.error_message || storage_warning || media_status_message( permission_status )
+    const permission_denied = has_denied_media_permission( permission_status )
+    const recording_disabled = !can_attempt_recording( permission_status )
 
     return <AppFrame>
         <Content>
@@ -241,7 +262,11 @@ export function ProjectCapturePage() {
                             Press record to open the camera and save the next clip.
                         </ReadyState> }
                     </Preview>
-                    <PermissionNotice message={ storage_error || status_message } />
+                    <PermissionNotice
+                        message={ storage_error || status_message }
+                        action_to={ permission_denied ? `/settings` : null }
+                        action_label={ permission_denied ? `Open settings` : null }
+                    />
                 </PreviewPanel>
 
                 <QueuePanel>
@@ -261,17 +286,19 @@ export function ProjectCapturePage() {
                 on_release={ recording.release_record }
                 on_cancel={ recording.cancel_record }
                 on_toggle={ recording.toggle_recording }
+                disabled={ recording_disabled }
             /> }
             right={ <IconButton icon={ Download } label="Share or export project" onClick={ share_or_export } /> }
         />
 
-        { panel === `export` ? <ExportPanel
+        { panel === `export` && export_requested ? <ExportPanel
             project={ project }
             clips={ clips }
             settings={ settings }
             initial_export_record={ cached_export_record }
             on_close={ () => {
                 set_cached_export_record( null )
+                set_export_requested( false )
                 set_panel( undefined )
             } }
         /> : null }

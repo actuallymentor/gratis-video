@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import styled from 'styled-components'
 import { Download, Share2, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
+import { useModalFocus } from '../../hooks/use_modal_focus.js'
 import { create_export_hashes } from '../../modules/export/cache.js'
 import { compile_project_export } from '../../modules/export/exporter.js'
 import {
+    delete_export,
     get_export_blob,
     save_export_record
 } from '../../modules/storage/journal_storage.js'
@@ -106,6 +108,30 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
     const export_progress = useAppStore( ( state ) => state.export_progress )
     const set_export_progress = useAppStore( ( state ) => state.set_export_progress )
 
+    const cancel_export = useCallback( () => {
+        abort_controller_ref.current?.abort()
+        set_export_progress( {
+            active: false,
+            percent: 0,
+            message: `Export cancelled`
+        } )
+        on_close()
+    }, [ on_close, set_export_progress ] )
+
+    const close_export_panel = useCallback( () => {
+        if( status === `compiling` ) {
+            cancel_export()
+            return
+        }
+
+        on_close()
+    }, [ cancel_export, on_close, status ] )
+
+    const panel_ref = useModalFocus( {
+        active: true,
+        on_close: close_export_panel
+    } )
+
     useEffect( () => {
         if( initial_export_record ) {
             set_export_progress( {
@@ -136,6 +162,9 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
                     signal: abort_controller.signal,
                     on_progress: set_export_progress
                 } )
+
+                if( !is_current_export() || abort_controller.signal.aborted ) return
+
                 const saved_export = await save_export_record( {
                     project_id: project.id,
                     settings_hash,
@@ -143,7 +172,10 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
                     ...compiled_export
                 } )
 
-                if( !is_current_export() ) return
+                if( !is_current_export() || abort_controller.signal.aborted ) {
+                    await delete_export( saved_export.id ).catch( () => null )
+                    return
+                }
 
                 set_export_record( saved_export )
                 set_status( `ready` )
@@ -186,25 +218,6 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
         }
     }, [ clips, initial_export_record, project.id, set_export_progress, settings ] )
 
-    const cancel_export = () => {
-        abort_controller_ref.current?.abort()
-        set_export_progress( {
-            active: false,
-            percent: 0,
-            message: `Export cancelled`
-        } )
-        on_close()
-    }
-
-    const close_export_panel = () => {
-        if( status === `compiling` ) {
-            cancel_export()
-            return
-        }
-
-        on_close()
-    }
-
     const share_ready_export = async () => {
         if( !export_record ) return
 
@@ -240,7 +253,7 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
     }
 
     return <Backdrop>
-        <Panel role="dialog" aria-modal="true" aria-labelledby="export-title">
+        <Panel ref={ panel_ref } role="dialog" aria-modal="true" aria-labelledby="export-title" tabIndex={ -1 }>
             <Header>
                 <h2 id="export-title">Export video</h2>
                 <IconButton icon={ X } label="Close export panel" onClick={ close_export_panel } />

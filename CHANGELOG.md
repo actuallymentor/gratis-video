@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.3] - 2026-05-17
+
+### Added
+- add regression coverage for blocked recording and explicit export intent
+
+### Fixed
+- stop media tracks when recorder setup fails after camera access
+- require a fresh export action before starting compilation
+- refresh permission state after browser settings or network changes
+- show recovery guidance for denied media permissions
+- handle unsupported export primitives and storage pressure clearly
+- improve modal focus handling, title wrapping, and PWA install icons
+
 ## [0.2.2] - 2026-05-17
 
 ### Fixed

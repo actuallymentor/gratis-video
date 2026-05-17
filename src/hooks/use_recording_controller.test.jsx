@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { useRecordingController } from './use_recording_controller.js'
 import { useAppStore } from '../stores/app_store.js'
-import { add_clip_to_project } from '../modules/storage/journal_storage.js'
+import { check_media_permissions } from '../modules/permissions/permissions.js'
+import {
+    add_clip_to_project,
+    estimate_storage,
+    persisted_storage
+} from '../modules/storage/journal_storage.js'
 import {
     create_media_recorder,
     request_capture_stream
@@ -19,7 +24,13 @@ vi.mock( 'react-hot-toast', () => {
 } )
 
 vi.mock( '../modules/storage/journal_storage.js', () => ( {
-    add_clip_to_project: vi.fn()
+    add_clip_to_project: vi.fn(),
+    estimate_storage: vi.fn(),
+    persisted_storage: vi.fn()
+} ) )
+
+vi.mock( '../modules/permissions/permissions.js', () => ( {
+    check_media_permissions: vi.fn()
 } ) )
 
 vi.mock( '../modules/media/recorder.js', () => ( {
@@ -105,11 +116,27 @@ function Harness() {
 
 describe( `recording controller`, () => {
     beforeEach( () => {
-        useAppStore.setState( { recording_state: `idle` } )
+        useAppStore.setState( {
+            media_stream_state: `idle`,
+            recording_state: `idle`
+        } )
         vi.mocked( add_clip_to_project ).mockReset()
+        vi.mocked( check_media_permissions ).mockReset()
         vi.mocked( create_media_recorder ).mockReset()
+        vi.mocked( estimate_storage ).mockReset()
+        vi.mocked( persisted_storage ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
         vi.mocked( add_clip_to_project ).mockResolvedValue( { id: `clip-1` } )
+        vi.mocked( check_media_permissions ).mockResolvedValue( {
+            camera: `granted`,
+            microphone: `granted`,
+            secure_context: true,
+            media_devices: `supported`,
+            media_recorder: `supported`,
+            offline: false
+        } )
+        vi.mocked( estimate_storage ).mockResolvedValue( { usage: 128, quota: 1024 } )
+        vi.mocked( persisted_storage ).mockResolvedValue( true )
     } )
 
     afterEach( () => {
@@ -152,6 +179,28 @@ describe( `recording controller`, () => {
                 duration_ms: 1000
             } ) )
         } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `stops opened media tracks when recorder setup fails`, async () => {
+        const { stream, track } = make_stream()
+
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockImplementation( () => {
+            throw new Error( `Recorder unavailable` )
+        } )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( track.stop ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( useAppStore.getState().media_stream_state ).toBe( `idle` )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 } )
