@@ -73,6 +73,7 @@ export function Toggle( { label, description, checked, on_change } ) {
         </Text>
         <Input
             type="checkbox"
+            aria-label={ label }
             checked={ checked }
             onChange={ ( event ) => on_change( event.target.checked ) }
         />

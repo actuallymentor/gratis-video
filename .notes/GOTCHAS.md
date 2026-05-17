@@ -8,3 +8,4 @@
 - ExportPanel starts export work from a React effect. In development StrictMode, stale effect aborts must be ignored or the UI can show `Export cancelled` even while the current export run should continue.
 - IndexedDB version 2 moves thumbnail blobs from clip metadata into the `clip_thumbnails` store. Keep clip metadata lightweight so React state does not retain Blob objects.
 - Project rows should only show “Export ready” for cached exports whose settings and clip-manifest hashes still match the current project state.
+- If Playwright Chromium fails with missing shared libraries, run `npx playwright install-deps chromium`; this workspace has needed those system packages before browser walkthroughs can run.
