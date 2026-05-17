@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
     MemoryRouter,
@@ -40,7 +40,8 @@ vi.mock( '../../hooks/use_recording_controller.js', () => ( {
 } ) )
 
 const query_state = vi.hoisted( () => ( {
-    initial_panel: undefined
+    initial_panel: undefined,
+    set_panel: null
 } ) )
 
 vi.mock( 'use-query-params', async () => {
@@ -48,7 +49,11 @@ vi.mock( 'use-query-params', async () => {
 
     return {
         StringParam: {},
-        useQueryParam: () => useState( query_state.initial_panel )
+        useQueryParam: () => {
+            const [ panel, set_panel ] = useState( query_state.initial_panel )
+            query_state.set_panel = set_panel
+            return [ panel, set_panel ]
+        }
     }
 } )
 
@@ -128,6 +133,7 @@ describe( `project capture page`, () => {
         vi.mocked( set_active_project ).mockResolvedValue()
         vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
         query_state.initial_panel = undefined
+        query_state.set_panel = null
         useAppStore.setState( {
             active_project_id: null,
             permission_status: default_permission_status,
@@ -154,6 +160,29 @@ describe( `project capture page`, () => {
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
         expect( await screen.findByText( `Export panel open` ) ).toBeTruthy()
+    } )
+
+    test( `does not restart export when history restores the export panel`, async () => {
+        const user = userEvent.setup()
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( `Export panel open` ) ).toBeTruthy()
+
+        act( () => query_state.set_panel( undefined ) )
+
+        await waitFor( () => {
+            expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+        } )
+
+        act( () => query_state.set_panel( `export` ) )
+
+        await waitFor( () => {
+            expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+        } )
     } )
 
     test( `shares a valid cached export from the original export tap`, async () => {
@@ -199,6 +228,25 @@ describe( `project capture page`, () => {
 
         expect( await screen.findByText( project.title ) ).toBeTruthy()
         expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
+    } )
+
+    test( `shows blocking media guidance before storage warnings`, async () => {
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                media_devices: `supported`,
+                media_recorder: `unsupported`
+            },
+            storage_estimate: {
+                usage: 900,
+                quota: 1000
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /cannot record video with MediaRecorder/ ) ).toBeTruthy()
+        expect( screen.queryByText( /storage is almost full/i ) ).toBe( null )
     } )
 
     test( `shows a settings recovery route for denied media permission`, async () => {

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.4] - 2026-05-17
+
+### Added
+- add Settings, recording gesture, and export history regression coverage
+
+### Fixed
+- preserve portrait orientation when scaling exports
+- require proven native file-sharing support before sharing files
+- keep export progress state complete during compilation
+- prevent restored export URL state from restarting compilation
+- show media-access help in Settings and prioritize media blockers
+- fail visibly instead of silently muting audio-routed exports
+
 ## [0.2.3] - 2026-05-17
 
 ### Added

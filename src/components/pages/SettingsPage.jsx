@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router'
 import styled from 'styled-components'
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import { ArrowLeft, Camera, Mic, Trash2 } from 'lucide-react'
 import { BottomAppBar } from '../atoms/BottomAppBar.jsx'
 import { Content, HeaderBar, HeaderText, AppFrame, SectionTitle } from '../atoms/Layout.jsx'
 import { IconButton } from '../atoms/IconButton.jsx'
@@ -21,6 +21,7 @@ import {
     persisted_storage,
     save_settings
 } from '../../modules/storage/journal_storage.js'
+import { media_status_message } from '../../modules/permissions/permissions.js'
 import { useAppStore } from '../../stores/app_store.js'
 
 const SettingsList = styled.section`
@@ -67,6 +68,27 @@ const StorageText = styled.p`
     line-height: 1.55;
 `
 
+const StatusLine = styled.div`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+`
+
+const StatusBadge = styled.span`
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    color: var(--color-muted);
+    background: var(--color-surface);
+    font-size: 0.9rem;
+    font-weight: 800;
+`
+
 const DangerButton = styled.button`
     display: inline-flex;
     align-items: center;
@@ -104,6 +126,10 @@ const format_bytes = ( bytes = 0 ) => {
     return `${ ( bytes / 1024 / 1024 / 1024 ).toFixed( 1 ) } GB`
 }
 
+const format_status_label = ( status ) => {
+    return status ? status.replace( /_/g, ` ` ) : `unknown`
+}
+
 /**
  * Shows global recording, export, storage, and destructive settings.
  * @returns {JSX.Element} Settings page.
@@ -117,6 +143,7 @@ export function SettingsPage() {
     const navigate = useNavigate()
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const storage_persisted = useAppStore( ( state ) => state.storage_persisted )
+    const permission_status = useAppStore( ( state ) => state.permission_status )
     const set_storage_estimate = useAppStore( ( state ) => state.set_storage_estimate )
     const set_storage_persisted = useAppStore( ( state ) => state.set_storage_persisted )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
@@ -205,6 +232,8 @@ export function SettingsPage() {
     const selected_export_resolution = supported_resolution_options.some( ( { value } ) => value === settings.export_resolution )
         ? settings.export_resolution
         : default_settings.export_resolution
+    const has_specific_format_options = supported_mime_types.length > 0
+    const permission_message = media_status_message( permission_status )
 
     return <AppFrame>
         <Content>
@@ -221,8 +250,26 @@ export function SettingsPage() {
 
             <SettingsList>
                 <SettingGroup>
+                    <SectionTitle>Media Access</SectionTitle>
+                    <StorageText>
+                        Recording asks for camera and microphone access only when you press record.
+                    </StorageText>
+                    { permission_message ? <StorageText>{ permission_message }</StorageText> : null }
+                    <StatusLine>
+                        <StatusBadge>
+                            <Camera size={ 16 } aria-hidden="true" />
+                            Camera: { format_status_label( permission_status.camera ) }
+                        </StatusBadge>
+                        <StatusBadge>
+                            <Mic size={ 16 } aria-hidden="true" />
+                            Microphone: { format_status_label( permission_status.microphone ) }
+                        </StatusBadge>
+                    </StatusLine>
+                </SettingGroup>
+
+                <SettingGroup>
                     <SectionTitle>Export</SectionTitle>
-                    <Field>
+                    { has_specific_format_options ? <Field>
                         Format
                         <span>Only formats this browser reports as recordable are shown.</span>
                         <select
@@ -235,7 +282,9 @@ export function SettingsPage() {
                                 { option.label }
                             </option> ) }
                         </select>
-                    </Field>
+                    </Field> : <StorageText>
+                        { export_support_message ?? `This browser has not reported specific recordable export formats, so export will use its default recorder format.` }
+                    </StorageText> }
 
                     <SectionTitle>Quality</SectionTitle>
                     <SegmentedControl

@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
+    calculate_export_canvas_size,
     compile_project_export,
     get_export_support_message,
     get_supported_export_resolutions
@@ -164,6 +165,34 @@ describe( `export compiler`, () => {
         } ) ).rejects.toMatchObject( { name: `AbortError` } )
 
         expect( HTMLCanvasElement.prototype.captureStream ).not.toHaveBeenCalled()
+    } )
+
+    test( `keeps landscape export resolution within the selected size`, () => {
+        expect( calculate_export_canvas_size( [
+            {
+                width: 1920,
+                height: 1080
+            }
+        ], {
+            export_resolution: `720p`
+        } ) ).toEqual( {
+            width: 1280,
+            height: 720
+        } )
+    } )
+
+    test( `keeps portrait export resolution portrait within the selected size`, () => {
+        expect( calculate_export_canvas_size( [
+            {
+                width: 1080,
+                height: 1920
+            }
+        ], {
+            export_resolution: `720p`
+        } ) ).toEqual( {
+            width: 720,
+            height: 1280
+        } )
     } )
 
     test( `hides resolution settings when canvas capture cannot be proved`, () => {

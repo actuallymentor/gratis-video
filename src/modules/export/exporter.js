@@ -81,20 +81,36 @@ const wait_for_recorder_stop = ( recorder, chunks ) => new Promise( ( resolve, r
 
 const next_animation_frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) )
 
-const calculate_canvas_size = ( clips, settings ) => {
+const orient_resolution_limit = ( limit, { width, height } ) => {
+    if( !limit || height <= width ) return limit
+
+    return {
+        width: limit.height,
+        height: limit.width
+    }
+}
+
+/**
+ * Calculates the export canvas size without upscaling or changing orientation.
+ * @param {Array<Object>} clips - Clip metadata in queue order.
+ * @param {Object} settings - Export settings.
+ * @returns {Object} Canvas width and height.
+ */
+export function calculate_export_canvas_size( clips, settings ) {
     const source_width = clips.find( ( clip ) => clip.width )?.width ?? 1280
     const source_height = clips.find( ( clip ) => clip.height )?.height ?? 720
-    const ratio = source_width / source_height
-    const limit = resolution_limits[ settings.export_resolution ] ?? null
+    const limit = orient_resolution_limit( resolution_limits[ settings.export_resolution ], {
+        width: source_width,
+        height: source_height
+    } )
 
     if( !limit ) return { width: source_width, height: source_height }
 
-    const limited_width = Math.min( source_width, limit.width )
-    const limited_height = Math.min( Math.round( limited_width / ratio ), limit.height )
+    const scale = Math.min( 1, limit.width / source_width, limit.height / source_height )
 
     return {
-        width: Math.max( 1, limited_width ),
-        height: Math.max( 1, limited_height )
+        width: Math.max( 1, Math.round( source_width * scale ) ),
+        height: Math.max( 1, Math.round( source_height * scale ) )
     }
 }
 
@@ -133,25 +149,30 @@ const create_audio_graph = () => {
 }
 
 const connect_video_audio = ( audio_graph, video ) => {
-    if( !audio_graph ) return
+    if( !audio_graph ) return false
 
     try {
         const source = audio_graph.audio_context.createMediaElementSource( video )
         source.connect( audio_graph.destination )
         audio_graph.sources.push( source )
+        return true
     } catch {
         // Some browsers restrict media element routing. Export can still complete as silent video.
+        return false
     }
 }
 
-const start_video_playback = async ( video, signal ) => {
+const start_video_playback = async ( video, signal, { allow_muted_retry = false } = {} ) => {
     try {
         await wait_for_abortable( video.play(), signal )
     } catch ( error ) {
         if( error.name !== `NotAllowedError` ) throw error
+        if( !allow_muted_retry ) {
+            throw new Error( `This browser blocked export playback with audio. Try export again while keeping this tab active.` )
+        }
 
         // Mobile autoplay rules can reject detached videos after React effects.
-        // Retrying muted preserves video export instead of failing the whole job.
+        // Retrying muted preserves video-only export when no audio route is available.
         throw_if_aborted( signal )
         video.muted = true
         await wait_for_abortable( video.play(), signal )
@@ -205,7 +226,7 @@ const play_clip_to_canvas = async ( {
         video.playsInline = true
         video.preload = `auto`
         await wait_for_event( video, `loadedmetadata`, signal )
-        connect_video_audio( audio_graph, video )
+        const audio_connected = connect_video_audio( audio_graph, video )
 
         const duration_ms = clip.duration_ms || Math.round( ( video.duration || 0 ) * 1000 )
         const project_duration_ms = clips.reduce( ( total, next_clip ) => total + ( next_clip.duration_ms || 0 ), 0 ) || 1
@@ -213,7 +234,9 @@ const play_clip_to_canvas = async ( {
             return total + ( next_clip.duration_ms || 0 )
         }, 0 )
 
-        await start_video_playback( video, signal )
+        await start_video_playback( video, signal, {
+            allow_muted_retry: !audio_connected
+        } )
 
         while( !video.ended ) {
             throw_if_aborted( signal )
@@ -312,7 +335,7 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     if( export_support_message ) throw new Error( export_support_message )
     throw_if_aborted( signal )
 
-    const { width, height } = calculate_canvas_size( clips, settings )
+    const { width, height } = calculate_export_canvas_size( clips, settings )
     const canvas = document.createElement( `canvas` )
     canvas.width = width
     canvas.height = height

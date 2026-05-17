@@ -162,6 +162,13 @@ export function ProjectCapturePage() {
         if( panel === `export` && !export_requested ) set_panel( undefined )
     }, [ export_requested, panel, set_panel ] )
 
+    useEffect( () => {
+        if( panel === `export` ) return
+
+        set_cached_export_record( null )
+        set_export_requested( false )
+    }, [ panel ] )
+
     const remove_clip = async ( clip ) => {
         const confirmed = window.confirm( `Delete this clip from the project?` )
         if( !confirmed ) return
@@ -238,7 +245,7 @@ export function ProjectCapturePage() {
     const storage_warning = storage_ratio >= 0.85
         ? `Local browser storage is almost full. Export or delete old clips before recording more.`
         : null
-    const status_message = recording.error_message || storage_warning || media_status_message( permission_status )
+    const status_message = recording.error_message || media_status_message( permission_status ) || storage_warning
     const permission_denied = has_denied_media_permission( permission_status )
     const recording_disabled = !can_attempt_recording( permission_status )
 

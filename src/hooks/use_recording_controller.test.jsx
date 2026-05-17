@@ -100,6 +100,7 @@ const make_recorder = () => {
 }
 
 let controller
+const clip_saved = vi.fn()
 
 function Harness() {
     controller = useRecordingController( {
@@ -108,7 +109,7 @@ function Harness() {
             haptics_enabled: false,
             sounds_enabled: false
         },
-        on_clip_saved: vi.fn()
+        on_clip_saved: clip_saved
     } )
 
     return <span>{ controller.recording_state }</span>
@@ -126,6 +127,7 @@ describe( `recording controller`, () => {
         vi.mocked( estimate_storage ).mockReset()
         vi.mocked( persisted_storage ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
+        clip_saved.mockReset()
         vi.mocked( add_clip_to_project ).mockResolvedValue( { id: `clip-1` } )
         vi.mocked( check_media_permissions ).mockResolvedValue( {
             camera: `granted`,
@@ -201,6 +203,90 @@ describe( `recording controller`, () => {
             expect( track.stop ).toHaveBeenCalledTimes( 1 )
         } )
         expect( useAppStore.getState().media_stream_state ).toBe( `idle` )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `records a tap-to-start and tap-to-stop clip`, async () => {
+        const stream_deferred = make_deferred()
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        let performance_now = 0
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( performance, `now` ).mockImplementation( () => performance_now )
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( request_capture_stream ).mockReturnValue( stream_deferred.promise )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        act( () => {
+            controller.press_record()
+        } )
+
+        performance_now = 100
+        act( () => controller.release_record() )
+
+        await act( async () => {
+            stream_deferred.resolve( stream )
+            await stream_deferred.promise
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( recorder.stop ).not.toHaveBeenCalled()
+        expect( useAppStore.getState().recording_state ).toBe( `recording` )
+
+        performance_now = 300
+        act( () => controller.press_record() )
+
+        performance_now = 320
+        act( () => controller.release_record() )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `records a press-and-hold clip on release`, async () => {
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        let performance_now = 0
+        const date_values = [ 0, 1200 ]
+
+        vi.spyOn( performance, `now` ).mockImplementation( () => performance_now )
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1200 )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        performance_now = 350
+        act( () => controller.release_record() )
+
+        await waitFor( () => {
+            expect( recorder.stop ).toHaveBeenCalledTimes( 1 )
+        } )
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 } )

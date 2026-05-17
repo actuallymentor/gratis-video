@@ -66,12 +66,23 @@ describe( `sharing helpers`, () => {
         expect( navigator.share ).not.toHaveBeenCalled()
     } )
 
-    test( `allows sharing when canShare is unavailable but share exists`, () => {
+    test( `requires file sharing capability before using native share`, () => {
         vi.stubGlobal( `navigator`, {
             share: vi.fn()
         } )
 
-        expect( can_share_file( create_share_file( export_record, blob ) ) ).toBe( true )
+        expect( can_share_file( create_share_file( export_record, blob ) ) ).toBe( false )
+    } )
+
+    test( `treats failed file share capability checks as unsupported`, () => {
+        vi.stubGlobal( `navigator`, {
+            canShare: vi.fn( () => {
+                throw new TypeError( `Invalid share data` )
+            } ),
+            share: vi.fn()
+        } )
+
+        expect( can_share_file( create_share_file( export_record, blob ) ) ).toBe( false )
     } )
 
     test( `treats native share cancellation as a normal result`, async () => {

@@ -108,6 +108,14 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
     const export_progress = useAppStore( ( state ) => state.export_progress )
     const set_export_progress = useAppStore( ( state ) => state.set_export_progress )
 
+    const update_active_export_progress = useCallback( ( progress ) => {
+        set_export_progress( {
+            active: true,
+            percent: progress.percent ?? 0,
+            message: progress.message ?? `Exporting`
+        } )
+    }, [ set_export_progress ] )
+
     const cancel_export = useCallback( () => {
         abort_controller_ref.current?.abort()
         set_export_progress( {
@@ -160,7 +168,7 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
                     clips,
                     settings,
                     signal: abort_controller.signal,
-                    on_progress: set_export_progress
+                    on_progress: update_active_export_progress
                 } )
 
                 if( !is_current_export() || abort_controller.signal.aborted ) return
@@ -216,7 +224,7 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
             active_effect = false
             abort_controller.abort()
         }
-    }, [ clips, initial_export_record, project.id, set_export_progress, settings ] )
+    }, [ clips, initial_export_record, project.id, set_export_progress, settings, update_active_export_progress ] )
 
     const share_ready_export = async () => {
         if( !export_record ) return

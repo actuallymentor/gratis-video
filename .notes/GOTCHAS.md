@@ -11,3 +11,4 @@
 - If Playwright Chromium fails with missing shared libraries, run `npx playwright install-deps chromium`; this workspace has needed those system packages before browser walkthroughs can run.
 - Export compilation is intentionally gated by an in-memory user-action flag. Do not let `?panel=export` or restored URL state start compilation by itself.
 - When changing recording startup, keep the `getUserMedia()` stream cleanup path covered for failures that happen after stream acquisition but before `MediaRecorder.start()`.
+- `useRecordingController` cleanup depends on callback identity. Tests and callers should pass stable callbacks while recording, or rerenders can exercise the route-change cleanup path.

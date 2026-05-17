@@ -19,8 +19,13 @@ export function create_share_file( export_record, blob ) {
  */
 export function can_share_file( file ) {
     if( !globalThis.navigator?.share ) return false
-    if( !navigator.canShare ) return true
-    return navigator.canShare( { files: [ file ] } )
+    if( !navigator.canShare ) return false
+
+    try {
+        return navigator.canShare( { files: [ file ] } )
+    } catch {
+        return false
+    }
 }
 
 /**

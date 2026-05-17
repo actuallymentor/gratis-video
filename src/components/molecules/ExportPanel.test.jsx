@@ -163,6 +163,32 @@ describe( `export panel`, () => {
         expect( save_export_record ).not.toHaveBeenCalled()
     } )
 
+    test( `keeps shared export progress state complete during compilation`, async () => {
+        vi.mocked( compile_project_export ).mockImplementation( async ( { on_progress } ) => {
+            on_progress( {
+                percent: 42,
+                message: `Exporting clip 1 of 1`
+            } )
+
+            expect( useAppStore.getState().export_progress ).toEqual( {
+                active: true,
+                percent: 42,
+                message: `Exporting clip 1 of 1`
+            } )
+
+            return compiled_export
+        } )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Export is ready/ ) ).toBeTruthy()
+    } )
+
     test( `does not save an obsolete export after the panel unmounts`, async () => {
         const deferred_export = make_deferred()
 
