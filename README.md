@@ -26,4 +26,5 @@ npm test
 - No backend, account, sync, analytics, or upload path is included.
 - Recording supports tap-to-start/tap-to-stop and press-and-hold.
 - Export compiles clips on demand in queue order, then offers native sharing when available or a download fallback.
+- Project rows show when a cached export is ready.
 - The PWA service worker caches the app shell for offline startup after first load.

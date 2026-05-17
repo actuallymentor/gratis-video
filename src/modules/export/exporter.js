@@ -14,6 +14,12 @@ const resolution_limits = {
     '1080p': { width: 1920, height: 1080 }
 }
 
+export const export_resolution_options = [
+    { value: `source`, label: `Source` },
+    { value: `720p`, label: `720p` },
+    { value: `1080p`, label: `1080p` }
+]
+
 const wait_for_event = ( target, event_name ) => new Promise( ( resolve, reject ) => {
     target.addEventListener( event_name, resolve, { once: true } )
     target.addEventListener( `error`, () => reject( new Error( `Media playback failed.` ) ), { once: true } )
@@ -92,6 +98,19 @@ const connect_video_audio = ( audio_graph, video ) => {
     }
 }
 
+const start_video_playback = async ( video ) => {
+    try {
+        await video.play()
+    } catch ( error ) {
+        if( error.name !== `NotAllowedError` ) throw error
+
+        // Mobile autoplay rules can reject detached videos after React effects.
+        // Retrying muted preserves video export instead of failing the whole job.
+        video.muted = true
+        await video.play()
+    }
+}
+
 const cleanup_video = ( video, object_url ) => {
     video.pause()
     video.removeAttribute( `src` )
@@ -110,7 +129,7 @@ const play_clip_to_canvas = async ( {
     on_progress
 } ) => {
     const blob = await get_clip_blob( clip.id )
-    if( !blob ) return
+    if( !blob ) throw new Error( `Clip ${ clip_index + 1 } is missing from local storage. Export stopped to avoid creating an incomplete video.` )
 
     const object_url = URL.createObjectURL( blob )
     const video = document.createElement( `video` )
@@ -128,7 +147,7 @@ const play_clip_to_canvas = async ( {
             return total + ( next_clip.duration_ms || 0 )
         }, 0 )
 
-        await video.play()
+        await start_video_playback( video )
 
         while( !video.ended ) {
             if( signal.aborted ) throw new DOMException( `Export cancelled`, `AbortError` )
@@ -150,6 +169,42 @@ const play_clip_to_canvas = async ( {
     } finally {
         cleanup_video( video, object_url )
     }
+}
+
+const can_record_canvas_resolution = ( { width, height } ) => {
+    if( !globalThis.document?.createElement || !globalThis.MediaRecorder ) return false
+
+    const canvas = document.createElement( `canvas` )
+    if( !canvas.captureStream ) return false
+
+    canvas.width = width
+    canvas.height = height
+
+    let stream = null
+    let recorder = null
+
+    try {
+        stream = canvas.captureStream( FPS )
+        recorder = new MediaRecorder( stream )
+        return Boolean( recorder )
+    } catch {
+        return false
+    } finally {
+        stop_media_stream( stream )
+    }
+}
+
+/**
+ * Lists export resolution options this browser can prove through canvas capture.
+ * @returns {Array<Object>} Supported resolution options.
+ */
+export function get_supported_export_resolutions() {
+    const [ source_option, ...scaled_options ] = export_resolution_options
+    const supported_scaled_options = scaled_options.filter( ( { value } ) => {
+        return can_record_canvas_resolution( resolution_limits[ value ] )
+    } )
+
+    return [ source_option, ...supported_scaled_options ]
 }
 
 /**

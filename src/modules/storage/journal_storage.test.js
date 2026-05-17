@@ -8,12 +8,21 @@ import {
     delete_clip,
     delete_export,
     delete_project,
+    estimate_storage,
+    get_active_project,
     get_clip_blob,
     get_export_blob,
+    get_project,
     get_valid_cached_export,
     get_project_clips,
     list_projects,
-    save_export_record
+    load_settings,
+    persisted_storage,
+    rename_project,
+    request_persistent_storage,
+    save_export_record,
+    save_settings,
+    set_active_project
 } from './journal_storage.js'
 
 describe( `journal storage`, () => {
@@ -47,6 +56,40 @@ describe( `journal storage`, () => {
         expect( clips ).toHaveLength( 1 )
         expect( clips[ 0 ].blob ).toBeUndefined()
         expect( blob.type ).toBe( `video/webm` )
+    } )
+
+    test( `creates duplicate same-day project titles without a naming step`, async () => {
+        const first_project = await create_project()
+        const second_project = await create_project()
+
+        expect( second_project.title ).toBe( `${ first_project.title } - 2` )
+    } )
+
+    test( `marks active projects without changing project history order`, async () => {
+        const project = await create_project()
+        const original_project = await get_project( project.id )
+
+        await new Promise( ( resolve ) => setTimeout( resolve, 5 ) )
+        await set_active_project( project.id )
+
+        const active_project = await get_active_project()
+        const updated_project = await get_project( project.id )
+
+        expect( active_project.id ).toBe( project.id )
+        expect( updated_project.updated_at ).toBe( original_project.updated_at )
+        expect( new Date( updated_project.active_at ).getTime() ).toBeGreaterThanOrEqual(
+            new Date( original_project.active_at ).getTime()
+        )
+    } )
+
+    test( `renames projects with trimmed titles and keeps defaults for blank titles`, async () => {
+        const project = await create_project()
+
+        const renamed_project = await rename_project( project.id, `  Pocket Walk  ` )
+        const fallback_project = await rename_project( project.id, `   ` )
+
+        expect( renamed_project.title ).toBe( `Pocket Walk` )
+        expect( fallback_project.title ).toBe( `Pocket Walk` )
     } )
 
     test( `deleting a clip removes it from the queue and blob store`, async () => {
@@ -119,10 +162,41 @@ describe( `journal storage`, () => {
         expect( cached_export.id ).toBe( export_record.id )
         expect( stale_export ).toBe( null )
         expect( await export_blob.text() ).toBe( `export` )
+        expect( ( await list_projects() )[ 0 ].last_exported_at ).toBe( export_record.created_at )
+        expect( ( await list_projects() )[ 0 ].export_count ).toBe( 1 )
 
         await delete_export( export_record.id )
 
         expect( await get_export_blob( export_record.id ) ).toBe( null )
+    } )
+
+    test( `merges saved settings with new defaults`, async () => {
+        await save_settings( { export_quality: `high` } )
+
+        await expect( load_settings() ).resolves.toMatchObject( {
+            export_quality: `high`,
+            export_resolution: `source`,
+            haptics_enabled: true,
+            sounds_enabled: false
+        } )
+    } )
+
+    test( `wraps optional browser storage APIs`, async () => {
+        const estimate = vi.fn().mockResolvedValue( { usage: 128, quota: 1024 } )
+        const persisted = vi.fn().mockResolvedValue( true )
+        const persist = vi.fn().mockRejectedValue( new Error( `Denied` ) )
+
+        vi.stubGlobal( `navigator`, {
+            storage: {
+                estimate,
+                persisted,
+                persist
+            }
+        } )
+
+        await expect( estimate_storage() ).resolves.toEqual( { usage: 128, quota: 1024 } )
+        await expect( persisted_storage() ).resolves.toBe( true )
+        await expect( request_persistent_storage() ).resolves.toBe( false )
     } )
 
     test( `deleting a project removes its clips and cached exports`, async () => {

@@ -52,7 +52,23 @@ export function RecordButton( {
     disabled = false
 } ) {
     const recording = recording_state === `recording`
-    const saving = recording_state === `saving` || recording_state === `starting`
+    const starting = recording_state === `starting`
+    const saving = recording_state === `saving`
+
+    const press_button = ( event ) => {
+        if( event.pointerId !== undefined ) event.currentTarget.setPointerCapture?.( event.pointerId )
+        on_press()
+    }
+
+    const release_button = ( event ) => {
+        if( event.pointerId !== undefined ) event.currentTarget.releasePointerCapture?.( event.pointerId )
+        on_release()
+    }
+
+    const cancel_button = ( event ) => {
+        if( event.pointerId !== undefined ) event.currentTarget.releasePointerCapture?.( event.pointerId )
+        on_cancel()
+    }
 
     const use_keyboard = ( event ) => {
         if( event.key !== `Enter` && event.key !== ` ` ) return
@@ -67,14 +83,14 @@ export function RecordButton( {
         title={ recording ? `Stop recording` : `Record clip` }
         $recording={ recording }
         disabled={ disabled || saving }
-        onPointerDown={ on_press }
-        onPointerUp={ on_release }
-        onPointerCancel={ on_cancel }
+        onPointerDown={ press_button }
+        onPointerUp={ release_button }
+        onPointerCancel={ cancel_button }
         onKeyDown={ use_keyboard }
     >
         <Inner>
             { recording ? <Square size={ 24 } fill="currentColor" aria-hidden="true" /> : <Video size={ 25 } aria-hidden="true" /> }
-            <span>{ recording ? format_duration( elapsed_ms ) : saving ? `Saving` : `Rec` }</span>
+            <span>{ recording ? format_duration( elapsed_ms ) : starting ? `Starting` : saving ? `Saving` : `Rec` }</span>
         </Inner>
     </Button>
 }

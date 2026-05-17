@@ -107,8 +107,19 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
     const set_export_progress = useAppStore( ( state ) => state.set_export_progress )
 
     useEffect( () => {
+        if( initial_export_record ) {
+            set_export_progress( {
+                active: false,
+                percent: 100,
+                message: `Export ready`
+            } )
+            return undefined
+        }
+
         const abort_controller = new AbortController()
+        let active_effect = true
         abort_controller_ref.current = abort_controller
+        const is_current_export = () => active_effect && abort_controller_ref.current === abort_controller
 
         const run_export = async () => {
             set_export_progress( {
@@ -132,6 +143,8 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
                     ...compiled_export
                 } )
 
+                if( !is_current_export() ) return
+
                 set_export_record( saved_export )
                 set_status( `ready` )
                 set_export_progress( {
@@ -141,6 +154,8 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
                 } )
                 toast.success( `Export ready` )
             } catch ( error ) {
+                if( !is_current_export() ) return
+
                 if( error.name === `AbortError` ) {
                     set_status( `cancelled` )
                     set_error_message( `Export cancelled.` )
@@ -163,22 +178,30 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
             }
         }
 
-        if( initial_export_record ) {
-            set_export_progress( {
-                active: false,
-                percent: 100,
-                message: `Export ready`
-            } )
-            return undefined
-        }
-
         run_export()
 
-        return () => abort_controller.abort()
+        return () => {
+            active_effect = false
+            abort_controller.abort()
+        }
     }, [ clips, initial_export_record, project.id, set_export_progress, settings ] )
 
     const cancel_export = () => {
         abort_controller_ref.current?.abort()
+        set_export_progress( {
+            active: false,
+            percent: 0,
+            message: `Export cancelled`
+        } )
+        on_close()
+    }
+
+    const close_export_panel = () => {
+        if( status === `compiling` ) {
+            cancel_export()
+            return
+        }
+
         on_close()
     }
 
@@ -220,7 +243,7 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
         <Panel role="dialog" aria-modal="true" aria-labelledby="export-title">
             <Header>
                 <h2 id="export-title">Export video</h2>
-                <IconButton icon={ X } label="Close export panel" onClick={ cancel_export } />
+                <IconButton icon={ X } label="Close export panel" onClick={ close_export_panel } />
             </Header>
 
             { status === `compiling` ? <>

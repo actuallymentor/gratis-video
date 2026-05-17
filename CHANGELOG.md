@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0] - 2026-05-17
+
+### Added
+- show cached export status on project rows
+- filter export resolution settings by runtime browser support
+- add capture, export, sharing, and storage regression tests
+
+### Fixed
+- prevent exports from silently omitting missing clip files
+- keep record gesture release working during camera startup
+- avoid false export cancellation from React StrictMode effects
+- share valid cached exports from the original export tap
+- keep project activation separate from project update ordering
+- keep preview clip blobs out of React state
+
 ## [0.1.1] - 2026-05-17
 
 ### Fixed

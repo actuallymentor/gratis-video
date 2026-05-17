@@ -8,6 +8,7 @@ import { Content, HeaderBar, HeaderText, AppFrame, SectionTitle } from '../atoms
 import { IconButton } from '../atoms/IconButton.jsx'
 import { SegmentedControl } from '../atoms/SegmentedControl.jsx'
 import { Toggle } from '../atoms/Toggle.jsx'
+import { get_supported_export_resolutions } from '../../modules/export/exporter.js'
 import { get_supported_mime_types } from '../../modules/media/recorder.js'
 import {
     default_settings,
@@ -91,12 +92,6 @@ const quality_options = [
     { value: `high`, label: `High` }
 ]
 
-const resolution_options = [
-    { value: `source`, label: `Source` },
-    { value: `720p`, label: `720p` },
-    { value: `1080p`, label: `1080p` }
-]
-
 const format_bytes = ( bytes = 0 ) => {
     if( bytes < 1024 ) return `${ bytes } B`
     if( bytes < 1024 * 1024 ) return `${ Math.round( bytes / 1024 ) } KB`
@@ -111,6 +106,7 @@ const format_bytes = ( bytes = 0 ) => {
 export function SettingsPage() {
     const [ settings, set_settings ] = useState( null )
     const [ supported_mime_types, set_supported_mime_types ] = useState( [] )
+    const [ supported_resolution_options, set_supported_resolution_options ] = useState( [] )
     const [ storage_error, set_storage_error ] = useState( null )
     const navigate = useNavigate()
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
@@ -130,12 +126,14 @@ export function SettingsPage() {
 
                 set_settings( loaded_settings )
                 set_supported_mime_types( get_supported_mime_types() )
+                set_supported_resolution_options( get_supported_export_resolutions() )
                 set_storage_estimate( estimate )
                 set_storage_persisted( persisted )
                 set_storage_error( null )
             } catch {
                 set_storage_error( `Local browser storage is unavailable, so settings cannot be saved here.` )
                 set_settings( default_settings )
+                set_supported_resolution_options( get_supported_export_resolutions() )
             }
         }
 
@@ -184,9 +182,21 @@ export function SettingsPage() {
     const storage_usage = storage_estimate
         ? `${ format_bytes( storage_estimate.usage ?? 0 ) } used of ${ format_bytes( storage_estimate.quota ?? 0 ) }`
         : `Storage estimate unavailable`
+    const storage_ratio = storage_estimate?.quota
+        ? ( storage_estimate.usage ?? 0 ) / storage_estimate.quota
+        : 0
+    const storage_warning = storage_ratio >= 0.85
+        ? `Local browser storage is almost full. Export or delete old clips before recording more.`
+        : null
     const persistence_text = storage_persisted === null
         ? `Persistence status unavailable`
         : storage_persisted ? `Persistent storage granted` : `Persistent storage not granted`
+    const selected_mime_type = supported_mime_types.includes( settings.preferred_mime_type )
+        ? settings.preferred_mime_type
+        : ``
+    const selected_export_resolution = supported_resolution_options.some( ( { value } ) => value === settings.export_resolution )
+        ? settings.export_resolution
+        : default_settings.export_resolution
 
     return <AppFrame>
         <Content>
@@ -199,6 +209,7 @@ export function SettingsPage() {
             </HeaderBar>
 
             { storage_error ? <StorageAlert role="alert">{ storage_error }</StorageAlert> : null }
+            { storage_warning ? <StorageAlert role="status">{ storage_warning }</StorageAlert> : null }
 
             <SettingsList>
                 <SettingGroup>
@@ -207,7 +218,7 @@ export function SettingsPage() {
                         Format
                         <span>Only formats this browser reports as recordable are shown.</span>
                         <select
-                            value={ settings.preferred_mime_type ?? `` }
+                            value={ selected_mime_type }
                             onChange={ ( event ) => update_setting( {
                                 preferred_mime_type: event.target.value || null
                             } ) }
@@ -229,8 +240,8 @@ export function SettingsPage() {
                     <SectionTitle>Resolution</SectionTitle>
                     <SegmentedControl
                         label="Export resolution"
-                        options={ resolution_options }
-                        value={ settings.export_resolution }
+                        options={ supported_resolution_options }
+                        value={ selected_export_resolution }
                         on_change={ ( export_resolution ) => update_setting( { export_resolution } ) }
                     />
                 </SettingGroup>

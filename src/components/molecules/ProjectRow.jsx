@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import styled from 'styled-components'
-import { CalendarDays, CheckCircle2, Clock3, Film, Pencil, Trash2 } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Clock3, FileCheck2, Film, Pencil, Trash2 } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
 import { StatusPill } from '../atoms/StatusPill.jsx'
 import { format_date, format_duration } from '../../modules/media/time.js'
@@ -74,6 +74,7 @@ function ProjectMeta( { active, project } ) {
         <StatusPill icon={ CalendarDays }>{ format_date( project.created_at ) }</StatusPill>
         <StatusPill icon={ Film }>{ project.clip_count } clips</StatusPill>
         <StatusPill icon={ Clock3 }>{ format_duration( project.total_duration_ms ) }</StatusPill>
+        { project.last_exported_at ? <StatusPill icon={ FileCheck2 }>Export ready</StatusPill> : null }
     </Meta>
 }
 

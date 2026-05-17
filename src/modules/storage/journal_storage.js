@@ -74,6 +74,19 @@ const sort_projects = ( projects ) => [ ...projects ].sort( ( first, second ) =>
     return new Date( second.updated_at ).getTime() - new Date( first.updated_at ).getTime()
 } )
 
+const with_project_export_status = async ( project ) => {
+    const exports = await get_index_records( `exports`, `project_id`, project.id )
+    const [ latest_export = null ] = [ ...exports ].sort( ( first, second ) => {
+        return new Date( second.created_at ).getTime() - new Date( first.created_at ).getTime()
+    } )
+
+    return {
+        ...project,
+        export_count: exports.length,
+        last_exported_at: latest_export?.created_at ?? null
+    }
+}
+
 const sort_clips = ( clips ) => [ ...clips ]
     .filter( ( { deleted_at } ) => !deleted_at )
     .sort( ( first, second ) => first.order_index - second.order_index )
@@ -102,7 +115,9 @@ const make_filename = ( title, mime_type ) => {
  */
 export async function list_projects() {
     const projects = await get_all_records( `projects` )
-    return sort_projects( projects )
+    const projects_with_export_status = await Promise.all( projects.map( with_project_export_status ) )
+
+    return sort_projects( projects_with_export_status )
 }
 
 /**
@@ -149,8 +164,7 @@ export async function set_active_project( project_id ) {
 
     const updated_project = {
         ...project,
-        active_at: now_iso(),
-        updated_at: now_iso()
+        active_at: now_iso()
     }
 
     await put_record( `projects`, updated_project )

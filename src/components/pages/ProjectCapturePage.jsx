@@ -14,6 +14,7 @@ import { RecordButton } from '../molecules/RecordButton.jsx'
 import { useRecordingController } from '../../hooks/use_recording_controller.js'
 import { create_export_hashes } from '../../modules/export/cache.js'
 import { media_status_message } from '../../modules/permissions/permissions.js'
+import { share_export_file } from '../../modules/sharing/share.js'
 import {
     delete_clip,
     get_export_blob,
@@ -178,6 +179,18 @@ export function ProjectCapturePage() {
             set_cached_export_record( null )
             set_panel( `export` )
             return
+        }
+
+        try {
+            const share_result = await share_export_file( {
+                project,
+                export_record: cached_export,
+                blob
+            } )
+
+            if( share_result === `shared` || share_result === `cancelled` ) return
+        } catch {
+            toast( `Sharing failed. Download is available.` )
         }
 
         set_cached_export_record( cached_export )

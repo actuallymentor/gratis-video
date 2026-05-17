@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { Trash2, VideoOff, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
@@ -94,6 +94,12 @@ const Preview = styled.div`
     }
 `
 
+const PreviewMessage = styled.p`
+    margin: 0.75rem 0 0;
+    color: var(--color-muted);
+    line-height: 1.5;
+`
+
 function ClipThumbnail( { clip, on_preview } ) {
     const thumbnail_url = useObjectUrl( clip.thumbnail_blob )
 
@@ -109,19 +115,37 @@ function ClipThumbnail( { clip, on_preview } ) {
  */
 export function ClipQueue( { clips, on_delete } ) {
     const [ preview_clip, set_preview_clip ] = useState( null )
-    const [ preview_blob, set_preview_blob ] = useState( null )
-    const preview_url = useObjectUrl( preview_blob )
+    const [ preview_url, set_preview_url ] = useState( null )
+    const [ preview_error, set_preview_error ] = useState( null )
+    const preview_url_ref = useRef( null )
+
+    const replace_preview_url = useCallback( ( object_url ) => {
+        if( preview_url_ref.current ) URL.revokeObjectURL( preview_url_ref.current )
+
+        preview_url_ref.current = object_url
+        set_preview_url( object_url )
+    }, [] )
 
     const open_preview = async ( clip ) => {
         const blob = await get_clip_blob( clip.id )
+
         set_preview_clip( clip )
-        set_preview_blob( blob )
+
+        if( !blob ) {
+            replace_preview_url( null )
+            set_preview_error( `This clip file is missing from local browser storage.` )
+            return
+        }
+
+        replace_preview_url( URL.createObjectURL( blob ) )
+        set_preview_error( null )
     }
 
-    const close_preview = () => {
+    const close_preview = useCallback( () => {
         set_preview_clip( null )
-        set_preview_blob( null )
-    }
+        set_preview_error( null )
+        replace_preview_url( null )
+    }, [ replace_preview_url ] )
 
     useEffect( () => {
         const close_on_escape = ( event ) => {
@@ -129,8 +153,11 @@ export function ClipQueue( { clips, on_delete } ) {
         }
 
         window.addEventListener( `keydown`, close_on_escape )
-        return () => window.removeEventListener( `keydown`, close_on_escape )
-    }, [] )
+        return () => {
+            window.removeEventListener( `keydown`, close_on_escape )
+            if( preview_url_ref.current ) URL.revokeObjectURL( preview_url_ref.current )
+        }
+    }, [ close_preview ] )
 
     if( !clips.length ) {
         return <EmptyQueue>
@@ -157,6 +184,7 @@ export function ClipQueue( { clips, on_delete } ) {
         { preview_clip ? <Dialog role="dialog" aria-modal="true" aria-label="Clip preview" onClick={ close_preview }>
             <Preview onClick={ ( event ) => event.stopPropagation() }>
                 { preview_url ? <video src={ preview_url } controls playsInline autoPlay /> : null }
+                { preview_error ? <PreviewMessage>{ preview_error }</PreviewMessage> : null }
                 <IconButton icon={ X } label="Close preview" onClick={ close_preview } />
             </Preview>
         </Dialog> : null }
