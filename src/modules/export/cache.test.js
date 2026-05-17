@@ -1,0 +1,62 @@
+import { describe, expect, test } from 'vitest'
+import {
+    create_clip_manifest,
+    create_export_hashes,
+    stable_hash
+} from './cache.js'
+
+describe( `export cache helpers`, () => {
+    test( `stable_hash ignores object key order`, () => {
+        expect( stable_hash( { b: 2, a: 1 } ) ).toBe( stable_hash( { a: 1, b: 2 } ) )
+    } )
+
+    test( `clip manifest includes order-sensitive export inputs`, () => {
+        const clips = [
+            {
+                id: `clip-a`,
+                order_index: 1,
+                mime_type: `video/webm`,
+                duration_ms: 1000,
+                width: 1280,
+                height: 720,
+                created_at: `2026-05-17T10:00:00.000Z`,
+                thumbnail_blob: new Blob()
+            }
+        ]
+
+        expect( create_clip_manifest( clips ) ).toEqual( [
+            {
+                id: `clip-a`,
+                order_index: 1,
+                mime_type: `video/webm`,
+                duration_ms: 1000,
+                width: 1280,
+                height: 720,
+                created_at: `2026-05-17T10:00:00.000Z`
+            }
+        ] )
+    } )
+
+    test( `settings hash changes when export settings change`, () => {
+        const clips = []
+        const standard = create_export_hashes( {
+            clips,
+            settings: {
+                export_quality: `standard`,
+                export_resolution: `source`,
+                preferred_mime_type: null
+            }
+        } )
+        const high = create_export_hashes( {
+            clips,
+            settings: {
+                export_quality: `high`,
+                export_resolution: `source`,
+                preferred_mime_type: null
+            }
+        } )
+
+        expect( standard.settings_hash ).not.toBe( high.settings_hash )
+        expect( standard.clip_manifest_hash ).toBe( high.clip_manifest_hash )
+    } )
+} )

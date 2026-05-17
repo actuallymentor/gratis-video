@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Daily Video Journal">
+    <rect width="512" height="512" rx="112" fill="#f7faf9" />
+    <rect x="98" y="142" width="252" height="228" rx="48" fill="#123133" />
+    <path d="M350 216l72-48c18-12 42 1 42 23v130c0 22-24 35-42 23l-72-48z" fill="#7ec0d0" />
+    <circle cx="196" cy="256" r="48" fill="#f45d48" />
+    <path d="M118 390h276" stroke="#123133" stroke-width="28" stroke-linecap="round" />
+</svg>

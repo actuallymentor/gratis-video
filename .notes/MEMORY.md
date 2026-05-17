@@ -1,0 +1,9 @@
+# Memory Index
+
+Load this file at the start of every run. It is the index for persistent notes and should reference every file in `./.notes/`.
+
+| File path | Relevance | When to load |
+| --- | --- | --- |
+| `./.notes/MEMORY.md` | Index of the memory system. | At the start of every run. |
+| `./.notes/TIMELINE.md` | Timestamped record of notable work sessions and decisions. | When reconstructing recent work sequence. |
+| `./.notes/GOTCHAS.md` | Project-specific pitfalls and setup notes for future work. | Before changing dependencies, recording/export code, or service worker behavior. |
