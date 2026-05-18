@@ -207,6 +207,8 @@ export function ExportPanel( {
     useEffect( () => {
         const abort_controller = new AbortController()
         let active_effect = true
+        let finished_export_effect = false
+        let started_compile_work = false
         const is_current_export = () => active_effect && abort_controller_ref.current === abort_controller
         const {
             clips: export_clips,
@@ -215,6 +217,7 @@ export function ExportPanel( {
         } = export_input_ref.current
 
         const run_export = async () => {
+            started_compile_work = true
             abort_controller_ref.current = abort_controller
             export_blob_ref.current = null
             set_export_record( null )
@@ -304,6 +307,7 @@ export function ExportPanel( {
                         blob: compiled_export.blob
                     } )
                 }
+                finished_export_effect = true
                 set_export_progress( {
                     active: false,
                     percent: 100,
@@ -314,6 +318,7 @@ export function ExportPanel( {
                 if( !is_current_export() ) return
 
                 if( error.name === `AbortError` ) {
+                    finished_export_effect = true
                     set_status( `cancelled` )
                     set_error_message( `Export cancelled.` )
                     set_export_progress( {
@@ -324,6 +329,7 @@ export function ExportPanel( {
                     return
                 }
 
+                finished_export_effect = true
                 set_status( `error` )
                 set_error_message( error.message || `Export failed.` )
                 set_export_progress( {
@@ -373,6 +379,7 @@ export function ExportPanel( {
 
             export_blob_ref.current = blob
             set_status( `ready` )
+            finished_export_effect = true
             set_export_progress( {
                 active: false,
                 percent: 100,
@@ -385,7 +392,21 @@ export function ExportPanel( {
 
         return () => {
             active_effect = false
+            const should_report_cancel = started_compile_work
+                && !finished_export_effect
+                && abort_controller_ref.current === abort_controller
+
             abort_controller.abort()
+
+            queueMicrotask( () => {
+                if( !should_report_cancel || abort_controller_ref.current !== abort_controller ) return
+
+                set_export_progress( {
+                    active: false,
+                    percent: 0,
+                    message: `Export cancelled`
+                } )
+            } )
         }
     }, [
         initial_export_record,

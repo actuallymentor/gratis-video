@@ -53,3 +53,8 @@
 - Treat cached exports as reusable only when the blob is non-empty and video-typed. `save_export_record()` also re-checks current clip/settings hashes inside its IndexedDB transaction, so stale export fixtures need to seed legacy records directly instead of using the production save path.
 - Do not allow Share/Export while recording is starting, active, or saving. Export must wait until the clip queue reflects the final saved clip state.
 - Export MIME support probes can pass on a tiny canvas stream while `MediaRecorder.start()` fails on the real mixed export stream. Keep start-time MIME/default fallback covered.
+- Keep `save_settings()` serialized and transactional. Rapid Settings toggles can otherwise persist out of order even when the optimistic UI looks correct.
+- Project creation must choose the default date title inside the same IndexedDB write transaction that inserts the project. Precomputing from `list_projects()` can duplicate titles under rapid creates.
+- Project deletion must decide whether to clear the active-project pointer inside the delete transaction. A stale localStorage boot hint should be removed without clearing a newer IndexedDB active pointer.
+- After a clip is stored, keep recording state in `saving` until the capture page refresh callback finishes, but stop media tracks before waiting on IndexedDB/UI refresh work.
+- While export compilation is active, URL/history changes must not unmount the export panel. If an in-flight panel does unmount, clear global export progress so the UI does not stay stuck in an active export state.

@@ -9,6 +9,7 @@ import {
     generate_video_thumbnail,
     get_capture_error_message,
     get_video_metadata,
+    pulse_haptic,
     request_capture_stream,
     select_supported_mime_type
 } from './recorder.js'
@@ -70,6 +71,17 @@ describe( `recorder helpers`, () => {
     test( `classifies short presses as taps and longer presses as holds`, () => {
         expect( classify_recording_gesture( HOLD_THRESHOLD_MS - 1 ) ).toBe( `tap` )
         expect( classify_recording_gesture( HOLD_THRESHOLD_MS ) ).toBe( `hold` )
+    } )
+
+    test( `ignores unavailable haptic feedback failures`, () => {
+        vi.stubGlobal( `navigator`, {
+            vibrate: vi.fn( () => {
+                throw new Error( `Vibration blocked` )
+            } )
+        } )
+
+        expect( () => pulse_haptic( true ) ).not.toThrow()
+        expect( navigator.vibrate ).toHaveBeenCalledWith( 24 )
     } )
 
     test( `maps expected capture startup failures to user-facing messages`, () => {

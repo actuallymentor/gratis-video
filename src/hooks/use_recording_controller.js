@@ -219,7 +219,12 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             thumbnail_blob: null
         } )
 
-        on_clip_saved?.( clip )
+        try {
+            await on_clip_saved?.( clip )
+        } catch ( error ) {
+            log.warn( `Clip saved but project refresh failed`, error )
+        }
+
         refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
         enrich_saved_clip( { clip, blob, measured_duration_ms } ).catch( ( enrich_error ) => {
             log.warn( `Could not finish clip thumbnail or metadata update`, enrich_error )
@@ -256,6 +261,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 if( recorder.state !== `inactive` ) recorder.stop()
                 play_sound_feedback( settings.sounds_enabled, `stop` )
                 const result = await wait_for_recorder_stop( recorder )
+                clear_current_stream()
+
                 return await save_recorded_clip( {
                     ...result,
                     ended_at

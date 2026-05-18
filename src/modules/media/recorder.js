@@ -310,7 +310,13 @@ export async function generate_video_thumbnail( blob ) {
  * @returns {void}
  */
 export function pulse_haptic( enabled ) {
-    if( enabled && globalThis.navigator?.vibrate ) navigator.vibrate( 24 )
+    if( !enabled || !globalThis.navigator?.vibrate ) return
+
+    try {
+        navigator.vibrate( 24 )
+    } catch {
+        // Optional feedback should never decide whether recording succeeds.
+    }
 }
 
 /**

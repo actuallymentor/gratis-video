@@ -109,4 +109,19 @@ describe( `record button`, () => {
 
         expect( default_props.on_cancel ).toHaveBeenCalledTimes( 1 )
     } )
+
+    test( `still forwards pointer cancellation when pointer capture is already gone`, () => {
+        render( <RecordButton { ...default_props } recording_state="recording" /> )
+
+        const button = screen.getByRole( `button`, { name: `Stop recording` } )
+
+        button.releasePointerCapture = vi.fn( () => {
+            throw new Error( `Pointer capture already released` )
+        } )
+
+        fireEvent.pointerCancel( button, { pointerId: 1 } )
+
+        expect( button.releasePointerCapture ).toHaveBeenCalledWith( 1 )
+        expect( default_props.on_cancel ).toHaveBeenCalledTimes( 1 )
+    } )
 } )

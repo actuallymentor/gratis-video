@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.11] - 2026-05-18
+
+### Added
+- add settings, project, recording, and export race regressions
+
+### Fixed
+- persist rapid Settings changes in order
+- keep concurrent project titles and active pointers consistent
+- keep saved clips out of export until the queue refreshes
+- isolate optional haptics and pointer-cancel cleanup from recording
+- keep export progress coherent across history and unmounts
+
 ## [0.3.10] - 2026-05-18
 
 ### Added

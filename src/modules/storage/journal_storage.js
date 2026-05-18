@@ -21,6 +21,7 @@ const export_setting_keys = [
 ]
 
 let first_clip_persistence_requested = false
+let settings_save_queue = Promise.resolve()
 
 export const default_settings = {
     export_quality: `standard`,
@@ -69,9 +70,8 @@ const format_date_title = ( date ) => new Intl.DateTimeFormat(
     { month: `long`, day: `numeric`, year: `numeric` }
 ).format( date )
 
-const make_default_project_title = async ( date = new Date() ) => {
+const make_project_title = ( projects, date = new Date() ) => {
     const base_title = format_date_title( date )
-    const projects = await list_projects()
     const same_title_count = projects.filter( ( { title } ) => {
         return title === base_title || title.startsWith( `${ base_title } - ` )
     } ).length
@@ -288,6 +288,14 @@ const request_persistent_storage_soon = () => {
     } )
 }
 
+const enqueue_settings_save = ( save_settings_work ) => {
+    const next_save = settings_save_queue.catch( () => null ).then( save_settings_work )
+
+    settings_save_queue = next_save.catch( () => null )
+
+    return next_save
+}
+
 /**
  * Loads all projects sorted by most recent activity.
  * @returns {Promise<Array>} Project records.
@@ -385,19 +393,31 @@ export async function set_active_project( project_id ) {
  */
 export async function create_project() {
     const timestamp = now_iso()
-    const project = {
-        id: new_id(),
-        title: await make_default_project_title(),
-        created_at: timestamp,
-        updated_at: timestamp,
-        active_at: timestamp,
-        clip_count: 0,
-        total_duration_ms: 0,
-        export_settings: null
-    }
+    const created_date = new Date( timestamp )
 
-    await put_record( `projects`, project )
-    await save_active_project_pointer( project.id )
+    const project = await write_transaction_result( [ `projects`, `settings` ], ( stores, { complete, fail } ) => {
+        const projects_request = stores.projects.getAll()
+
+        projects_request.onerror = fail_request( fail, `Could not load projects before creating a project.` )
+        projects_request.onsuccess = () => {
+            const project = {
+                id: new_id(),
+                title: make_project_title( projects_request.result, created_date ),
+                created_at: timestamp,
+                updated_at: timestamp,
+                active_at: timestamp,
+                clip_count: 0,
+                total_duration_ms: 0,
+                export_settings: null
+            }
+
+            stores.projects.put( project )
+            write_active_project_pointer( stores.settings, project.id, timestamp )
+            complete( project )
+        }
+    } )
+
+    safe_local_storage.set( ACTIVE_PROJECT_KEY, project.id )
     request_persistent_storage_soon()
 
     return project
@@ -463,19 +483,29 @@ export async function rename_project( project_id, title ) {
  * @returns {Promise<void>}
  */
 export async function delete_project( project_id ) {
-    const active_pointer = await load_active_project_pointer()
-    const store_names = [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails`, `exports`, `export_blobs` ]
+    const store_names = [
+        `projects`,
+        `clips`,
+        `clip_blobs`,
+        `clip_thumbnails`,
+        `exports`,
+        `export_blobs`,
+        `settings`
+    ]
 
-    await write_transaction_result( store_names, ( stores, { complete, fail } ) => {
+    const delete_result = await write_transaction_result( store_names, ( stores, { complete, fail } ) => {
         const clips_request = stores.clips.index( `project_id` ).getAll( project_id )
         const exports_request = stores.exports.index( `project_id` ).getAll( project_id )
+        const active_request = stores.settings.get( ACTIVE_PROJECT_STATE_KEY )
         let clips = []
         let exports = []
+        let active_project_id = safe_local_storage.get( ACTIVE_PROJECT_KEY )
         let clips_loaded = false
         let exports_loaded = false
+        let active_loaded = false
 
         const delete_when_ready = () => {
-            if( !clips_loaded || !exports_loaded ) return
+            if( !clips_loaded || !exports_loaded || !active_loaded ) return
 
             stores.projects.delete( project_id )
             clips.forEach( ( { id } ) => {
@@ -487,11 +517,17 @@ export async function delete_project( project_id ) {
                 stores.exports.delete( id )
                 stores.export_blobs.delete( id )
             } )
-            complete()
+
+            const cleared_active = active_project_id === project_id
+
+            if( cleared_active ) write_active_project_pointer( stores.settings, null )
+
+            complete( { cleared_active } )
         }
 
         clips_request.onerror = fail_request( fail, `Could not load project clips before deletion.` )
         exports_request.onerror = fail_request( fail, `Could not load project exports before deletion.` )
+        active_request.onerror = fail_request( fail, `Could not load active project before deletion.` )
         clips_request.onsuccess = () => {
             clips = clips_request.result
             clips_loaded = true
@@ -502,13 +538,20 @@ export async function delete_project( project_id ) {
             exports_loaded = true
             delete_when_ready()
         }
+        active_request.onsuccess = () => {
+            const active_state = active_request.result
+
+            if( active_state && Object.hasOwn( active_state, `project_id` ) ) {
+                active_project_id = active_state.project_id
+            }
+
+            active_loaded = true
+            delete_when_ready()
+        }
     } )
 
-    if(
-        active_pointer.project_id === project_id
-        || safe_local_storage.get( ACTIVE_PROJECT_KEY ) === project_id
-    ) {
-        await save_active_project_pointer( null )
+    if( delete_result?.cleared_active || safe_local_storage.get( ACTIVE_PROJECT_KEY ) === project_id ) {
+        safe_local_storage.remove( ACTIVE_PROJECT_KEY )
     }
 }
 
@@ -911,28 +954,44 @@ export async function load_settings() {
  * @returns {Promise<Object>} Saved settings.
  */
 export async function save_settings( settings ) {
-    const existing_settings = await get_record( `settings`, SETTINGS_KEY )
-    const previous_settings = {
-        ...default_settings,
-        ...existing_settings
-    }
-    const saved_settings = {
-        ...default_settings,
-        ...existing_settings,
-        ...settings,
-        key: SETTINGS_KEY
-    }
+    return enqueue_settings_save( async () => {
+        const {
+            previous_settings,
+            settings_without_key
+        } = await write_transaction_result( [ `settings` ], ( stores, { complete, fail } ) => {
+            const settings_request = stores.settings.get( SETTINGS_KEY )
 
-    await put_record( `settings`, saved_settings )
+            settings_request.onerror = fail_request( fail, `Could not load settings before saving.` )
+            settings_request.onsuccess = () => {
+                const existing_settings = settings_request.result ?? null
+                const previous_settings = {
+                    ...default_settings,
+                    ...existing_settings
+                }
+                const saved_settings = {
+                    ...default_settings,
+                    ...existing_settings,
+                    ...settings,
+                    key: SETTINGS_KEY
+                }
+                const settings_without_key = { ...saved_settings }
 
-    const settings_without_key = { ...saved_settings }
-    delete settings_without_key.key
+                delete settings_without_key.key
 
-    if( export_settings_changed( previous_settings, settings_without_key ) ) {
-        await prune_stale_exports_for_all_projects()
-    }
+                stores.settings.put( saved_settings )
+                complete( {
+                    previous_settings,
+                    settings_without_key
+                } )
+            }
+        } )
 
-    return settings_without_key
+        if( export_settings_changed( previous_settings, settings_without_key ) ) {
+            await prune_stale_exports_for_all_projects()
+        }
+
+        return settings_without_key
+    } )
 }
 
 /**
@@ -1066,9 +1125,11 @@ export async function get_export_blob( export_id ) {
  * @returns {Promise<void>}
  */
 export async function delete_all_data() {
+    await settings_save_queue.catch( () => null )
     await clear_all_records()
     safe_local_storage.remove( ACTIVE_PROJECT_KEY )
     first_clip_persistence_requested = false
+    settings_save_queue = Promise.resolve()
 }
 
 /**

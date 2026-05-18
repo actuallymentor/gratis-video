@@ -55,6 +55,26 @@ const recording_state_labels = {
     saving: `Saving recording`
 }
 
+const capture_pointer = ( event ) => {
+    if( event.pointerId === undefined ) return
+
+    try {
+        event.currentTarget.setPointerCapture?.( event.pointerId )
+    } catch {
+        // Pointer capture is a convenience; the record action still needs to run.
+    }
+}
+
+const release_pointer = ( event ) => {
+    if( event.pointerId === undefined ) return
+
+    try {
+        event.currentTarget.releasePointerCapture?.( event.pointerId )
+    } catch {
+        // Browsers may release capture before pointercancel reaches this handler.
+    }
+}
+
 /**
  * Renders the dominant capture control with pointer and keyboard support.
  * @param {Object} props - Record button props.
@@ -85,19 +105,19 @@ export function RecordButton( {
 
     const press_button = ( event ) => {
         mark_direct_activation()
-        if( event.pointerId !== undefined ) event.currentTarget.setPointerCapture?.( event.pointerId )
+        capture_pointer( event )
         on_press()
     }
 
     const release_button = ( event ) => {
         mark_direct_activation()
-        if( event.pointerId !== undefined ) event.currentTarget.releasePointerCapture?.( event.pointerId )
+        release_pointer( event )
         on_release()
     }
 
     const cancel_button = ( event ) => {
         mark_direct_activation()
-        if( event.pointerId !== undefined ) event.currentTarget.releasePointerCapture?.( event.pointerId )
+        release_pointer( event )
         on_cancel()
     }
 

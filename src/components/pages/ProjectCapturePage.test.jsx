@@ -12,6 +12,7 @@ import {
 } from 'react-router'
 import { ProjectCapturePage } from './ProjectCapturePage.jsx'
 import {
+    default_export_progress,
     default_permission_status,
     useAppStore
 } from '../../stores/app_store.js'
@@ -203,6 +204,7 @@ describe( `project capture page`, () => {
         useAppStore.setState( {
             active_project_id: null,
             permission_status: default_permission_status,
+            export_progress: default_export_progress,
             storage_estimate: null
         } )
     } )
@@ -214,6 +216,7 @@ describe( `project capture page`, () => {
         useAppStore.setState( {
             active_project_id: undefined,
             permission_status: default_permission_status,
+            export_progress: default_export_progress,
             storage_estimate: null
         } )
     } )
@@ -275,6 +278,30 @@ describe( `project capture page`, () => {
 
         await waitFor( () => {
             expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+        } )
+    } )
+
+    test( `keeps the export panel mounted when history changes during compilation`, async () => {
+        const user = userEvent.setup()
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /Export panel open/ ) ).toBeTruthy()
+
+        act( () => {
+            useAppStore.getState().set_export_progress( {
+                active: true,
+                percent: 42,
+                message: `Exporting clip 1 of 1`
+            } )
+        } )
+        act( () => query_state.set_panel( undefined ) )
+
+        await waitFor( () => {
+            expect( screen.getByText( /Export panel open/ ) ).toBeTruthy()
         } )
     } )
 

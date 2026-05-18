@@ -139,6 +139,17 @@ describe( `journal storage`, () => {
         expect( second_project.title ).toBe( `${ first_project.title } - 2` )
     } )
 
+    test( `creates unique default titles during concurrent project creation`, async () => {
+        const projects = await Promise.all( [
+            create_project(),
+            create_project()
+        ] )
+        const titles = projects.map( ( { title } ) => title )
+
+        expect( new Set( titles ).size ).toBe( 2 )
+        expect( titles.some( ( title ) => title.endsWith( ` - 2` ) ) ).toBe( true )
+    } )
+
     test( `lists projects by most recently updated first`, async () => {
         const first_project = await create_project()
 
@@ -192,6 +203,26 @@ describe( `journal storage`, () => {
         await delete_project( active_project.id )
 
         expect( await get_active_project() ).toBe( null )
+    } )
+
+    test( `deleting a stale boot hint does not clear the newer active project`, async () => {
+        const local_values = new Map()
+        const first_project = await create_project()
+        const second_project = await create_project()
+
+        vi.stubGlobal( `localStorage`, {
+            getItem: vi.fn( ( key ) => local_values.get( key ) ?? null ),
+            setItem: vi.fn( ( key, value ) => local_values.set( key, value ) ),
+            removeItem: vi.fn( ( key ) => local_values.delete( key ) )
+        } )
+
+        await set_active_project( second_project.id )
+        localStorage.setItem( `daily_video_journal_active_project_id`, first_project.id )
+
+        await delete_project( first_project.id )
+
+        expect( ( await get_active_project() ).id ).toBe( second_project.id )
+        expect( localStorage.getItem( `daily_video_journal_active_project_id` ) ).toBe( null )
     } )
 
     test( `renames projects with trimmed titles and keeps defaults for blank titles`, async () => {
@@ -758,6 +789,24 @@ describe( `journal storage`, () => {
             export_resolution: `source`,
             haptics_enabled: true,
             sounds_enabled: false
+        } )
+    } )
+
+    test( `persists rapid overlapping settings saves in call order`, async () => {
+        await Promise.all( [
+            save_settings( {
+                haptics_enabled: false,
+                sounds_enabled: false
+            } ),
+            save_settings( {
+                haptics_enabled: false,
+                sounds_enabled: true
+            } )
+        ] )
+
+        await expect( load_settings() ).resolves.toMatchObject( {
+            haptics_enabled: false,
+            sounds_enabled: true
         } )
     } )
 

@@ -582,4 +582,33 @@ describe( `export panel`, () => {
 
         expect( save_export_record ).not.toHaveBeenCalled()
     } )
+
+    test( `clears active progress when an in-flight export unmounts`, async () => {
+        vi.mocked( compile_project_export ).mockImplementation( ( { signal } ) => {
+            return new Promise( ( resolve, reject ) => {
+                signal.addEventListener( `abort`, () => {
+                    reject( new DOMException( `Cancelled`, `AbortError` ) )
+                } )
+            } )
+        } )
+
+        const { unmount } = render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByRole( `progressbar`, { name: `Export progress` } ) ).toBeTruthy()
+
+        unmount()
+
+        await waitFor( () => {
+            expect( useAppStore.getState().export_progress ).toEqual( {
+                active: false,
+                percent: 0,
+                message: `Export cancelled`
+            } )
+        } )
+    } )
 } )

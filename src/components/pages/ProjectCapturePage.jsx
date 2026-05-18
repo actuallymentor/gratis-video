@@ -136,6 +136,7 @@ export function ProjectCapturePage() {
     const project_id_ref = useRef( project_id )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
+    const export_progress_active = useAppStore( ( state ) => state.export_progress.active )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
 
     project_id_ref.current = project_id
@@ -245,14 +246,25 @@ export function ProjectCapturePage() {
     }, [ recording.stream ] )
 
     useEffect( () => {
-        if( panel === `export` && !export_requested ) set_panel( undefined )
-    }, [ export_requested, panel, set_panel ] )
+        if( panel === `export` && !export_requested && !export_progress_active ) set_panel( undefined )
+    }, [ export_progress_active, export_requested, panel, set_panel ] )
 
     useEffect( () => {
-        if( panel === `export` ) return
+        if( panel === `export` || export_progress_active ) return
 
         set_export_requested( false )
-    }, [ panel ] )
+    }, [ export_progress_active, panel ] )
+
+    useEffect( () => {
+        if( !export_requested || !export_progress_active || panel === `export` ) return
+
+        set_panel( `export`, `replaceIn` )
+    }, [
+        export_progress_active,
+        export_requested,
+        panel,
+        set_panel
+    ] )
 
     useEffect( () => {
         let cancelled = false
@@ -332,6 +344,7 @@ export function ProjectCapturePage() {
 
     const recording_busy = recording.recording_state !== `idle`
     const export_disabled = queue_mutation_pending || recording_busy
+    const export_flow_open = export_requested && ( panel === `export` || export_progress_active )
 
     const share_or_export = async () => {
         if( recording_busy ) {
@@ -560,7 +573,7 @@ export function ProjectCapturePage() {
             />
         </BottomNotice> : null }
 
-        { panel === `export` && export_requested ? <ExportPanel
+        { export_flow_open ? <ExportPanel
             project={ project }
             clips={ clips }
             settings={ settings }
