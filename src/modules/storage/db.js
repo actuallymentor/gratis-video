@@ -208,3 +208,73 @@ export async function write_transaction( store_names, write_records ) {
     write_records( stores )
     await transaction_done( transaction )
 }
+
+/**
+ * Runs a readwrite transaction that can return a value after queued request callbacks finish.
+ * @param {Array<string>} store_names - Stores to include.
+ * @param {Function} write_records - Synchronous writer callback.
+ * @returns {Promise<*>} Transaction result set by the writer callback.
+ */
+export async function write_transaction_result( store_names, write_records ) {
+    const database = await open_journal_db()
+
+    return new Promise( ( resolve, reject ) => {
+        const transaction = database.transaction( store_names, `readwrite` )
+        const stores = Object.fromEntries(
+            store_names.map( ( store_name ) => [ store_name, transaction.objectStore( store_name ) ] )
+        )
+        let result = null
+        let rejection_error = null
+        let settled = false
+
+        const settle_with_error = ( error ) => {
+            if( settled ) return
+
+            settled = true
+            reject( error )
+        }
+
+        const fail = ( error ) => {
+            rejection_error = error ?? new Error( `IndexedDB transaction failed.` )
+
+            try {
+                transaction.abort()
+            } catch ( abort_error ) {
+                settle_with_error( rejection_error || abort_error )
+            }
+        }
+
+        transaction.oncomplete = () => {
+            if( settled ) return
+
+            settled = true
+            resolve( result )
+        }
+        transaction.onerror = () => {
+            settle_with_error(
+                rejection_error
+                || transaction.error
+                || new Error( `IndexedDB transaction failed.` )
+            )
+        }
+        transaction.onabort = () => {
+            settle_with_error(
+                rejection_error
+                || transaction.error
+                || new Error( `IndexedDB transaction aborted.` )
+            )
+        }
+
+        try {
+            write_records( stores, {
+                complete: ( value ) => {
+                    result = value
+                },
+                fail,
+                transaction
+            } )
+        } catch ( error ) {
+            fail( error )
+        }
+    } )
+}

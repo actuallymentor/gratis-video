@@ -8,7 +8,8 @@ import {
     get_record,
     has_record,
     put_record,
-    write_transaction
+    write_transaction,
+    write_transaction_result
 } from './db.js'
 
 const ACTIVE_PROJECT_KEY = `daily_video_journal_active_project_id`
@@ -186,6 +187,12 @@ const next_clip_order_index = ( clips ) => {
     }, -1 )
 
     return highest_order_index + 1
+}
+
+const project_not_found_error = () => new Error( `Project not found.` )
+
+const fail_request = ( fail, message ) => ( event ) => {
+    fail( event.target.error ?? new Error( message ) )
 }
 
 const load_active_project_pointer = async () => {
@@ -395,22 +402,45 @@ export async function rename_project( project_id, title ) {
  * @returns {Promise<void>}
  */
 export async function delete_project( project_id ) {
-    const clips = await get_index_records( `clips`, `project_id`, project_id )
-    const exports = await get_index_records( `exports`, `project_id`, project_id )
     const active_pointer = await load_active_project_pointer()
     const store_names = [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails`, `exports`, `export_blobs` ]
 
-    await write_transaction( store_names, ( stores ) => {
-        stores.projects.delete( project_id )
-        clips.forEach( ( { id } ) => {
-            stores.clips.delete( id )
-            stores.clip_blobs.delete( id )
-            stores.clip_thumbnails.delete( id )
-        } )
-        exports.forEach( ( { id } ) => {
-            stores.exports.delete( id )
-            stores.export_blobs.delete( id )
-        } )
+    await write_transaction_result( store_names, ( stores, { complete, fail } ) => {
+        const clips_request = stores.clips.index( `project_id` ).getAll( project_id )
+        const exports_request = stores.exports.index( `project_id` ).getAll( project_id )
+        let clips = []
+        let exports = []
+        let clips_loaded = false
+        let exports_loaded = false
+
+        const delete_when_ready = () => {
+            if( !clips_loaded || !exports_loaded ) return
+
+            stores.projects.delete( project_id )
+            clips.forEach( ( { id } ) => {
+                stores.clips.delete( id )
+                stores.clip_blobs.delete( id )
+                stores.clip_thumbnails.delete( id )
+            } )
+            exports.forEach( ( { id } ) => {
+                stores.exports.delete( id )
+                stores.export_blobs.delete( id )
+            } )
+            complete()
+        }
+
+        clips_request.onerror = fail_request( fail, `Could not load project clips before deletion.` )
+        exports_request.onerror = fail_request( fail, `Could not load project exports before deletion.` )
+        clips_request.onsuccess = () => {
+            clips = clips_request.result
+            clips_loaded = true
+            delete_when_ready()
+        }
+        exports_request.onsuccess = () => {
+            exports = exports_request.result
+            exports_loaded = true
+            delete_when_ready()
+        }
     } )
 
     if(
@@ -442,34 +472,66 @@ export async function add_clip_to_project( {
     height = null,
     thumbnail_blob = null
 } ) {
-    const project = await get_project( project_id )
-    const existing_clips = await get_index_records( `clips`, `project_id`, project_id )
-    const timestamp = now_iso()
-    const clip = {
-        id: new_id(),
-        project_id,
-        order_index: next_clip_order_index( existing_clips ),
-        version: 1,
-        mime_type,
-        duration_ms,
-        width,
-        height,
-        created_at: timestamp,
-        updated_at: timestamp,
-        deleted_at: null
-    }
-    const updated_project = {
-        ...project,
-        clip_count: project.clip_count + 1,
-        total_duration_ms: project.total_duration_ms + duration_ms,
-        updated_at: timestamp
-    }
+    const clip = await write_transaction_result( [
+        `projects`,
+        `clips`,
+        `clip_blobs`,
+        `clip_thumbnails`
+    ], ( stores, { complete, fail } ) => {
+        const project_request = stores.projects.get( project_id )
+        const clips_request = stores.clips.index( `project_id` ).getAll( project_id )
+        let project = null
+        let existing_clips = []
+        let project_loaded = false
+        let clips_loaded = false
 
-    await write_transaction( [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails` ], ( stores ) => {
-        stores.clips.put( clip )
-        stores.clip_blobs.put( { id: clip.id, project_id, blob } )
-        if( thumbnail_blob ) stores.clip_thumbnails.put( { id: clip.id, project_id, blob: thumbnail_blob } )
-        stores.projects.put( updated_project )
+        const save_when_ready = () => {
+            if( !project_loaded || !clips_loaded ) return
+            if( !project ) {
+                fail( project_not_found_error() )
+                return
+            }
+
+            const timestamp = now_iso()
+            const clip = {
+                id: new_id(),
+                project_id,
+                order_index: next_clip_order_index( existing_clips ),
+                version: 1,
+                mime_type,
+                duration_ms,
+                width,
+                height,
+                created_at: timestamp,
+                updated_at: timestamp,
+                deleted_at: null
+            }
+            const updated_project = {
+                ...project,
+                clip_count: project.clip_count + 1,
+                total_duration_ms: project.total_duration_ms + duration_ms,
+                updated_at: timestamp
+            }
+
+            stores.clips.put( clip )
+            stores.clip_blobs.put( { id: clip.id, project_id, blob } )
+            if( thumbnail_blob ) stores.clip_thumbnails.put( { id: clip.id, project_id, blob: thumbnail_blob } )
+            stores.projects.put( updated_project )
+            complete( clip )
+        }
+
+        project_request.onerror = fail_request( fail, `Could not load project before saving clip.` )
+        clips_request.onerror = fail_request( fail, `Could not load project clips before saving clip.` )
+        project_request.onsuccess = () => {
+            project = project_request.result ?? null
+            project_loaded = true
+            save_when_ready()
+        }
+        clips_request.onsuccess = () => {
+            existing_clips = clips_request.result
+            clips_loaded = true
+            save_when_ready()
+        }
     } )
 
     if( !first_clip_persistence_requested ) {
@@ -713,24 +775,33 @@ export async function save_export_record( {
     clip_manifest_hash,
     duration_ms
 } ) {
-    const project = await get_project( project_id )
-    const export_record = {
-        id: new_id(),
-        project_id,
-        mime_type,
-        filename: make_export_filename( project.title, mime_type ),
-        settings_hash,
-        clip_manifest_hash,
-        duration_ms,
-        created_at: now_iso()
-    }
+    return write_transaction_result( [ `projects`, `exports`, `export_blobs` ], ( stores, { complete, fail } ) => {
+        const project_request = stores.projects.get( project_id )
 
-    await write_transaction( [ `exports`, `export_blobs` ], ( stores ) => {
-        stores.exports.put( export_record )
-        stores.export_blobs.put( { id: export_record.id, project_id, blob } )
+        project_request.onerror = fail_request( fail, `Could not load project before saving export.` )
+        project_request.onsuccess = () => {
+            const project = project_request.result
+            if( !project ) {
+                fail( project_not_found_error() )
+                return
+            }
+
+            const export_record = {
+                id: new_id(),
+                project_id,
+                mime_type,
+                filename: make_export_filename( project.title, mime_type ),
+                settings_hash,
+                clip_manifest_hash,
+                duration_ms,
+                created_at: now_iso()
+            }
+
+            stores.exports.put( export_record )
+            stores.export_blobs.put( { id: export_record.id, project_id, blob } )
+            complete( export_record )
+        }
     } )
-
-    return export_record
 }
 
 /**

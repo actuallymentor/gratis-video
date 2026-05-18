@@ -19,6 +19,7 @@ export {
 const FPS = 30
 const MEDIA_EVENT_TIMEOUT_MS = 8_000
 const PLAYBACK_STALL_TIMEOUT_MS = 8_000
+const EXPORT_RECORDER_STOP_TIMEOUT_MS = 5_000
 
 const make_abort_error = () => new DOMException( `Export cancelled`, `AbortError` )
 
@@ -96,13 +97,67 @@ const wait_for_abortable = ( promise, signal ) => new Promise( ( resolve, reject
     Promise.resolve( promise ).then( resolve, reject ).finally( cleanup )
 } )
 
-const wait_for_recorder_stop = ( recorder, chunks ) => new Promise( ( resolve, reject ) => {
+const wait_for_recorder_stop = ( recorder, chunks, signal ) => {
+    let settled = false
+    let timeout_id = null
+    let arm_stop_timeout = null
+    let finish = null
+    let fail = null
+    const abort = () => fail( make_abort_error() )
+
+    const cleanup = () => {
+        clearTimeout( timeout_id )
+        recorder.ondataavailable = null
+        recorder.onerror = null
+        recorder.onstop = null
+        signal?.removeEventListener( `abort`, abort )
+    }
+
+    const stopped = new Promise( ( resolve, reject ) => {
+        finish = ( result = { timed_out: false } ) => {
+            if( settled ) return
+
+            settled = true
+            cleanup()
+            resolve( result )
+        }
+
+        fail = ( error ) => {
+            if( settled ) return
+
+            settled = true
+            cleanup()
+            reject( error )
+        }
+    } )
+
+    arm_stop_timeout = () => {
+        if( settled || timeout_id ) return
+
+        timeout_id = setTimeout( () => {
+            if( chunks.length ) {
+                finish( { timed_out: true } )
+                return
+            }
+
+            fail( new Error( `Export recorder stopped before this browser produced video data.` ) )
+        }, EXPORT_RECORDER_STOP_TIMEOUT_MS )
+    }
+
     recorder.ondataavailable = ( event ) => {
         if( event.data?.size > 0 ) chunks.push( event.data )
     }
-    recorder.onerror = () => reject( recorder.error ?? new Error( `Export recorder failed.` ) )
-    recorder.onstop = () => resolve()
-} )
+    recorder.onerror = () => fail( recorder.error ?? new Error( `Export recorder failed.` ) )
+    recorder.onstop = () => finish()
+
+    if( signal?.aborted ) abort()
+    else signal?.addEventListener( `abort`, abort, { once: true } )
+
+    return {
+        arm_stop_timeout,
+        stopped
+    }
+}
 
 const next_animation_frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) )
 
@@ -357,7 +412,11 @@ export async function compile_project_export( { clips, settings, signal, on_prog
 
     try {
         recorder = create_export_recorder( { stream: mixed_stream, mime_type, settings } )
-        const stopped = wait_for_recorder_stop( recorder, chunks )
+        const {
+            arm_stop_timeout,
+            stopped
+        } = wait_for_recorder_stop( recorder, chunks, signal )
+        stopped.catch( () => null )
 
         throw_if_aborted( signal )
 
@@ -386,8 +445,13 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         }
 
         recorder.stop()
-        await stopped
+        arm_stop_timeout()
+        const stop_result = await stopped
         on_progress?.( { percent: 100, message: `Export ready` } )
+
+        if( stop_result.timed_out ) {
+            audio_warnings.push( `This browser did not confirm export finalization. Check the exported video before deleting clips.` )
+        }
 
         const output_type = recorder.mimeType || mime_type || chunks.at( 0 )?.type || `video/webm`
         const blob = new Blob( chunks, { type: output_type } )

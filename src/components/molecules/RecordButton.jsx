@@ -82,11 +82,13 @@ export function RecordButton( {
     }
 
     const release_button = ( event ) => {
+        mark_direct_activation()
         if( event.pointerId !== undefined ) event.currentTarget.releasePointerCapture?.( event.pointerId )
         on_release()
     }
 
     const cancel_button = ( event ) => {
+        mark_direct_activation()
         if( event.pointerId !== undefined ) event.currentTarget.releasePointerCapture?.( event.pointerId )
         on_cancel()
     }

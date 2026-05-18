@@ -69,6 +69,51 @@ test.describe( `daily video journal app`, () => {
         await expect( page ).toHaveURL( capture_url )
     } )
 
+    test( `does not open media devices before the user records`, async ( { page } ) => {
+        await page.addInitScript( () => {
+            const calls = []
+            const media_devices = navigator.mediaDevices
+            const original_get_user_media = media_devices?.getUserMedia?.bind( media_devices )
+
+            Object.defineProperty( window, `__get_user_media_calls`, {
+                configurable: true,
+                value: calls
+            } )
+
+            if( original_get_user_media ) {
+                Object.defineProperty( media_devices, `getUserMedia`, {
+                    configurable: true,
+                    value: ( constraints ) => {
+                        calls.push( constraints )
+                        return original_get_user_media( constraints )
+                    }
+                } )
+                return
+            }
+
+            Object.defineProperty( navigator, `mediaDevices`, {
+                configurable: true,
+                value: {
+                    getUserMedia: ( constraints ) => {
+                        calls.push( constraints )
+                        return Promise.reject( new Error( `getUserMedia unavailable` ) )
+                    }
+                }
+            } )
+        } )
+
+        await page.goto( `/` )
+
+        await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+        await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBe( 0 )
+
+        await page.getByRole( `button`, { name: `New` } ).click()
+
+        await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
+        await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
+        await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBe( 0 )
+    } )
+
     test( `keeps bottom capture actions stable at the viewport edge`, async ( { page } ) => {
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `New` } ).click()
@@ -110,6 +155,30 @@ test.describe( `daily video journal app`, () => {
         page.once( `dialog`, ( dialog ) => dialog.accept() )
         await page.getByRole( `button`, { name: `Delete clip 1` } ).click()
         await expect( page.getByText( `Recorded clips will appear here.` ) ).toBeVisible()
+    } )
+
+    test( `records a press-and-hold clip with browser media`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `New` } ).click()
+
+        const record_button = page.getByRole( `button`, { name: `Record clip` } )
+        await expect( record_button ).toBeVisible()
+
+        const button_box = await record_button.boundingBox()
+        const button_center = {
+            x: button_box.x + button_box.width / 2,
+            y: button_box.y + button_box.height / 2
+        }
+
+        await page.mouse.move( button_center.x, button_center.y )
+        await page.mouse.down()
+        await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
+        await page.waitForTimeout( 900 )
+        await page.mouse.up()
+
+        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
     } )
 
     test( `exports, downloads, renames, and deletes a browser-recorded project`, async ( { context, page } ) => {

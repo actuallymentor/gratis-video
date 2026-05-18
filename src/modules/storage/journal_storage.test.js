@@ -69,6 +69,17 @@ describe( `journal storage`, () => {
         expect( await stored_thumbnail_blob.text() ).toBe( `thumb` )
     } )
 
+    test( `refuses to save clip media when the project is missing`, async () => {
+        await expect( add_clip_to_project( {
+            project_id: `missing-project`,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } ) ).rejects.toThrow( /Project not found/ )
+
+        expect( await get_project_clips( `missing-project` ) ).toEqual( [] )
+    } )
+
     test( `requests persistent storage after project and clip creation`, async () => {
         const persist = vi.fn().mockResolvedValue( true )
 
@@ -408,6 +419,23 @@ describe( `journal storage`, () => {
         expect( await get_export_blob( export_record.id ) ).toBe( null )
     } )
 
+    test( `refuses to cache exports when the project is missing`, async () => {
+        await expect( save_export_record( {
+            project_id: `missing-project`,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash: `settings-a`,
+            clip_manifest_hash: `clips-a`,
+            duration_ms: 1200
+        } ) ).rejects.toThrow( /Project not found/ )
+
+        await expect( get_valid_cached_export( {
+            project_id: `missing-project`,
+            settings_hash: `settings-a`,
+            clip_manifest_hash: `clips-a`
+        } ) ).resolves.toBe( null )
+    } )
+
     test( `ignores cached export metadata when the export blob is missing`, async () => {
         const project = await create_project()
         const settings = await load_settings()
@@ -568,5 +596,43 @@ describe( `journal storage`, () => {
         expect( await get_clip_blob( clip.id ) ).toBe( null )
         expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
         expect( await get_export_blob( export_record.id ) ).toBe( null )
+    } )
+
+    test( `deleting all data clears projects media exports settings and active state`, async () => {
+        const project = await create_project()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200,
+            thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
+        } )
+        const export_record = await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash: `settings-a`,
+            clip_manifest_hash: `clips-a`,
+            duration_ms: 1200
+        } )
+
+        await save_settings( {
+            export_quality: `high`,
+            sounds_enabled: true
+        } )
+        await set_active_project( project.id )
+
+        await delete_all_data()
+
+        expect( await list_projects() ).toEqual( [] )
+        expect( await get_active_project() ).toBe( null )
+        expect( await get_project_clips( project.id ) ).toEqual( [] )
+        expect( await get_clip_blob( clip.id ) ).toBe( null )
+        expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
+        expect( await get_export_blob( export_record.id ) ).toBe( null )
+        expect( await load_settings() ).toMatchObject( {
+            export_quality: `standard`,
+            sounds_enabled: false
+        } )
     } )
 } )

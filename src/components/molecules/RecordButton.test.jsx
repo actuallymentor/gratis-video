@@ -67,6 +67,26 @@ describe( `record button`, () => {
         expect( default_props.on_toggle ).toHaveBeenCalledTimes( 1 )
     } )
 
+    test( `ignores the synthetic click after a long pointer hold`, () => {
+        let now = 0
+
+        vi.spyOn( performance, `now` ).mockImplementation( () => now )
+
+        render( <RecordButton { ...default_props } recording_state="recording" /> )
+
+        const button = screen.getByRole( `button`, { name: `Stop recording` } )
+
+        fireEvent.pointerDown( button, { pointerId: 1 } )
+        now = 900
+        fireEvent.pointerUp( button, { pointerId: 1 } )
+        now = 901
+        fireEvent.click( button )
+
+        expect( default_props.on_press ).toHaveBeenCalledTimes( 1 )
+        expect( default_props.on_release ).toHaveBeenCalledTimes( 1 )
+        expect( default_props.on_toggle ).not.toHaveBeenCalled()
+    } )
+
     test( `forwards pointer cancellation so partial recordings can be saved`, () => {
         render( <RecordButton { ...default_props } recording_state="recording" /> )
 

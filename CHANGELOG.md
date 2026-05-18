@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.3] - 2026-05-18
+
+### Added
+- add passive media, hold-recording, stale-export, and delete-all regressions
+
+### Fixed
+- prevent long press-and-hold recording from immediately restarting
+- bound export recorder finalization when browsers miss the stop event
+- keep project-scoped clip and export writes transactional
+
 ## [0.3.2] - 2026-05-18
 
 ### Added

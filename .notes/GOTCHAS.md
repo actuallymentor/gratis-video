@@ -37,3 +37,6 @@
 - When microphone permission is already known denied, request video-only capture immediately instead of first requesting audio and relying on a failed combined `getUserMedia()` call.
 - Cached exports should only invoke native file share directly when the blob was preloaded before the user tap. If metadata/blob is discovered during the tap, route through the explicit ready panel so Share has a fresh user action.
 - Do not let a pending cached-export preload force compilation. On Share/Export, re-check the cache and only compile after invalid/missing export metadata and blobs are ruled out.
+- Export recorder shutdown is bounded separately from clip playback. If a browser emits data but never fires `MediaRecorder.onstop`, export may proceed with a warning; if no data arrives before the timeout, fail clearly instead of hanging.
+- Keep project-scoped media writes transactional with the project record. Clip and export saves should read the project inside the same IndexedDB write transaction that stores blobs, so deleted projects are not resurrected by stale async work.
+- RecordButton's click fallback must ignore the synthetic click after pointer release, including long press-and-hold recordings. Mark pointer release/cancel as direct activations, not only pointer down.

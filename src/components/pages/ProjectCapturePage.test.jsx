@@ -406,6 +406,46 @@ describe( `project capture page`, () => {
         expect( get_export_blob ).not.toHaveBeenCalled()
     } )
 
+    test( `does not reuse a current-session export after the queue is reordered`, async () => {
+        const user = userEvent.setup()
+        const second_clip = {
+            ...clip,
+            id: `clip-2`,
+            order_index: 1,
+            created_at: `2026-05-17T10:00:02.000Z`
+        }
+        let current_clips = [ clip, second_clip ]
+
+        vi.mocked( get_project_clips ).mockImplementation( async () => current_clips )
+        vi.mocked( move_clip ).mockImplementation( async () => {
+            current_clips = [ second_clip, clip ]
+            return current_clips
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for compile/ ) ).toBeTruthy()
+        await user.click( screen.getByRole( `button`, { name: `Mark export ready` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Close export panel` } ) )
+
+        vi.mocked( share_export_file ).mockClear()
+        vi.mocked( get_valid_cached_export ).mockClear()
+
+        await user.click( screen.getByRole( `button`, { name: `Move clip 2 earlier` } ) )
+        await waitFor( () => {
+            expect( move_clip ).toHaveBeenCalledWith( second_clip.id, `earlier` )
+        } )
+
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for compile/ ) ).toBeTruthy()
+        expect( share_export_file ).not.toHaveBeenCalled()
+        expect( get_valid_cached_export ).toHaveBeenCalled()
+    } )
+
     test( `does not auto-open export from restored URL state`, async () => {
         query_state.initial_panel = `export`
 

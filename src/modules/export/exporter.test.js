@@ -327,6 +327,60 @@ describe( `export compiler`, () => {
         ] )
     } )
 
+    test( `finishes with a warning when the export recorder stop event never arrives`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        class NoStopMediaRecorder extends DataMediaRecorder {
+
+            stop() {
+                if( this.state === `inactive` ) return
+
+                this.state = `inactive`
+                this.ondataavailable?.( {
+                    data: new Blob( [ `export` ], { type: this.mimeType } )
+                } )
+            }
+
+        }
+
+        try {
+            vi.useFakeTimers()
+            vi.stubGlobal( `MediaRecorder`, NoStopMediaRecorder )
+            vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+            vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+            vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+            vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+                if( tag_name === `video` ) return new FakeVideoElement()
+                return create_element( tag_name, options )
+            } )
+
+            const export_promise = compile_project_export( {
+                clips: [
+                    {
+                        id: `clip-1`,
+                        duration_ms: 1000,
+                        width: 640,
+                        height: 360
+                    }
+                ],
+                settings: default_settings,
+                signal: new AbortController().signal
+            } )
+
+            await vi.advanceTimersByTimeAsync( 0 )
+            await vi.advanceTimersByTimeAsync( 5_000 )
+
+            await expect( export_promise ).resolves.toMatchObject( {
+                duration_ms: 1000,
+                warnings: expect.arrayContaining( [
+                    expect.stringMatching( /did not confirm export finalization/ )
+                ] )
+            } )
+        } finally {
+            vi.useRealTimers()
+        }
+    } )
+
     test( `retries blocked detached playback muted during export`, async () => {
         const create_element = document.createElement.bind( document )
         let video_element = null
