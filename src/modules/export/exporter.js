@@ -97,6 +97,14 @@ const wait_for_abortable = ( promise, signal ) => new Promise( ( resolve, reject
     Promise.resolve( promise ).then( resolve, reject ).finally( cleanup )
 } )
 
+const is_autoplay_block_error = ( error ) => {
+    const message = error?.message ?? ``
+
+    return error?.name === `NotAllowedError`
+        || message.toLowerCase().includes( `autoplay` )
+        || message.includes( `disableAutoplay` )
+}
+
 const wait_for_recorder_stop = ( recorder, chunks, signal ) => {
     let settled = false
     let timeout_id = null
@@ -258,10 +266,10 @@ const start_video_playback = async ( video, signal ) => {
     try {
         await wait_for_abortable( video.play(), signal )
     } catch ( error ) {
-        if( error.name !== `NotAllowedError` ) throw error
+        if( !is_autoplay_block_error( error ) ) throw error
 
-        // Mobile autoplay rules can reject detached videos after React effects.
-        // A muted retry keeps export moving even when the browser will not play audible media.
+        // Browser and extension autoplay blockers do not agree on error names.
+        // A muted retry keeps detached export playback moving when audible playback is blocked.
         throw_if_aborted( signal )
         video.muted = true
         await wait_for_abortable( video.play(), signal )

@@ -27,6 +27,13 @@ const ensure_service_worker_controlled = async ( page ) => {
     await expect.poll( () => page.evaluate( () => Boolean( navigator.serviceWorker.controller ) ) ).toBe( true )
 }
 
+const record_clip_for = async ( page, duration_ms ) => {
+    await page.getByRole( `button`, { name: `Record clip` } ).click()
+    await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
+    await page.waitForTimeout( duration_ms )
+    await page.getByRole( `button`, { name: `Stop recording` } ).click()
+}
+
 test.beforeEach( async ( { page } ) => {
     page.browser_issues = []
 
@@ -220,6 +227,38 @@ test.describe( `daily video journal app`, () => {
 
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
+    } )
+
+    test( `moves recorded clips and keeps queue order after reload`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
+
+        await record_clip_for( page, 700 )
+        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+
+        await record_clip_for( page, 1700 )
+        await expect( page.getByText( `Clip 2` ) ).toBeVisible()
+
+        const clip_rows = page.locator( `article` ).filter( {
+            hasText: /Clip [12]/
+        } )
+        const capture_url = page.url()
+
+        await expect( clip_rows ).toHaveCount( 2 )
+        await expect( clip_rows.nth( 0 ) ).toContainText( `1s` )
+        await expect( clip_rows.nth( 1 ) ).toContainText( `2s` )
+
+        await page.getByRole( `button`, { name: `Move clip 2 earlier` } ).click()
+
+        await expect( clip_rows.nth( 0 ) ).toContainText( `2s` )
+        await expect( clip_rows.nth( 1 ) ).toContainText( `1s` )
+
+        await page.reload()
+        await expect( page ).toHaveURL( capture_url )
+        await expect( clip_rows ).toHaveCount( 2 )
+        await expect( clip_rows.nth( 0 ) ).toContainText( `2s` )
+        await expect( clip_rows.nth( 1 ) ).toContainText( `1s` )
     } )
 
     test( `exports, downloads, renames, and deletes a browser-recorded project`, async ( { context, page } ) => {

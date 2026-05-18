@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.9] - 2026-05-18
+
+### Added
+- add autoplay-blocker export regression
+- add browser queue-reorder persistence smoke coverage
+
+### Fixed
+- retry extension-shaped export autoplay failures muted
+
 ## [0.3.8] - 2026-05-18
 
 ### Added

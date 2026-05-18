@@ -485,6 +485,56 @@ describe( `export compiler`, () => {
         expect( video_element.muted ).toBe( true )
     } )
 
+    test( `retries extension-shaped autoplay failures muted during export`, async () => {
+        const create_element = document.createElement.bind( document )
+        let video_element = null
+
+        class ExtensionBlockedVideoElement extends FakeVideoElement {
+
+            play() {
+                if( !this.muted ) {
+                    return Promise.reject(
+                        new TypeError( `Cannot read properties of undefined (reading 'disableAutoplay')` )
+                    )
+                }
+
+                this.ended = true
+                return Promise.resolve()
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) {
+                video_element = new ExtensionBlockedVideoElement()
+                return video_element
+            }
+
+            return create_element( tag_name, options )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            duration_ms: 1000
+        } )
+
+        expect( video_element.muted ).toBe( true )
+    } )
+
     test( `continues video export when Web Audio resume is blocked`, async () => {
         const create_element = document.createElement.bind( document )
         const close = vi.fn().mockResolvedValue()
