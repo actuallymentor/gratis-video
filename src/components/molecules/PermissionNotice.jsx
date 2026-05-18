@@ -7,10 +7,10 @@ const Notice = styled.div`
     align-items: flex-start;
     gap: 0.6rem;
     padding: 0.85rem;
-    border: 1px solid rgba( 145, 107, 29, 0.28 );
+    border: 1px solid ${ ( { $urgent } ) => $urgent ? `rgba( 184, 47, 37, 0.28 )` : `rgba( 145, 107, 29, 0.28 )` };
     border-radius: 0.5rem;
-    color: var(--color-warning);
-    background: rgba( 255, 209, 102, 0.12 );
+    color: ${ ( { $urgent } ) => $urgent ? `var(--color-danger)` : `var(--color-warning)` };
+    background: ${ ( { $urgent } ) => $urgent ? `rgba( 216, 57, 43, 0.08 )` : `rgba( 255, 209, 102, 0.12 )` };
     line-height: 1.45;
 
     svg {
@@ -39,10 +39,10 @@ const NoticeAction = styled( Link )`
  * @param {Object} props - Notice props.
  * @returns {JSX.Element|null} Permission notice.
  */
-export function PermissionNotice( { message, action_to = null, action_label = null } ) {
+export function PermissionNotice( { message, action_to = null, action_label = null, urgent = false } ) {
     if( !message ) return null
 
-    return <Notice role="status">
+    return <Notice role={ urgent ? `alert` : `status` } $urgent={ urgent }>
         <AlertCircle size={ 18 } aria-hidden="true" />
         <NoticeContent>
             <span>{ message }</span>

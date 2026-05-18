@@ -51,3 +51,5 @@
 - Keep the record control enabled while `starting` or `recording` even if passive permission state later becomes blocking, so users can still release/stop the active recording.
 - If the first pointer release is lost during capture startup, treat the next fresh record press/release as the stop tap instead of requiring an extra tap.
 - Treat cached exports as reusable only when the blob is non-empty and video-typed. `save_export_record()` also re-checks current clip/settings hashes inside its IndexedDB transaction, so stale export fixtures need to seed legacy records directly instead of using the production save path.
+- Do not allow Share/Export while recording is starting, active, or saving. Export must wait until the clip queue reflects the final saved clip state.
+- Export MIME support probes can pass on a tiny canvas stream while `MediaRecorder.start()` fails on the real mixed export stream. Keep start-time MIME/default fallback covered.

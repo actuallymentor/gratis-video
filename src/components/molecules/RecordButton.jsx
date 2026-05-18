@@ -48,6 +48,13 @@ const Inner = styled.span`
     line-height: 1;
 `
 
+const recording_state_labels = {
+    idle: `Record clip`,
+    starting: `Starting recording`,
+    recording: `Stop recording`,
+    saving: `Saving recording`
+}
+
 /**
  * Renders the dominant capture control with pointer and keyboard support.
  * @param {Object} props - Record button props.
@@ -65,6 +72,7 @@ export function RecordButton( {
     const recording = recording_state === `recording`
     const starting = recording_state === `starting`
     const saving = recording_state === `saving`
+    const accessible_label = recording_state_labels[ recording_state ] ?? recording_state_labels.idle
     const last_direct_activation_at_ref = useRef( Number.NEGATIVE_INFINITY )
 
     const mark_direct_activation = () => {
@@ -110,8 +118,8 @@ export function RecordButton( {
 
     return <Button
         type="button"
-        aria-label={ recording ? `Stop recording` : `Record clip` }
-        title={ recording ? `Stop recording` : `Record clip` }
+        aria-label={ accessible_label }
+        title={ accessible_label }
         $recording={ recording }
         disabled={ disabled || saving }
         onPointerDown={ press_button }

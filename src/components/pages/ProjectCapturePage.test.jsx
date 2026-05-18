@@ -229,6 +229,32 @@ describe( `project capture page`, () => {
         expect( await screen.findByText( /Export panel open/ ) ).toBeTruthy()
     } )
 
+    test( `does not export while recording is active`, async () => {
+        recording_state.recording_state = `recording`
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        screen.getAllByRole( `button`, { name: `Share or export project` } ).forEach( ( button ) => {
+            expect( button.disabled ).toBe( true )
+        } )
+        expect( screen.queryByText( /Export panel open/ ) ).toBe( null )
+        expect( share_export_file ).not.toHaveBeenCalled()
+    } )
+
+    test( `does not export while the latest clip is saving`, async () => {
+        recording_state.recording_state = `saving`
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        screen.getAllByRole( `button`, { name: `Share or export project` } ).forEach( ( button ) => {
+            expect( button.disabled ).toBe( true )
+        } )
+        expect( screen.queryByText( /Export panel open/ ) ).toBe( null )
+        expect( share_export_file ).not.toHaveBeenCalled()
+    } )
+
     test( `does not restart export when history restores the export panel`, async () => {
         const user = userEvent.setup()
 
@@ -596,6 +622,7 @@ describe( `project capture page`, () => {
         render_capture()
 
         expect( await screen.findByText( /Recording requires HTTPS/ ) ).toBeTruthy()
+        expect( screen.getByRole( `alert` ).textContent ).toMatch( /Recording requires HTTPS/ )
         expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
     } )
 
@@ -714,6 +741,8 @@ describe( `project capture page`, () => {
         render_capture()
 
         expect( await screen.findByText( /Recording can continue video-only/ ) ).toBeTruthy()
+        expect( screen.queryByRole( `alert` ) ).toBe( null )
+        expect( screen.getByRole( `status` ).textContent ).toMatch( /Recording can continue video-only/ )
         expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( false )
     } )
 

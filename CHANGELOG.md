@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.10] - 2026-05-18
+
+### Added
+- add stale-export guard and recorder-start fallback regressions
+
+### Fixed
+- block export while recording or saving clips
+- retry export recorder start with fallback formats
+- announce blocking capture issues assertively
+
 ## [0.3.9] - 2026-05-18
 
 ### Added

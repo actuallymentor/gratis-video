@@ -330,7 +330,19 @@ export function ProjectCapturePage() {
         }
     }
 
+    const recording_busy = recording.recording_state !== `idle`
+    const export_disabled = queue_mutation_pending || recording_busy
+
     const share_or_export = async () => {
+        if( recording_busy ) {
+            const message = recording.recording_state === `saving`
+                ? `Clip is still saving. Try again in a moment.`
+                : `Finish recording before exporting.`
+
+            toast( message )
+            return
+        }
+
         if( queue_mutation_pending ) {
             toast( `Clip queue is updating. Try again in a moment.` )
             return
@@ -438,7 +450,7 @@ export function ProjectCapturePage() {
     if( storage_error && ( !project || !settings ) ) {
         return <AppFrame>
             <Content>
-                <PermissionNotice message={ storage_error } />
+                <PermissionNotice message={ storage_error } urgent />
             </Content>
         </AppFrame>
     }
@@ -470,6 +482,10 @@ export function ProjectCapturePage() {
     const recording_disabled = !can_attempt_recording( permission_status )
     const recording_in_progress = recording.recording_state === `starting` || recording.recording_state === `recording`
     const record_control_disabled = recording_disabled && !recording_in_progress
+    const status_message_is_video_only = /video[- ]only/i.test( status_message ?? `` )
+    const notice_urgent = Boolean( status_message )
+        && !status_message_is_video_only
+        && Boolean( recording_disabled || recording.error_message || storage_error )
     const bottom_status_message = status_message && ( recording.error_message || permission_denied || recording_disabled )
         ? status_message
         : null
@@ -489,7 +505,7 @@ export function ProjectCapturePage() {
                     icon={ Share2 }
                     label="Share or export project"
                     onClick={ share_or_export }
-                    disabled={ queue_mutation_pending }
+                    disabled={ export_disabled }
                 />
             </HeaderBar>
 
@@ -504,6 +520,7 @@ export function ProjectCapturePage() {
                         message={ preview_status_message }
                         action_to={ permission_recovery_needed ? settings_return_path : null }
                         action_label={ permission_recovery_needed ? `Open settings` : null }
+                        urgent={ Boolean( storage_error ) || notice_urgent }
                     />
                 </PreviewPanel>
 
@@ -530,7 +547,7 @@ export function ProjectCapturePage() {
                 icon={ Download }
                 label="Share or export project"
                 onClick={ share_or_export }
-                disabled={ queue_mutation_pending }
+                disabled={ export_disabled }
             /> }
         />
 
@@ -539,6 +556,7 @@ export function ProjectCapturePage() {
                 message={ bottom_status_message }
                 action_to={ permission_recovery_needed ? settings_return_path : null }
                 action_label={ permission_recovery_needed ? `Open settings` : null }
+                urgent={ notice_urgent }
             />
         </BottomNotice> : null }
 

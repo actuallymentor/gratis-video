@@ -21,7 +21,7 @@ describe( `record button`, () => {
     test( `stays enabled while startup is pending so pointer release can classify the gesture`, () => {
         render( <RecordButton { ...default_props } recording_state="starting" /> )
 
-        const button = screen.getByRole( `button`, { name: `Record clip` } )
+        const button = screen.getByRole( `button`, { name: `Starting recording` } )
 
         expect( button.disabled ).toBe( false )
 
@@ -35,7 +35,22 @@ describe( `record button`, () => {
     test( `is disabled only while saving a completed recording`, () => {
         render( <RecordButton { ...default_props } recording_state="saving" /> )
 
-        expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
+        expect( screen.getByRole( `button`, { name: `Saving recording` } ).disabled ).toBe( true )
+    } )
+
+    test( `uses accessible names that match transient recording states`, () => {
+        const { rerender } = render( <RecordButton { ...default_props } recording_state="idle" /> )
+
+        expect( screen.getByRole( `button`, { name: `Record clip` } ) ).toBeTruthy()
+
+        rerender( <RecordButton { ...default_props } recording_state="starting" /> )
+        expect( screen.getByRole( `button`, { name: `Starting recording` } ) ).toBeTruthy()
+
+        rerender( <RecordButton { ...default_props } recording_state="recording" elapsed_ms={ 1000 } /> )
+        expect( screen.getByRole( `button`, { name: `Stop recording` } ) ).toBeTruthy()
+
+        rerender( <RecordButton { ...default_props } recording_state="saving" /> )
+        expect( screen.getByRole( `button`, { name: `Saving recording` } ) ).toBeTruthy()
     } )
 
     test( `ignores repeated keyboard activation while a key is held`, () => {

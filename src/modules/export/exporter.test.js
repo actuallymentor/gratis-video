@@ -739,6 +739,57 @@ describe( `export compiler`, () => {
         } )
     } )
 
+    test( `retries another export MIME when the actual recorder cannot start`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        class MixedStreamStartSelectiveMediaRecorder extends DataMediaRecorder {
+
+            static isTypeSupported( mime_type ) {
+                return mime_type === `video/mp4` || mime_type === `video/webm`
+            }
+
+            start() {
+                if( this.mimeType === `video/mp4` && !this.stream.probe ) {
+                    throw new Error( `MP4 cannot start the mixed export stream` )
+                }
+
+                super.start()
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, MixedStreamStartSelectiveMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+        HTMLCanvasElement.prototype.captureStream = vi.fn( function captureStream() {
+            const stream = new FakeMediaStream( [ make_track() ] )
+            stream.probe = this.width === 16 && this.height === 16
+
+            return stream
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+    } )
+
     test( `hides MIME types when the canvas recorder cannot start`, () => {
         class StartBlockedMediaRecorder extends FakeMediaRecorder {
 

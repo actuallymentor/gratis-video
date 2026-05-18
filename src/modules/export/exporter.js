@@ -1,10 +1,10 @@
 import { get_clip_blob } from '../storage/journal_storage.js'
 import { stop_media_stream } from '../media/recorder.js'
 import {
-    choose_export_mime_type,
     export_quality_bits,
     export_resolution_limits,
-    get_export_support_message
+    get_export_support_message,
+    get_supported_export_mime_types
 } from './settings.js'
 
 export {
@@ -163,6 +163,7 @@ const wait_for_recorder_stop = ( recorder, chunks, signal ) => {
 
     return {
         arm_stop_timeout,
+        fail,
         stopped
     }
 }
@@ -290,6 +291,72 @@ const create_export_recorder = ( { stream, mime_type, settings } ) => {
         if( mime_type ) return new MediaRecorder( stream, base_options )
         throw error
     }
+}
+
+const create_mime_attempts = ( settings ) => {
+    const supported_mime_types = get_supported_export_mime_types()
+    const preferred_mime_type = supported_mime_types.includes( settings.preferred_mime_type )
+        ? settings.preferred_mime_type
+        : supported_mime_types.at( 0 ) ?? null
+    const attempts = [
+        preferred_mime_type,
+        ...supported_mime_types.filter( ( mime_type ) => mime_type !== preferred_mime_type ),
+        null
+    ]
+
+    return attempts.filter( ( mime_type, index ) => attempts.indexOf( mime_type ) === index )
+}
+
+const start_export_recorder = ( { stream, settings, signal } ) => {
+    const attempts = create_mime_attempts( settings )
+    const errors = []
+
+    const start_next_attempt = ( mime_type ) => {
+        const chunks = []
+        let recorder = null
+        let stop_wait = null
+
+        try {
+            throw_if_aborted( signal )
+            recorder = create_export_recorder( { stream, mime_type, settings } )
+            stop_wait = wait_for_recorder_stop( recorder, chunks, signal )
+            stop_wait.stopped.catch( () => null )
+            throw_if_aborted( signal )
+            recorder.start( 250 )
+
+            return {
+                recorder,
+                chunks,
+                mime_type,
+                ...stop_wait
+            }
+        } catch ( error ) {
+            stop_wait?.fail( error )
+
+            try {
+                if( recorder?.state && recorder.state !== `inactive` ) recorder.stop()
+            } catch {
+                // The next MIME attempt can still succeed even if cleanup fails.
+            }
+
+            throw error
+        }
+    }
+
+    const started_attempt = attempts.reduce( ( started, mime_type ) => {
+        if( started ) return started
+
+        try {
+            return start_next_attempt( mime_type )
+        } catch ( error ) {
+            errors.push( error )
+            return null
+        }
+    }, null )
+
+    if( started_attempt ) return started_attempt
+    if( signal?.aborted ) throw make_abort_error()
+    throw errors.at( -1 ) ?? new Error( `Export recorder failed.` )
 }
 
 const cleanup_video = ( video, object_url ) => {
@@ -472,21 +539,26 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         ...video_stream.getVideoTracks(),
         ...audio_tracks
     ] )
-    const mime_type = choose_export_mime_type( settings )
-    const chunks = []
     let recorder = null
+    let chunks = []
+    let mime_type = null
 
     try {
-        recorder = create_export_recorder( { stream: mixed_stream, mime_type, settings } )
         const {
             arm_stop_timeout,
+            chunks: export_chunks,
+            mime_type: started_mime_type,
+            recorder: export_recorder,
             stopped
-        } = wait_for_recorder_stop( recorder, chunks, signal )
-        stopped.catch( () => null )
+        } = start_export_recorder( {
+            stream: mixed_stream,
+            settings,
+            signal
+        } )
 
-        throw_if_aborted( signal )
-
-        recorder.start( 250 )
+        recorder = export_recorder
+        chunks = export_chunks
+        mime_type = started_mime_type
         on_progress?.( { percent: 1, message: `Preparing export` } )
 
         const playback_results = []

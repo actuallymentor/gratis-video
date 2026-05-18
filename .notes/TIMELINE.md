@@ -43,3 +43,5 @@
 - 2026-05-18T08:29:01Z - Fixed export playback to classify extension-shaped autoplay failures, including `disableAutoplay` TypeErrors, as muted-retry candidates instead of surfacing them as export errors. Added a focused exporter regression.
 - 2026-05-18T08:30:00Z - Prepared `0.3.9` patch notes and version bump for the export autoplay-blocker fix.
 - 2026-05-18T08:34:00Z - Audited essential-path coverage and added Playwright browser smoke coverage for recording two clips, moving the second clip earlier, and preserving queue order after reload.
+- 2026-05-18T09:05:00Z - Re-read `specification.md`, audited essential Vitest/Playwright user-path coverage with parallel explorers, and fixed stale export entry points during recording/saving, record-button accessible transient states, assertive blocking capture notices, and export recorder start-time MIME fallback. Added focused regressions and verified full Vitest, Playwright, lint, and production build.
+- 2026-05-18T09:08:00Z - Prepared `0.3.10` patch notes and version bump for the recording/export guard, export recorder fallback, and capture notice accessibility fixes.
