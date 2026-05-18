@@ -11,6 +11,12 @@ export default defineConfig( {
     reporter: `list`,
     use: {
         baseURL: `http://127.0.0.1:5173`,
+        launchOptions: {
+            args: [
+                `--use-fake-device-for-media-stream`,
+                `--use-fake-ui-for-media-stream`
+            ]
+        },
         trace: `retain-on-failure`
     },
     webServer: {

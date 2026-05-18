@@ -40,6 +40,29 @@ test.describe( `daily video journal app`, () => {
         expect( bar_box.y + bar_box.height ).toBeGreaterThan( viewport.height - 2 )
     } )
 
+    test( `records, reloads, and deletes a clip with browser media`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `New` } ).click()
+
+        await page.getByRole( `button`, { name: `Record clip` } ).click()
+        await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
+        await page.waitForTimeout( 900 )
+        await page.getByRole( `button`, { name: `Stop recording` } ).click()
+
+        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+
+        const capture_url = page.url()
+
+        await page.reload()
+        await expect( page ).toHaveURL( capture_url )
+        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+
+        page.once( `dialog`, ( dialog ) => dialog.accept() )
+        await page.getByRole( `button`, { name: `Delete clip 1` } ).click()
+        await expect( page.getByText( `Recorded clips will appear here.` ) ).toBeVisible()
+    } )
+
     test( `opens settings with storage and export controls`, async ( { page } ) => {
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `Open settings` } ).first().click()
