@@ -44,7 +44,7 @@ export function media_status_message( permission_status ) {
     if( permission_status.media_recorder === `unsupported` ) return `This browser cannot record video with MediaRecorder.`
     if( permission_status.camera === `denied` && permission_status.microphone === `denied` ) return `Camera and microphone access are blocked for this site.`
     if( permission_status.camera === `denied` ) return `Camera access is blocked for this site.`
-    if( permission_status.microphone === `denied` ) return `Microphone access is blocked for this site.`
+    if( permission_status.microphone === `denied` ) return `Microphone access is blocked for this site. Recording can continue video-only.`
 
     return null
 }
@@ -59,7 +59,6 @@ export function can_attempt_recording( permission_status ) {
     if( permission_status.media_devices === `unsupported` ) return false
     if( permission_status.media_recorder === `unsupported` ) return false
     if( permission_status.camera === `denied` ) return false
-    if( permission_status.microphone === `denied` ) return false
 
     return true
 }

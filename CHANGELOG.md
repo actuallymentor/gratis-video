@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.6] - 2026-05-18
+
+### Added
+- add microphone-denial and unsupported-export settings regressions
+
+### Fixed
+- allow video-only recording when microphone permission is denied
+- hide export settings when export compilation is unsupported
+
 ## [0.2.5] - 2026-05-17
 
 ### Added

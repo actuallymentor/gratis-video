@@ -71,6 +71,14 @@ describe( `permission helpers`, () => {
 
         expect( media_status_message( {
             secure_context: true,
+            media_devices: `supported`,
+            media_recorder: `supported`,
+            camera: `granted`,
+            microphone: `denied`
+        } ) ).toMatch( /video-only/ )
+
+        expect( media_status_message( {
+            secure_context: true,
             media_devices: `unsupported`,
             media_recorder: `supported`,
             camera: `unsupported`,
@@ -86,6 +94,14 @@ describe( `permission helpers`, () => {
             media_recorder: `supported`,
             camera: `prompt`,
             microphone: `unknown`
+        } ) ).toBe( true )
+
+        expect( can_attempt_recording( {
+            secure_context: true,
+            media_devices: `supported`,
+            media_recorder: `supported`,
+            camera: `granted`,
+            microphone: `denied`
         } ) ).toBe( true )
 
         expect( can_attempt_recording( {

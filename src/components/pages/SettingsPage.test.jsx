@@ -125,6 +125,19 @@ describe( `settings page`, () => {
         expect( screen.queryByLabelText( /Format/ ) ).toBe( null )
     } )
 
+    test( `hides export format choices when export compilation is unsupported`, async () => {
+        vi.mocked( get_export_support_message ).mockReturnValue( `This browser cannot capture a video export from the canvas.` )
+        vi.mocked( get_supported_export_resolutions ).mockReturnValue( [] )
+        vi.mocked( get_supported_mime_types ).mockReturnValue( [ `video/webm` ] )
+
+        render_settings()
+
+        expect( await screen.findAllByText( /cannot capture a video export/ ) ).toHaveLength( 1 )
+        expect( screen.queryByLabelText( /Format/ ) ).toBe( null )
+        expect( screen.queryByRole( `button`, { name: `High` } ) ).toBe( null )
+        expect( get_supported_mime_types ).not.toHaveBeenCalled()
+    } )
+
     test( `saves changed export and feedback settings`, async () => {
         const user = userEvent.setup()
 

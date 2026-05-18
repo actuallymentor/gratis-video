@@ -130,6 +130,16 @@ const format_status_label = ( status ) => {
     return status ? status.replace( /_/g, ` ` ) : `unknown`
 }
 
+const get_runtime_export_options = () => {
+    const support_message = get_export_support_message()
+
+    return {
+        support_message,
+        mime_types: support_message ? [] : get_supported_mime_types(),
+        resolutions: support_message ? [] : get_supported_export_resolutions()
+    }
+}
+
 /**
  * Shows global recording, export, storage, and destructive settings.
  * @returns {JSX.Element} Settings page.
@@ -157,18 +167,23 @@ export function SettingsPage() {
                     persisted_storage()
                 ] )
 
+                const export_options = get_runtime_export_options()
+
                 set_settings( loaded_settings )
-                set_supported_mime_types( get_supported_mime_types() )
-                set_supported_resolution_options( get_supported_export_resolutions() )
-                set_export_support_message( get_export_support_message() )
+                set_supported_mime_types( export_options.mime_types )
+                set_supported_resolution_options( export_options.resolutions )
+                set_export_support_message( export_options.support_message )
                 set_storage_estimate( estimate )
                 set_storage_persisted( persisted )
                 set_storage_error( null )
             } catch {
+                const export_options = get_runtime_export_options()
+
                 set_storage_error( `Local browser storage is unavailable, so settings cannot be saved here.` )
                 set_settings( default_settings )
-                set_supported_resolution_options( get_supported_export_resolutions() )
-                set_export_support_message( get_export_support_message() )
+                set_supported_mime_types( export_options.mime_types )
+                set_supported_resolution_options( export_options.resolutions )
+                set_export_support_message( export_options.support_message )
             }
         }
 
@@ -232,7 +247,8 @@ export function SettingsPage() {
     const selected_export_resolution = supported_resolution_options.some( ( { value } ) => value === settings.export_resolution )
         ? settings.export_resolution
         : default_settings.export_resolution
-    const has_specific_format_options = supported_mime_types.length > 0
+    const export_settings_available = !export_support_message
+    const has_specific_format_options = export_settings_available && supported_mime_types.length > 0
     const permission_message = media_status_message( permission_status )
 
     return <AppFrame>
@@ -269,38 +285,40 @@ export function SettingsPage() {
 
                 <SettingGroup>
                     <SectionTitle>Export</SectionTitle>
-                    { has_specific_format_options ? <Field>
-                        Format
-                        <span>Only formats this browser reports as recordable are shown.</span>
-                        <select
-                            value={ selected_mime_type }
-                            onChange={ ( event ) => update_setting( {
-                                preferred_mime_type: event.target.value || null
-                            } ) }
-                        >
-                            { format_options.map( ( option ) => <option key={ option.value } value={ option.value }>
-                                { option.label }
-                            </option> ) }
-                        </select>
-                    </Field> : <StorageText>
-                        { export_support_message ?? `This browser has not reported specific recordable export formats, so export will use its default recorder format.` }
-                    </StorageText> }
+                    { export_settings_available ? <>
+                        { has_specific_format_options ? <Field>
+                            Format
+                            <span>Only formats this browser reports as recordable are shown.</span>
+                            <select
+                                value={ selected_mime_type }
+                                onChange={ ( event ) => update_setting( {
+                                    preferred_mime_type: event.target.value || null
+                                } ) }
+                            >
+                                { format_options.map( ( option ) => <option key={ option.value } value={ option.value }>
+                                    { option.label }
+                                </option> ) }
+                            </select>
+                        </Field> : <StorageText>
+                            This browser has not reported specific recordable export formats, so export will use its default recorder format.
+                        </StorageText> }
 
-                    <SectionTitle>Quality</SectionTitle>
-                    <SegmentedControl
-                        label="Export quality"
-                        options={ quality_options }
-                        value={ settings.export_quality }
-                        on_change={ ( export_quality ) => update_setting( { export_quality } ) }
-                    />
+                        <SectionTitle>Quality</SectionTitle>
+                        <SegmentedControl
+                            label="Export quality"
+                            options={ quality_options }
+                            value={ settings.export_quality }
+                            on_change={ ( export_quality ) => update_setting( { export_quality } ) }
+                        />
 
-                    <SectionTitle>Resolution</SectionTitle>
-                    { supported_resolution_options.length ? <SegmentedControl
-                        label="Export resolution"
-                        options={ supported_resolution_options }
-                        value={ selected_export_resolution }
-                        on_change={ ( export_resolution ) => update_setting( { export_resolution } ) }
-                    /> : <StorageText>{ export_support_message }</StorageText> }
+                        <SectionTitle>Resolution</SectionTitle>
+                        { supported_resolution_options.length ? <SegmentedControl
+                            label="Export resolution"
+                            options={ supported_resolution_options }
+                            value={ selected_export_resolution }
+                            on_change={ ( export_resolution ) => update_setting( { export_resolution } ) }
+                        /> : <StorageText>Export resolution controls are unavailable in this browser.</StorageText> }
+                    </> : <StorageText>{ export_support_message }</StorageText> }
                 </SettingGroup>
 
                 <SettingGroup>

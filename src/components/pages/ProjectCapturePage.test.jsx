@@ -266,6 +266,23 @@ describe( `project capture page`, () => {
         expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings` )
     } )
 
+    test( `keeps video-only recording available when microphone permission is denied`, async () => {
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `granted`,
+                microphone: `denied`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /Recording can continue video-only/ ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( false )
+    } )
+
     test( `deletes a clip from the capture queue after confirmation`, async () => {
         const user = userEvent.setup()
 
