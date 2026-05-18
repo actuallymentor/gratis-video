@@ -64,6 +64,28 @@ describe( `journal storage`, () => {
         expect( await stored_thumbnail_blob.text() ).toBe( `thumb` )
     } )
 
+    test( `loads clips and blobs after reopening local storage`, async () => {
+        const project = await create_project()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `persisted-video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1500,
+            width: 640,
+            height: 360
+        } )
+
+        reset_db_connection()
+
+        const reloaded_project = await get_project( project.id )
+        const reloaded_clips = await get_project_clips( project.id )
+        const reloaded_blob = await get_clip_blob( clip.id )
+
+        expect( reloaded_project.title ).toBe( project.title )
+        expect( reloaded_clips.map( ( { id } ) => id ) ).toEqual( [ clip.id ] )
+        expect( await reloaded_blob.text() ).toBe( `persisted-video` )
+    } )
+
     test( `creates duplicate same-day project titles without a naming step`, async () => {
         const first_project = await create_project()
         const second_project = await create_project()

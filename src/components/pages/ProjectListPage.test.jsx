@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
     MemoryRouter,
@@ -41,6 +41,15 @@ const render_project_list = () => render(
         </Routes>
     </MemoryRouter>
 )
+
+const existing_project = {
+    id: `project-2`,
+    title: `Pocket Walk`,
+    created_at: `2026-05-17T10:00:00.000Z`,
+    clip_count: 3,
+    total_duration_ms: 4200,
+    last_exported_at: `2026-05-17T11:00:00.000Z`
+}
 
 describe( `project list page`, () => {
     beforeEach( () => {
@@ -83,5 +92,53 @@ describe( `project list page`, () => {
         await user.click( screen.getAllByRole( `button`, { name: `Open settings` } )[ 0 ] )
 
         expect( await screen.findByText( `/settings` ) ).toBeTruthy()
+    } )
+
+    test( `opens an existing project and marks it active`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( list_projects ).mockResolvedValue( [ existing_project ] )
+
+        render_project_list()
+
+        await user.click( await screen.findByRole( `button`, { name: /Pocket Walk/ } ) )
+
+        expect( set_active_project ).toHaveBeenCalledWith( existing_project.id )
+        expect( useAppStore.getState().active_project_id ).toBe( existing_project.id )
+        expect( await screen.findByText( `/projects/project-2` ) ).toBeTruthy()
+    } )
+
+    test( `renames an existing project inline`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( list_projects ).mockResolvedValue( [ existing_project ] )
+
+        render_project_list()
+
+        await screen.findByText( existing_project.title )
+        await user.click( screen.getByRole( `button`, { name: `Rename project` } ) )
+
+        const input = screen.getByLabelText( `Project title` )
+        await user.clear( input )
+        await user.type( input, `Pocket Walk Edited` )
+        fireEvent.blur( input )
+
+        expect( rename_project ).toHaveBeenCalledWith( existing_project.id, `Pocket Walk Edited` )
+    } )
+
+    test( `deletes an existing active project after confirmation`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( list_projects ).mockResolvedValue( [ existing_project ] )
+        vi.spyOn( window, `confirm` ).mockReturnValue( true )
+        useAppStore.setState( { active_project_id: existing_project.id } )
+
+        render_project_list()
+
+        await screen.findByText( existing_project.title )
+        await user.click( screen.getByRole( `button`, { name: `Delete project` } ) )
+
+        expect( delete_project ).toHaveBeenCalledWith( existing_project.id )
+        expect( useAppStore.getState().active_project_id ).toBe( null )
     } )
 } )

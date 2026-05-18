@@ -62,6 +62,20 @@ class FakeMediaRecorder {
 
 }
 
+class DataMediaRecorder extends FakeMediaRecorder {
+
+    stop() {
+        if( this.state === `inactive` ) return
+
+        this.state = `inactive`
+        this.ondataavailable?.( {
+            data: new Blob( [ `export` ], { type: this.mimeType } )
+        } )
+        this.onstop?.()
+    }
+
+}
+
 const make_track = ( kind = `video` ) => ( {
     kind,
     stop: vi.fn( () => stopped_tracks.push( kind ) )
@@ -225,6 +239,45 @@ describe( `export compiler`, () => {
         } ) ).rejects.toMatchObject( { name: `AbortError` } )
 
         expect( HTMLCanvasElement.prototype.captureStream ).not.toHaveBeenCalled()
+    } )
+
+    test( `loads clip blobs in queue order while compiling export`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        const export_result = await compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                },
+                {
+                    id: `clip-2`,
+                    duration_ms: 900,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } )
+
+        expect( export_result.duration_ms ).toBe( 1900 )
+        expect( export_result.blob.size ).toBeGreaterThan( 0 )
+        expect( get_clip_blob.mock.calls.map( ( [ clip_id ] ) => clip_id ) ).toEqual( [
+            `clip-1`,
+            `clip-2`
+        ] )
     } )
 
     test( `keeps landscape export resolution within the selected size`, () => {
