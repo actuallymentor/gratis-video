@@ -130,6 +130,7 @@ export function ProjectCapturePage() {
     const [ cached_export_ready, set_cached_export_ready ] = useState( false )
     const [ export_panel_record, set_export_panel_record ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
+    const [ queue_mutation_pending, set_queue_mutation_pending ] = useState( false )
     const cached_export_blob_ref = useRef( null )
     const project_id_ref = useRef( project_id )
     const permission_status = useAppStore( ( state ) => state.permission_status )
@@ -300,25 +301,40 @@ export function ProjectCapturePage() {
         const confirmed = window.confirm( `Delete this clip from the project?` )
         if( !confirmed ) return
 
+        set_queue_mutation_pending( true )
+        clear_cached_export()
+
         try {
             await delete_clip( clip.id )
             await refresh_project()
             toast( `Clip deleted` )
         } catch {
             toast.error( `Clip could not be deleted` )
+        } finally {
+            set_queue_mutation_pending( false )
         }
     }
 
     const move_existing_clip = async ( clip, direction ) => {
+        set_queue_mutation_pending( true )
+        clear_cached_export()
+
         try {
             await move_clip( clip.id, direction )
             await refresh_project()
         } catch {
             toast.error( `Clip could not be moved` )
+        } finally {
+            set_queue_mutation_pending( false )
         }
     }
 
     const share_or_export = async () => {
+        if( queue_mutation_pending ) {
+            toast( `Clip queue is updating. Try again in a moment.` )
+            return
+        }
+
         if( !clips.length ) {
             toast( `Record at least one clip first.` )
             return
@@ -428,6 +444,8 @@ export function ProjectCapturePage() {
         ? permission_status_message || recording.error_message || storage_warning
         : recording.error_message || permission_status_message || storage_warning
     const recording_disabled = !can_attempt_recording( permission_status )
+    const recording_in_progress = recording.recording_state === `starting` || recording.recording_state === `recording`
+    const record_control_disabled = recording_disabled && !recording_in_progress
     const bottom_status_message = status_message && ( recording.error_message || permission_denied || recording_disabled )
         ? status_message
         : null
@@ -443,7 +461,12 @@ export function ProjectCapturePage() {
                     </LinkButton>
                     <h1>{ project.title }</h1>
                 </HeaderText>
-                <IconButton icon={ Share2 } label="Share or export project" onClick={ share_or_export } />
+                <IconButton
+                    icon={ Share2 }
+                    label="Share or export project"
+                    onClick={ share_or_export }
+                    disabled={ queue_mutation_pending }
+                />
             </HeaderBar>
 
             <CaptureGrid>
@@ -477,9 +500,14 @@ export function ProjectCapturePage() {
                 on_release={ recording.release_record }
                 on_cancel={ recording.cancel_record }
                 on_toggle={ recording.toggle_recording }
-                disabled={ recording_disabled }
+                disabled={ record_control_disabled }
             /> }
-            right={ <IconButton icon={ Download } label="Share or export project" onClick={ share_or_export } /> }
+            right={ <IconButton
+                icon={ Download }
+                label="Share or export project"
+                onClick={ share_or_export }
+                disabled={ queue_mutation_pending }
+            /> }
         />
 
         { bottom_status_message ? <BottomNotice>

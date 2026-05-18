@@ -260,7 +260,7 @@ describe( `export panel`, () => {
         expect( download_export_file ).toHaveBeenCalledWith( saved_export, compiled_export.blob )
     } )
 
-    test( `aborts compile work when the user cancels`, async () => {
+    test( `only aborts compile work from the explicit cancel action`, async () => {
         const user = userEvent.setup()
         const on_close = vi.fn()
         let export_signal = null
@@ -279,7 +279,15 @@ describe( `export panel`, () => {
             on_close={ on_close }
         /> )
 
-        await user.click( await screen.findByRole( `button`, { name: `Cancel` } ) )
+        expect( await screen.findByRole( `progressbar`, { name: `Export progress` } ) ).toBeTruthy()
+        expect( screen.queryByRole( `button`, { name: `Close export panel` } ) ).toBe( null )
+
+        await user.keyboard( `{Escape}` )
+
+        expect( export_signal.aborted ).toBe( false )
+        expect( on_close ).not.toHaveBeenCalled()
+
+        await user.click( screen.getByRole( `button`, { name: `Cancel export` } ) )
 
         expect( export_signal.aborted ).toBe( true )
         expect( on_close ).toHaveBeenCalledTimes( 1 )
@@ -393,6 +401,75 @@ describe( `export panel`, () => {
             project,
             export_record: expect.objectContaining( { transient: true } ),
             blob: compiled_export.blob
+        } )
+    } )
+
+    test( `does not expose a stale export when the project disappears before caching`, async () => {
+        vi.mocked( save_export_record ).mockRejectedValue( new Error( `Project not found.` ) )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Project not found/ ) ).toBeTruthy()
+        expect( screen.queryByRole( `button`, { name: `Share` } ) ).toBe( null )
+        expect( screen.queryByRole( `button`, { name: `Download` } ) ).toBe( null )
+    } )
+
+    test( `uses the latest cached export metadata after the initial export changes`, async () => {
+        const user = userEvent.setup()
+        const first_export = {
+            ...saved_export,
+            id: `export-a`,
+            filename: `first.webm`
+        }
+        const second_export = {
+            ...saved_export,
+            id: `export-b`,
+            filename: `second.webm`
+        }
+        const first_blob = new Blob( [ `first` ], { type: `video/webm` } )
+        const second_blob = new Blob( [ `second` ], { type: `video/webm` } )
+        const second_blob_deferred = make_deferred()
+
+        vi.mocked( get_export_blob )
+            .mockResolvedValueOnce( first_blob )
+            .mockReturnValueOnce( second_blob_deferred.promise )
+
+        const { rerender } = render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ first_export }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByRole( `button`, { name: `Share` } ) ).toBeTruthy()
+
+        rerender( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ second_export }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Preparing export actions/ ) ).toBeTruthy()
+
+        await act( async () => {
+            second_blob_deferred.resolve( second_blob )
+            await second_blob_deferred.promise
+        } )
+
+        await user.click( await screen.findByRole( `button`, { name: `Share` } ) )
+
+        expect( share_export_file ).toHaveBeenLastCalledWith( {
+            project,
+            export_record: second_export,
+            blob: second_blob
         } )
     } )
 

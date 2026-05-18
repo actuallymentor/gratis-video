@@ -30,6 +30,7 @@ npm run test:e2e
 - If microphone capture fails or is blocked, recording can continue as video-only with a local notice.
 - Settings include media access status, haptics, and optional sound feedback for recording state changes.
 - Export compiles clips on demand in queue order, preserves orientation when scaling, then offers native sharing when available or a download fallback.
+- Export compilation remains open until ready or explicitly cancelled.
 - Cached exports are reused only while their clips, settings, and stored file remain valid.
 - Preloaded cached exports can open native sharing immediately from the export tap.
 - Cached exports discovered during an export tap open the export panel so Share has a fresh user action.

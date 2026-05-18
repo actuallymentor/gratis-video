@@ -834,6 +834,49 @@ describe( `recording controller`, () => {
         expect( recorder.onstop ).toBe( null )
     } )
 
+    test( `stops on the next tap when startup loses the initial pointer release`, async () => {
+        const stream_deferred = make_deferred()
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        let performance_now = 0
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( performance, `now` ).mockImplementation( () => performance_now )
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( request_capture_stream ).mockReturnValue( stream_deferred.promise )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        act( () => {
+            controller.press_record()
+        } )
+
+        await act( async () => {
+            stream_deferred.resolve( stream )
+            await stream_deferred.promise
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `recording` )
+
+        performance_now = 500
+        act( () => controller.press_record() )
+
+        performance_now = 520
+        act( () => controller.release_record() )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
     test( `records a press-and-hold clip on release`, async () => {
         const { stream } = make_stream()
         const recorder = make_recorder()

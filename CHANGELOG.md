@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.6] - 2026-05-18
+
+### Added
+- add native-share, settings, export, and recording regressions
+
+### Fixed
+- require explicit cancellation while export compilation is running
+- block stale cached export sharing during queue mutations
+- keep cached export blobs paired with current metadata
+- reject exports when their project disappears before caching
+- keep active recordings stoppable after permission state changes
+- stop recordings on next tap after lost startup release
+
 ## [0.3.5] - 2026-05-18
 
 ### Added

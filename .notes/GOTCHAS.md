@@ -44,3 +44,8 @@
 - `list_projects()` is also a cleanup boundary for legacy cached exports. Keep stale export metadata/blob pruning there so old invalid exports do not quietly consume local quota.
 - When microphone permission is known denied, a later capture failure should take priority over the stale microphone-denied/video-only guidance; otherwise camera failures can be hidden.
 - Recording cleanup should clear `MediaRecorder` event handlers after stop/start failure, in addition to stopping tracks, because browser recorders can otherwise retain callbacks longer than needed.
+- While an export is compiling, close/Escape must not silently cancel it. Keep cancellation on an explicit `Cancel export` action.
+- If a compiled export cannot be cached because the project disappeared, show an error instead of exposing a transient Share/Download export for a stale project.
+- Clear and block cached export sharing as soon as clip delete/reorder work starts; otherwise a preloaded blob can be shared before React has refreshed the changed queue.
+- Keep the record control enabled while `starting` or `recording` even if passive permission state later becomes blocking, so users can still release/stop the active recording.
+- If the first pointer release is lost during capture startup, treat the next fresh record press/release as the stop tap instead of requiring an extra tap.

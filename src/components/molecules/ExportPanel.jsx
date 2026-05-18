@@ -121,6 +121,8 @@ const is_storage_quota_error = ( error ) => {
         || error?.code === 1014
 }
 
+const is_missing_project_error = ( error ) => error?.message === `Project not found.`
+
 const make_transient_export_record = ( { project, compiled_export, settings_hash, clip_manifest_hash } ) => ( {
     id: `unsaved-${ Date.now() }`,
     project_id: project.id,
@@ -185,13 +187,10 @@ export function ExportPanel( {
     }, [ on_close, set_export_progress ] )
 
     const close_export_panel = useCallback( () => {
-        if( status === `compiling` ) {
-            cancel_export()
-            return
-        }
+        if( status === `compiling` ) return
 
         on_close()
-    }, [ cancel_export, on_close, status ] )
+    }, [ on_close, status ] )
 
     const panel_ref = useModalFocus( {
         active: true,
@@ -269,6 +268,8 @@ export function ExportPanel( {
                     } )
                     next_export_record = saved_export
                 } catch ( error ) {
+                    if( is_missing_project_error( error ) ) throw error
+
                     log.warn( `Compiled export could not be cached`, error )
                     cache_warning = is_storage_quota_error( error )
                         ? `Export is ready, but local browser storage is full. Share or download it now before closing.`
@@ -351,6 +352,11 @@ export function ExportPanel( {
                 percent: 0,
                 message: `Loading export`
             } )
+            set_status( `loading` )
+            set_error_message( null )
+            set_ready_warnings( [] )
+            set_export_record( initial_export_record )
+            export_blob_ref.current = null
 
             const blob = load_initial_export_blob_ref.current
                 ? await load_initial_export_blob_ref.current( initial_export_record )
@@ -415,7 +421,9 @@ export function ExportPanel( {
         <Panel ref={ panel_ref } role="dialog" aria-modal="true" aria-labelledby="export-title" tabIndex={ -1 }>
             <Header>
                 <h2 id="export-title">Export video</h2>
-                <IconButton icon={ X } label="Close export panel" onClick={ close_export_panel } />
+                { status === `compiling`
+                    ? null
+                    : <IconButton icon={ X } label="Close export panel" onClick={ close_export_panel } /> }
             </Header>
 
             { status === `compiling` ? <>
@@ -451,7 +459,7 @@ export function ExportPanel( {
 
             <Actions>
                 { status === `compiling` ? <TextButton type="button" onClick={ cancel_export }>
-                    Cancel
+                    Cancel export
                 </TextButton> : null }
                 { status === `ready` ? <>
                     <TextButton type="button" onClick={ download_ready_export }>

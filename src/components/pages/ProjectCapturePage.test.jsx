@@ -31,7 +31,12 @@ import { share_export_file } from '../../modules/sharing/share.js'
 
 const recording_state = vi.hoisted( () => ( {
     error_message: null,
-    permission_recovery_needed: false
+    permission_recovery_needed: false,
+    recording_state: `idle`,
+    press_record: vi.fn(),
+    release_record: vi.fn(),
+    cancel_record: vi.fn(),
+    toggle_recording: vi.fn()
 } ) )
 
 vi.mock( '../../hooks/use_recording_controller.js', () => ( {
@@ -39,12 +44,12 @@ vi.mock( '../../hooks/use_recording_controller.js', () => ( {
         stream: null,
         error_message: recording_state.error_message,
         permission_recovery_needed: recording_state.permission_recovery_needed,
-        recording_state: `idle`,
+        recording_state: recording_state.recording_state,
         elapsed_ms: 0,
-        press_record: vi.fn(),
-        release_record: vi.fn(),
-        cancel_record: vi.fn(),
-        toggle_recording: vi.fn()
+        press_record: recording_state.press_record,
+        release_record: recording_state.release_record,
+        cancel_record: recording_state.cancel_record,
+        toggle_recording: recording_state.toggle_recording
     } )
 } ) )
 
@@ -183,6 +188,11 @@ describe( `project capture page`, () => {
         vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
         recording_state.error_message = null
         recording_state.permission_recovery_needed = false
+        recording_state.recording_state = `idle`
+        recording_state.press_record.mockReset()
+        recording_state.release_record.mockReset()
+        recording_state.cancel_record.mockReset()
+        recording_state.toggle_recording.mockReset()
         query_state.initial_panel = undefined
         query_state.set_panel = null
         useAppStore.setState( {
@@ -469,6 +479,38 @@ describe( `project capture page`, () => {
         expect( get_valid_cached_export ).toHaveBeenCalled()
     } )
 
+    test( `blocks stale cached sharing while a clip delete is still updating the queue`, async () => {
+        const user = userEvent.setup()
+        const delete_deferred = make_deferred()
+
+        vi.spyOn( window, `confirm` ).mockReturnValue( true )
+        vi.mocked( get_valid_cached_export ).mockResolvedValue( export_record )
+        vi.mocked( share_export_file ).mockResolvedValue( `shared` )
+        vi.mocked( delete_clip ).mockReturnValue( delete_deferred.promise )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_export_blob ).toHaveBeenCalledWith( export_record.id )
+        } )
+
+        await user.click( screen.getByRole( `button`, { name: `Delete clip 1` } ) )
+
+        await waitFor( () => {
+            expect( delete_clip ).toHaveBeenCalledWith( clip.id )
+        } )
+        screen.getAllByRole( `button`, { name: `Share or export project` } ).forEach( ( button ) => {
+            expect( button.disabled ).toBe( true )
+        } )
+        expect( share_export_file ).not.toHaveBeenCalled()
+
+        await act( async () => {
+            delete_deferred.resolve()
+            await delete_deferred.promise
+        } )
+    } )
+
     test( `does not auto-open export from restored URL state`, async () => {
         query_state.initial_panel = `export`
 
@@ -491,6 +533,30 @@ describe( `project capture page`, () => {
 
         expect( await screen.findByText( project.title ) ).toBeTruthy()
         expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
+    } )
+
+    test( `keeps the stop control enabled if permission state changes while recording`, async () => {
+        const user = userEvent.setup()
+
+        recording_state.recording_state = `recording`
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `denied`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        const stop_button = await screen.findByRole( `button`, { name: `Stop recording` } )
+
+        expect( stop_button.disabled ).toBe( false )
+
+        await user.click( stop_button )
+
+        expect( recording_state.release_record ).toHaveBeenCalledTimes( 1 )
     } )
 
     test( `blocks recording when the browser origin is not secure`, async () => {

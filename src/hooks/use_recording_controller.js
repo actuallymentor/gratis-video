@@ -456,8 +456,13 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             return
         }
 
-        if( phase_ref.current === `recording` && recording_mode_ref.current === `tap` ) {
-            return
+        if( phase_ref.current !== `recording` ) return
+
+        // A permission prompt can swallow the first pointer release. Treat the next
+        // fresh press as the user's stop tap instead of requiring a third tap.
+        if( !recording_mode_ref.current ) {
+            recording_mode_ref.current = `tap`
+            set_recording_mode( `tap` )
         }
     }, [ start_recording ] )
 

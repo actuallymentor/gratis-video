@@ -189,6 +189,43 @@ test.describe( `daily video journal app`, () => {
     } )
 
     test( `exports, downloads, renames, and deletes a browser-recorded project`, async ( { context, page } ) => {
+        await page.addInitScript( () => {
+            const native_share_calls = []
+
+            Object.defineProperty( window, `__native_share_calls`, {
+                configurable: true,
+                value: native_share_calls
+            } )
+            Object.defineProperty( navigator, `canShare`, {
+                configurable: true,
+                value: ( share_data ) => {
+                    const [ file = null ] = share_data.files ?? []
+
+                    native_share_calls.push( {
+                        kind: `canShare`,
+                        file_name: file?.name ?? null,
+                        file_type: file?.type ?? null
+                    } )
+
+                    return Boolean( file )
+                }
+            } )
+            Object.defineProperty( navigator, `share`, {
+                configurable: true,
+                value: async ( share_data ) => {
+                    const [ file = null ] = share_data.files ?? []
+
+                    native_share_calls.push( {
+                        kind: `share`,
+                        file_name: file?.name ?? null,
+                        file_type: file?.type ?? null,
+                        title: share_data.title ?? null
+                    } )
+
+                    throw new DOMException( `Share cancelled`, `AbortError` )
+                }
+            } )
+        } )
         await context.grantPermissions( [ `camera`, `microphone` ] )
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `Create Project` } ).click()
@@ -208,6 +245,19 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByText( /Export is ready/ ).first() ).toBeVisible( {
             timeout: 30_000
         } )
+
+        await page.getByRole( `button`, { name: `Share`, exact: true } ).click()
+        await expect.poll( () => page.evaluate( () => {
+            return window.__native_share_calls.filter( ( { kind } ) => kind === `share` ).length
+        } ) ).toBe( 1 )
+
+        const [ share_call ] = await page.evaluate( () => {
+            return window.__native_share_calls.filter( ( { kind } ) => kind === `share` )
+        } )
+
+        expect( share_call.title ).toBeTruthy()
+        expect( share_call.file_name ).toMatch( /\.(webm|mp4)$/ )
+        expect( share_call.file_type ).toMatch( /^video\// )
 
         const download_promise = page.waitForEvent( `download` )
 
@@ -282,6 +332,39 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByText( /stored locally in this browser/ ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Delete all local data` } ) ).toBeVisible()
         await expect( page.getByRole( `heading`, { name: `Export`, exact: true } ) ).toBeVisible()
+    } )
+
+    test( `persists settings changes and deletes all local data`, async ( { page } ) => {
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
+        await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
+
+        await page.getByRole( `button`, { name: `Open projects` } ).click()
+        await page.getByRole( `button`, { name: `Open settings` } ).first().click()
+
+        await expect( page.getByRole( `heading`, { name: `Settings` } ) ).toBeVisible()
+        await expect( page.getByLabel( `Haptics` ) ).toBeChecked()
+        await expect( page.getByLabel( `Sound feedback` ) ).not.toBeChecked()
+
+        await page.getByLabel( `Haptics` ).click()
+        await page.getByLabel( `Sound feedback` ).click()
+        await expect( page.getByLabel( `Haptics` ) ).not.toBeChecked()
+        await expect( page.getByLabel( `Sound feedback` ) ).toBeChecked()
+        await page.waitForTimeout( 120 )
+        await page.reload()
+
+        await expect( page.getByRole( `heading`, { name: `Settings` } ) ).toBeVisible()
+        await expect( page.getByLabel( `Haptics` ) ).not.toBeChecked()
+        await expect( page.getByLabel( `Sound feedback` ) ).toBeChecked()
+
+        page.once( `dialog`, ( dialog ) => dialog.accept() )
+        await page.getByRole( `button`, { name: `Delete all local data` } ).click()
+
+        await expect( page ).toHaveURL( /\/projects$/ )
+        await expect( page.getByText( `No projects yet` ) ).toBeVisible()
+
+        await page.goto( `/` )
+        await expect( page ).toHaveURL( /\/projects$/ )
     } )
 
     test( `starts from the cached app shell while offline`, async ( { context, page } ) => {
