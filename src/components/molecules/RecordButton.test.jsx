@@ -82,6 +82,33 @@ describe( `record button`, () => {
         expect( default_props.on_toggle ).toHaveBeenCalledTimes( 1 )
     } )
 
+    test( `ignores unrelated secondary pointers during an active press`, () => {
+        render( <RecordButton { ...default_props } recording_state="recording" /> )
+
+        const button = screen.getByRole( `button`, { name: `Stop recording` } )
+
+        fireEvent.pointerDown( button, { pointerId: 1, button: 0 } )
+        fireEvent.pointerDown( button, { pointerId: 2, button: 0 } )
+        fireEvent.pointerUp( button, { pointerId: 2, button: 0 } )
+        fireEvent.pointerUp( button, { pointerId: 1, button: 0 } )
+
+        expect( default_props.on_press ).toHaveBeenCalledTimes( 1 )
+        expect( default_props.on_release ).toHaveBeenCalledTimes( 1 )
+        expect( default_props.on_cancel ).not.toHaveBeenCalled()
+    } )
+
+    test( `ignores non-primary pointer presses`, () => {
+        render( <RecordButton { ...default_props } recording_state="idle" /> )
+
+        const button = screen.getByRole( `button`, { name: `Record clip` } )
+
+        fireEvent.pointerDown( button, { pointerId: 1, button: 2 } )
+        fireEvent.pointerUp( button, { pointerId: 1, button: 2 } )
+
+        expect( default_props.on_press ).not.toHaveBeenCalled()
+        expect( default_props.on_release ).not.toHaveBeenCalled()
+    } )
+
     test( `ignores the synthetic click after a long pointer hold`, () => {
         let now = 0
 
@@ -105,8 +132,12 @@ describe( `record button`, () => {
     test( `forwards pointer cancellation so partial recordings can be saved`, () => {
         render( <RecordButton { ...default_props } recording_state="recording" /> )
 
-        fireEvent.pointerCancel( screen.getByRole( `button`, { name: `Stop recording` } ), { pointerId: 1 } )
+        const button = screen.getByRole( `button`, { name: `Stop recording` } )
 
+        fireEvent.pointerDown( button, { pointerId: 1 } )
+        fireEvent.pointerCancel( button, { pointerId: 1 } )
+
+        expect( default_props.on_press ).toHaveBeenCalledTimes( 1 )
         expect( default_props.on_cancel ).toHaveBeenCalledTimes( 1 )
     } )
 
@@ -119,9 +150,11 @@ describe( `record button`, () => {
             throw new Error( `Pointer capture already released` )
         } )
 
+        fireEvent.pointerDown( button, { pointerId: 1 } )
         fireEvent.pointerCancel( button, { pointerId: 1 } )
 
         expect( button.releasePointerCapture ).toHaveBeenCalledWith( 1 )
+        expect( default_props.on_press ).toHaveBeenCalledTimes( 1 )
         expect( default_props.on_cancel ).toHaveBeenCalledTimes( 1 )
     } )
 } )

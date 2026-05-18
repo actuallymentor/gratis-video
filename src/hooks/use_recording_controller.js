@@ -21,6 +21,7 @@ import {
     play_sound_feedback,
     pulse_haptic,
     request_capture_stream,
+    select_supported_mime_type,
     stop_media_stream
 } from '../modules/media/recorder.js'
 
@@ -348,53 +349,95 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 set_error_message( `Microphone could not be used, so this clip is recording video only.` )
             }
 
-            const recorder = create_media_recorder( next_stream )
-            const chunks = []
-            const started_at = Date.now()
-            recording_result_ref.current = {
-                chunks,
-                mime_type: null,
-                started_at,
-                error: null
-            }
             const stop_when_track_ends = () => {
                 if( phase_ref.current === `recording` || phase_ref.current === `starting` ) stop_recording()
             }
-
-            let recorder_error = null
-            const stopped = new Promise( ( resolve ) => {
-                recorder.ondataavailable = ( event ) => {
-                    if( event.data?.size <= 0 ) return
-
-                    chunks.push( event.data )
-                    if( event.data.type ) recording_result_ref.current.mime_type = event.data.type
-                }
-                recorder.onerror = () => {
-                    recorder_error = recorder.error ?? new Error( `Recorder error` )
-                    recording_result_ref.current = {
-                        ...recording_result_ref.current,
-                        error: recorder_error
-                    }
-                    stop_recording()
-                }
-                recorder.onstop = () => resolve( {
-                    chunks,
-                    mime_type: recorder.mimeType || chunks.at( 0 )?.type || `video/webm`,
-                    started_at,
-                    error: recorder_error
+            const start_recorder_attempt = ( mime_type ) => {
+                const recorder = create_media_recorder( next_stream, {
+                    mime_type,
+                    fallback_to_default: false
                 } )
-            } )
+                const chunks = []
+                const started_at = Date.now()
+                let recorder_error = null
 
-            recorder_ref.current = recorder
-            recording_result_ref.current.mime_type = recorder.mimeType || null
-            stop_promise_ref.current = stopped
+                recording_result_ref.current = {
+                    chunks,
+                    mime_type: null,
+                    started_at,
+                    error: null
+                }
+
+                const stopped = new Promise( ( resolve ) => {
+                    recorder.ondataavailable = ( event ) => {
+                        if( event.data?.size <= 0 ) return
+
+                        chunks.push( event.data )
+                        if( event.data.type ) recording_result_ref.current.mime_type = event.data.type
+                    }
+                    recorder.onerror = () => {
+                        recorder_error = recorder.error ?? new Error( `Recorder error` )
+                        recording_result_ref.current = {
+                            ...recording_result_ref.current,
+                            error: recorder_error
+                        }
+                        stop_recording()
+                    }
+                    recorder.onstop = () => resolve( {
+                        chunks,
+                        mime_type: recorder.mimeType || chunks.at( 0 )?.type || `video/webm`,
+                        started_at,
+                        error: recorder_error
+                    } )
+                } )
+
+                recorder_ref.current = recorder
+                recording_result_ref.current.mime_type = recorder.mimeType || null
+                stop_promise_ref.current = stopped
+                recorder.start( 250 )
+
+                return {
+                    recorder,
+                    started_at
+                }
+            }
+            const requested_mime_type = select_supported_mime_type()
+            const recorder_attempts = requested_mime_type ? [ requested_mime_type, null ] : [ null ]
+            const start_errors = []
+            const started_attempt = recorder_attempts.reduce( ( started, mime_type ) => {
+                if( started ) return started
+
+                try {
+                    return start_recorder_attempt( mime_type )
+                } catch ( error ) {
+                    const failed_recorder = recorder_ref.current
+
+                    start_errors.push( error )
+                    clear_recorder_handlers( failed_recorder )
+                    try {
+                        if( failed_recorder?.state && failed_recorder.state !== `inactive` ) failed_recorder.stop()
+                    } catch {
+                        // The next recorder attempt or the outer cleanup will release the stream.
+                    }
+                    recorder_ref.current = null
+                    stop_promise_ref.current = null
+                    recording_result_ref.current = empty_recording_result
+                    return null
+                }
+            }, null )
+
+            if( !started_attempt ) throw start_errors.at( -1 ) ?? new Error( `Recorder start failed` )
+
+            const {
+                started_at
+            } = started_attempt
+
             next_stream.getTracks().forEach( ( track ) => {
                 track.addEventListener?.( `ended`, stop_when_track_ends, { once: true } )
             } )
             set_stream( next_stream )
             set_recording_started_at( started_at )
 
-            recorder.start( 250 )
             pulse_haptic( settings.haptics_enabled )
             play_sound_feedback( settings.sounds_enabled, `start` )
             set_phase( `recording` )

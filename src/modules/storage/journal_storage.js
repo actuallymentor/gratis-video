@@ -72,12 +72,20 @@ const format_date_title = ( date ) => new Intl.DateTimeFormat(
 
 const make_project_title = ( projects, date = new Date() ) => {
     const base_title = format_date_title( date )
-    const same_title_count = projects.filter( ( { title } ) => {
-        return title === base_title || title.startsWith( `${ base_title } - ` )
-    } ).length
+    const used_title_numbers = new Set( projects.map( ( { title } ) => {
+        if( title === base_title ) return 1
+        if( !title.startsWith( `${ base_title } - ` ) ) return null
 
-    if( same_title_count === 0 ) return base_title
-    return `${ base_title } - ${ same_title_count + 1 }`
+        const title_number = Number( title.slice( `${ base_title } - `.length ) )
+        return Number.isInteger( title_number ) && title_number > 1 ? title_number : null
+    } ).filter( Boolean ) )
+
+    const next_title_number = Array
+        .from( { length: projects.length + 2 }, ( _, index ) => index + 1 )
+        .find( ( title_number ) => !used_title_numbers.has( title_number ) )
+
+    if( next_title_number === 1 ) return base_title
+    return `${ base_title } - ${ next_title_number }`
 }
 
 const sort_projects = ( projects ) => [ ...projects ].sort( ( first, second ) => {

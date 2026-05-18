@@ -93,6 +93,7 @@ export function RecordButton( {
     const starting = recording_state === `starting`
     const saving = recording_state === `saving`
     const accessible_label = recording_state_labels[ recording_state ] ?? recording_state_labels.idle
+    const active_pointer_id_ref = useRef( null )
     const last_direct_activation_at_ref = useRef( Number.NEGATIVE_INFINITY )
 
     const mark_direct_activation = () => {
@@ -103,19 +104,42 @@ export function RecordButton( {
         return performance.now() - last_direct_activation_at_ref.current < 500
     }
 
+    const claim_pointer = ( event ) => {
+        if( active_pointer_id_ref.current !== null ) return false
+        if( event.button !== undefined && event.button !== 0 ) return false
+
+        active_pointer_id_ref.current = event.pointerId ?? `pointer`
+        return true
+    }
+
+    const release_active_pointer = ( event ) => {
+        const pointer_id = event.pointerId ?? `pointer`
+
+        if( active_pointer_id_ref.current !== pointer_id ) return false
+
+        active_pointer_id_ref.current = null
+        return true
+    }
+
     const press_button = ( event ) => {
+        if( !claim_pointer( event ) ) return
+
         mark_direct_activation()
         capture_pointer( event )
         on_press()
     }
 
     const release_button = ( event ) => {
+        if( !release_active_pointer( event ) ) return
+
         mark_direct_activation()
         release_pointer( event )
         on_release()
     }
 
     const cancel_button = ( event ) => {
+        if( !release_active_pointer( event ) ) return
+
         mark_direct_activation()
         release_pointer( event )
         on_cancel()

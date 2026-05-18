@@ -147,6 +147,7 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
     const [ preview_clip, set_preview_clip ] = useState( null )
     const [ preview_url, set_preview_url ] = useState( null )
     const [ preview_error, set_preview_error ] = useState( null )
+    const mounted_ref = useRef( true )
     const preview_url_ref = useRef( null )
     const preview_request_ref = useRef( 0 )
 
@@ -177,7 +178,7 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
             return
         }
 
-        if( !preview_is_current() ) return
+        if( !preview_is_current() || !mounted_ref.current ) return
 
         if( !blob ) {
             replace_preview_url( null )
@@ -185,7 +186,14 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
             return
         }
 
-        replace_preview_url( URL.createObjectURL( blob ) )
+        const object_url = URL.createObjectURL( blob )
+
+        if( !preview_is_current() || !mounted_ref.current ) {
+            URL.revokeObjectURL( object_url )
+            return
+        }
+
+        replace_preview_url( object_url )
         set_preview_error( null )
     }
 
@@ -202,6 +210,8 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
 
     useEffect( () => {
         return () => {
+            mounted_ref.current = false
+            preview_request_ref.current += 1
             if( preview_url_ref.current ) URL.revokeObjectURL( preview_url_ref.current )
         }
     }, [] )

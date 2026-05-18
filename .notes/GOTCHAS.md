@@ -32,6 +32,8 @@
 - In the service worker, match cached build assets by both the browser `Request` and URL pathname. Chromium offline subresource requests can miss the direct `Request` match even when the pathname is cached.
 - Playwright smoke tests use `*.playwright.js` with an explicit `testMatch` so Vitest does not try to execute `@playwright/test` suites.
 - Playwright config uses fake media device/UI flags so browser smoke tests can record clips in Chromium without a real camera permission prompt.
+- Playwright E2E media tests also generate `tests/.generated/fake-media/fake-camera.y4m` and launch Chromium with `--use-file-for-fake-video-capture`. Keep the generated directory ignored; the checked-in generator is `tests/fake_media.js`.
+- When a test decodes a Blob with a temporary `<video>`, snapshot `videoWidth`, `videoHeight`, `currentTime`, and `readyState` before removing `src` or calling `load()`. Cleanup resets media metadata to zero.
 - Recording startup must check `MediaRecorder` before calling `getUserMedia()`; otherwise unsupported browsers can open camera/mic even though no clip can be recorded.
 - Export playback needs event and playback-stall timeouts because damaged or unsupported clip blobs can otherwise leave bounded progress stuck forever.
 - Recording shutdown needs a bounded `MediaRecorder.onstop` fallback. Some browser failure paths may stop tracks or encoders without firing `onstop`; keep available chunks saveable and always release tracks.
@@ -55,6 +57,8 @@
 - Export MIME support probes can pass on a tiny canvas stream while `MediaRecorder.start()` fails on the real mixed export stream. Keep start-time MIME/default fallback covered.
 - Keep `save_settings()` serialized and transactional. Rapid Settings toggles can otherwise persist out of order even when the optimistic UI looks correct.
 - Project creation must choose the default date title inside the same IndexedDB write transaction that inserts the project. Precomputing from `list_projects()` can duplicate titles under rapid creates.
+- Default project titles should fill the first unused suffix, not count matching titles. Renamed same-day projects like `May 18, 2026 - 2` can otherwise cause duplicate future defaults.
 - Project deletion must decide whether to clear the active-project pointer inside the delete transaction. A stale localStorage boot hint should be removed without clearing a newer IndexedDB active pointer.
 - After a clip is stored, keep recording state in `saving` until the capture page refresh callback finishes, but stop media tracks before waiting on IndexedDB/UI refresh work.
+- Recording MIME fallback needs to cover both typed `MediaRecorder` construction failure and typed `recorder.start()` failure. If `start()` partially activates before throwing, clear handlers and stop that failed recorder before trying the browser-default recorder.
 - While export compilation is active, URL/history changes must not unmount the export panel. If an in-flight panel does unmount, clear global export progress so the UI does not stay stuck in an active export state.

@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test'
+import fs from 'node:fs/promises'
+import {
+    fake_video_capture_height,
+    fake_video_capture_width
+} from './fake_media.js'
 
 const browser_issue_types = new Set( [ `warning`, `error` ] )
 const same_origin = `http://127.0.0.1:5173`
@@ -32,6 +37,166 @@ const record_clip_for = async ( page, duration_ms ) => {
     await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
     await page.waitForTimeout( duration_ms )
     await page.getByRole( `button`, { name: `Stop recording` } ).click()
+}
+
+const read_playable_video_metadata = async ( page, {
+    base64 = null,
+    clip_blob = false,
+    export_blob = false,
+    mime_type = `video/webm`
+} = {} ) => {
+    return page.evaluate( async ( options ) => {
+        const request_to_promise = ( request ) => new Promise( ( resolve, reject ) => {
+            request.onsuccess = () => resolve( request.result )
+            request.onerror = () => reject( request.error )
+        } )
+        const read_blob_metadata = ( blob ) => new Promise( ( resolve, reject ) => {
+            const video = document.createElement( `video` )
+            const object_url = URL.createObjectURL( blob )
+            let settled = false
+            let timeout_id = null
+            const cleanup = () => {
+                window.clearTimeout( timeout_id )
+                video.pause()
+                video.removeAttribute( `src` )
+                video.load()
+                URL.revokeObjectURL( object_url )
+            }
+            const finish = () => {
+                if( settled ) return
+
+                settled = true
+                const metadata = {
+                    duration_ms: Number.isFinite( video.duration ) ? Math.round( video.duration * 1000 ) : null,
+                    playback_time_ms: Math.round( video.currentTime * 1000 ),
+                    ready_state: video.readyState,
+                    width: video.videoWidth,
+                    height: video.videoHeight,
+                    size: blob.size,
+                    type: blob.type
+                }
+
+                cleanup()
+                resolve( metadata )
+            }
+            const fail = ( error ) => {
+                if( settled ) return
+
+                settled = true
+                cleanup()
+                reject( error )
+            }
+            const wait_for_playback = () => {
+                if( settled ) return
+
+                if( video.currentTime > 0.04 || video.ended ) {
+                    finish()
+                    return
+                }
+
+                window.setTimeout( wait_for_playback, 60 )
+            }
+
+            video.muted = true
+            video.playsInline = true
+            video.preload = `auto`
+            video.onerror = () => {
+                fail( new Error( `Video blob could not be decoded.` ) )
+            }
+            video.onloadedmetadata = async () => {
+                try {
+                    await video.play()
+                    wait_for_playback()
+                } catch ( error ) {
+                    fail( error )
+                }
+            }
+            timeout_id = window.setTimeout( () => {
+                fail( new Error( `Timed out while decoding video metadata.` ) )
+            }, 5_000 )
+            video.src = object_url
+        } )
+
+        if( options.clip_blob || options.export_blob ) {
+            const database = await new Promise( ( resolve, reject ) => {
+                const request = indexedDB.open( `daily_video_journal` )
+                request.onsuccess = () => resolve( request.result )
+                request.onerror = () => reject( request.error )
+            } )
+
+            try {
+                if( options.export_blob ) {
+                    const transaction = database.transaction( [ `exports`, `export_blobs` ], `readonly` )
+                    const exports = await request_to_promise( transaction.objectStore( `exports` ).getAll() )
+                    const [ latest_export = null ] = exports
+                        .sort( ( first, second ) => new Date( first.created_at ).getTime() - new Date( second.created_at ).getTime() )
+                        .slice( -1 )
+                    const latest_export_blob_record = latest_export
+                        ? await request_to_promise( transaction.objectStore( `export_blobs` ).get( latest_export.id ) )
+                        : null
+
+                    if( !latest_export_blob_record?.blob ) throw new Error( `No compiled export blob found.` )
+
+                    return read_blob_metadata( latest_export_blob_record.blob )
+                }
+
+                const transaction = database.transaction( [ `clips`, `clip_blobs` ], `readonly` )
+                const clips = await request_to_promise( transaction.objectStore( `clips` ).getAll() )
+                const [ latest_clip = null ] = clips
+                    .filter( ( { deleted_at } ) => !deleted_at )
+                    .sort( ( first, second ) => new Date( first.created_at ).getTime() - new Date( second.created_at ).getTime() )
+                    .slice( -1 )
+                const latest_clip_blob_record = latest_clip
+                    ? await request_to_promise( transaction.objectStore( `clip_blobs` ).get( latest_clip.id ) )
+                    : null
+
+                if( !latest_clip_blob_record?.blob ) throw new Error( `No recorded clip blob found.` )
+
+                const metadata = await read_blob_metadata( latest_clip_blob_record.blob )
+
+                return {
+                    ...metadata,
+                    stored_duration_ms: latest_clip.duration_ms,
+                    stored_height: latest_clip.height,
+                    stored_width: latest_clip.width
+                }
+            } finally {
+                database.close()
+            }
+        }
+
+        const binary = atob( options.base64 )
+        const bytes = new Uint8Array( binary.length )
+
+        Array.from( binary ).forEach( ( character, index ) => {
+            bytes[ index ] = character.charCodeAt( 0 )
+        } )
+
+        return read_blob_metadata( new Blob( [ bytes ], { type: options.mime_type } ) )
+    }, {
+        base64,
+        clip_blob,
+        export_blob,
+        mime_type
+    } )
+}
+
+const read_downloaded_file_size = async ( download ) => {
+    const download_path = await download.path()
+    const download_buffer = await fs.readFile( download_path )
+
+    return download_buffer.length
+}
+
+const expect_fake_capture_video = ( metadata ) => {
+    const duration_ms = metadata.duration_ms ?? metadata.stored_duration_ms ?? metadata.playback_time_ms
+
+    expect( metadata.size ).toBeGreaterThan( 1_000 )
+    expect( metadata.width ).toBe( fake_video_capture_width )
+    expect( metadata.height ).toBe( fake_video_capture_height )
+    expect( metadata.ready_state ).toBeGreaterThanOrEqual( 2 )
+    expect( metadata.playback_time_ms ).toBeGreaterThan( 40 )
+    expect( duration_ms ).toBeGreaterThan( 400 )
 }
 
 test.beforeEach( async ( { page } ) => {
@@ -261,7 +426,7 @@ test.describe( `daily video journal app`, () => {
         await expect( clip_rows.nth( 1 ) ).toContainText( `1s` )
     } )
 
-    test( `exports, downloads, renames, and deletes a browser-recorded project`, async ( { context, page } ) => {
+    test( `records deterministic fake video, exports, downloads, renames, and deletes a project`, async ( { context, page } ) => {
         await page.addInitScript( () => {
             const native_share_calls = []
 
@@ -308,6 +473,17 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Stop recording` } ).click()
 
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect.poll( async () => {
+            const metadata = await read_playable_video_metadata( page, {
+                clip_blob: true
+            } )
+
+            return metadata.width
+        } ).toBe( fake_video_capture_width )
+
+        expect_fake_capture_video( await read_playable_video_metadata( page, {
+            clip_blob: true
+        } ) )
 
         await page.getByRole( `button`, { name: `Preview clip 1` } ).click()
         await expect( page.getByRole( `dialog`, { name: `Clip preview` } ) ).toBeVisible()
@@ -318,6 +494,17 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByText( /Export is ready/ ).first() ).toBeVisible( {
             timeout: 30_000
         } )
+        await expect.poll( async () => {
+            const metadata = await read_playable_video_metadata( page, {
+                export_blob: true
+            } )
+
+            return metadata.width
+        } ).toBe( fake_video_capture_width )
+
+        expect_fake_capture_video( await read_playable_video_metadata( page, {
+            export_blob: true
+        } ) )
 
         await page.getByRole( `button`, { name: `Share`, exact: true } ).click()
         await expect.poll( () => page.evaluate( () => {
@@ -339,6 +526,7 @@ test.describe( `daily video journal app`, () => {
         const download = await download_promise
 
         expect( download.suggestedFilename() ).toMatch( /\.(webm|mp4)$/ )
+        expect( await read_downloaded_file_size( download ) ).toBeGreaterThan( 1_000 )
 
         await page.getByRole( `button`, { name: `Close export panel` } ).click()
         await page.getByRole( `button`, { name: `Open projects` } ).click()

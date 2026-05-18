@@ -139,6 +139,19 @@ describe( `journal storage`, () => {
         expect( second_project.title ).toBe( `${ first_project.title } - 2` )
     } )
 
+    test( `fills gaps in default project titles after renamed same-day projects`, async () => {
+        const renamed_project = await create_project()
+        const base_title = renamed_project.title
+
+        await rename_project( renamed_project.id, `${ base_title } - 2` )
+
+        const next_project = await create_project()
+        const third_project = await create_project()
+
+        expect( next_project.title ).toBe( base_title )
+        expect( third_project.title ).toBe( `${ base_title } - 3` )
+    } )
+
     test( `creates unique default titles during concurrent project creation`, async () => {
         const projects = await Promise.all( [
             create_project(),

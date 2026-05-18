@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ClipQueue } from './ClipQueue.jsx'
 import {
@@ -137,6 +137,26 @@ describe( `clip queue`, () => {
             expect( container.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:second-preview` )
         } )
         expect( URL.createObjectURL ).toHaveBeenCalledTimes( 1 )
+    } )
+
+    test( `does not create preview object URLs after unmount`, async () => {
+        const user = userEvent.setup()
+        const pending_preview = make_deferred()
+
+        vi.mocked( get_clip_blob ).mockReturnValue( pending_preview.promise )
+
+        const { unmount } = render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
+
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
+        unmount()
+
+        await act( async () => {
+            pending_preview.resolve( new Blob( [ `video` ], { type: `video/webm` } ) )
+            await pending_preview.promise
+        } )
+
+        expect( URL.createObjectURL ).not.toHaveBeenCalled()
+        expect( URL.revokeObjectURL ).not.toHaveBeenCalled()
     } )
 
     test( `reloads thumbnails when async media details update the clip`, async () => {

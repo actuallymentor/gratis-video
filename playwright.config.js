@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
+import { ensure_fake_video_capture_file } from './tests/fake_media.js'
+
+const fake_video_capture_file = ensure_fake_video_capture_file()
 
 export default defineConfig( {
     testDir: `./tests`,
@@ -13,8 +16,10 @@ export default defineConfig( {
         baseURL: `http://127.0.0.1:5173`,
         launchOptions: {
             args: [
+                `--no-sandbox`,
                 `--use-fake-device-for-media-stream`,
-                `--use-fake-ui-for-media-stream`
+                `--use-fake-ui-for-media-stream`,
+                `--use-file-for-fake-video-capture=${ fake_video_capture_file }`
             ]
         },
         trace: `retain-on-failure`

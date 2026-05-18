@@ -151,18 +151,23 @@ export async function request_capture_stream( { audio_enabled = true } = {} ) {
 /**
  * Creates a configured MediaRecorder for a stream.
  * @param {MediaStream} stream - Capture stream.
+ * @param {Object} options - Recorder construction options.
+ * @param {string|null} options.mime_type - MIME type to request, or null for browser default.
+ * @param {boolean} options.fallback_to_default - Whether typed construction may retry without MIME.
  * @returns {MediaRecorder} Recorder instance.
  */
-export function create_media_recorder( stream ) {
+export function create_media_recorder( stream, {
+    mime_type = select_supported_mime_type(),
+    fallback_to_default = true
+} = {} ) {
     if( !globalThis.MediaRecorder ) throw new Error( `MediaRecorder is unavailable in this browser.` )
 
-    const mime_type = select_supported_mime_type()
-    const options = mime_type ? { mimeType: mime_type } : undefined
+    const recorder_options = mime_type ? { mimeType: mime_type } : undefined
 
     try {
-        return new MediaRecorder( stream, options )
+        return new MediaRecorder( stream, recorder_options )
     } catch ( error ) {
-        if( options ) return new MediaRecorder( stream )
+        if( recorder_options && fallback_to_default ) return new MediaRecorder( stream )
         throw error
     }
 }

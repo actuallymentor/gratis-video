@@ -266,6 +266,7 @@ const connect_video_audio = ( audio_graph, video ) => {
 const start_video_playback = async ( video, signal ) => {
     try {
         await wait_for_abortable( video.play(), signal )
+        return { muted_for_playback: false }
     } catch ( error ) {
         if( !is_autoplay_block_error( error ) ) throw error
 
@@ -274,6 +275,7 @@ const start_video_playback = async ( video, signal ) => {
         throw_if_aborted( signal )
         video.muted = true
         await wait_for_abortable( video.play(), signal )
+        return { muted_for_playback: true }
     }
 }
 
@@ -455,7 +457,7 @@ const play_clip_to_canvas = async ( {
             return total + ( next_clip.duration_ms || 0 )
         }, 0 )
 
-        await start_video_playback( video, signal )
+        const playback_state = await start_video_playback( video, signal )
 
         const playback_progress = {
             last_time: -1,
@@ -493,7 +495,8 @@ const play_clip_to_canvas = async ( {
 
         draw_video_frame( context, video, canvas )
         return {
-            audio_routed: Boolean( audio_source )
+            audio_routed: Boolean( audio_source ),
+            muted_for_playback: playback_state.muted_for_playback
         }
     } finally {
         try {
@@ -529,6 +532,8 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     canvas.width = width
     canvas.height = height
     const context = canvas.getContext( `2d` )
+    if( !context ) throw new Error( `This browser cannot draw video frames for export.` )
+
     const video_stream = canvas.captureStream( FPS )
     let audio_graph = await resume_audio_graph( create_audio_graph() )
     const audio_warnings = audio_graph ? [] : [
@@ -580,6 +585,9 @@ export async function compile_project_export( { clips, settings, signal, on_prog
 
         if( audio_graph && playback_results.some( ( { audio_routed } ) => !audio_routed ) ) {
             audio_warnings.push( `This browser could not route audio from every clip, so the export may be video-only.` )
+        }
+        if( audio_graph && playback_results.some( ( { muted_for_playback } ) => muted_for_playback ) ) {
+            audio_warnings.push( `This browser muted clip playback to finish the export, so the export may be video-only.` )
         }
 
         recorder.stop()

@@ -439,6 +439,31 @@ describe( `export compiler`, () => {
         const create_element = document.createElement.bind( document )
         let video_element = null
 
+        class ConnectedAudioContext {
+
+            constructor() {
+                this.state = `running`
+            }
+
+            createMediaStreamDestination() {
+                return {
+                    stream: new FakeMediaStream( [ make_track( `audio` ) ] )
+                }
+            }
+
+            createMediaElementSource() {
+                return {
+                    connect: vi.fn(),
+                    disconnect: vi.fn()
+                }
+            }
+
+            close() {
+                return Promise.resolve()
+            }
+
+        }
+
         class AutoplayBlockedVideoElement extends FakeVideoElement {
 
             play() {
@@ -454,6 +479,7 @@ describe( `export compiler`, () => {
 
         }
 
+        vi.stubGlobal( `AudioContext`, ConnectedAudioContext )
         vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
         vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
         vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
@@ -479,7 +505,10 @@ describe( `export compiler`, () => {
             settings: default_settings,
             signal: new AbortController().signal
         } ) ).resolves.toMatchObject( {
-            duration_ms: 1000
+            duration_ms: 1000,
+            warnings: expect.arrayContaining( [
+                expect.stringMatching( /muted clip playback/ )
+            ] )
         } )
 
         expect( video_element.muted ).toBe( true )
@@ -857,5 +886,26 @@ describe( `export compiler`, () => {
             settings: default_settings,
             signal: new AbortController().signal
         } ) ).rejects.toThrow( /capture a video export/ )
+    } )
+
+    test( `hides export controls and fails clearly when canvas drawing is unavailable`, async () => {
+        HTMLCanvasElement.prototype.getContext = vi.fn( () => null )
+
+        expect( get_export_support_message() ).toMatch( /draw video frames/ )
+        expect( get_supported_export_mime_types() ).toEqual( [] )
+        expect( get_supported_export_resolutions() ).toEqual( [] )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).rejects.toThrow( /draw video frames/ )
     } )
 } )

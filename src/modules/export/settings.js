@@ -29,6 +29,15 @@ export function get_export_support_message() {
     if( !globalThis.document?.createElement ) return `This browser cannot prepare the export canvas.`
 
     const canvas = document.createElement( `canvas` )
+    let context = null
+
+    try {
+        context = canvas.getContext?.( `2d` ) ?? null
+    } catch {
+        context = null
+    }
+
+    if( !context ) return `This browser cannot draw video frames for export.`
     if( !canvas.captureStream ) return `This browser cannot capture a video export from the canvas.`
 
     return null

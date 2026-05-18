@@ -21,7 +21,8 @@ import {
     get_video_metadata,
     play_sound_feedback,
     pulse_haptic,
-    request_capture_stream
+    request_capture_stream,
+    select_supported_mime_type
 } from '../modules/media/recorder.js'
 
 vi.mock( 'react-hot-toast', () => {
@@ -59,6 +60,7 @@ vi.mock( '../modules/media/recorder.js', () => ( {
     play_sound_feedback: vi.fn(),
     pulse_haptic: vi.fn(),
     request_capture_stream: vi.fn(),
+    select_supported_mime_type: vi.fn(),
     stop_media_stream: vi.fn( ( stream ) => {
         stream?.getTracks().forEach( ( track ) => track.stop() )
     } )
@@ -149,6 +151,7 @@ describe( `recording controller`, () => {
         vi.mocked( play_sound_feedback ).mockReset()
         vi.mocked( pulse_haptic ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
+        vi.mocked( select_supported_mime_type ).mockReset()
         vi.mocked( update_clip_media_details ).mockReset()
         vi.stubGlobal( `MediaRecorder`, () => {} )
         clip_saved.mockReset()
@@ -173,6 +176,7 @@ describe( `recording controller`, () => {
             height: 360
         } )
         vi.mocked( persisted_storage ).mockResolvedValue( true )
+        vi.mocked( select_supported_mime_type ).mockReturnValue( `video/webm` )
         vi.mocked( update_clip_media_details ).mockResolvedValue( { id: `clip-1` } )
     } )
 
@@ -332,19 +336,17 @@ describe( `recording controller`, () => {
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 
-    test( `clears recorder startup state when recorder start fails`, async () => {
-        const failed_stream = make_stream()
-        const recovered_stream = make_stream()
+    test( `falls back to browser default when a supported recorder fails to start`, async () => {
+        const { stream } = make_stream()
         const failed_recorder = make_recorder()
         const recovered_recorder = make_recorder()
 
         failed_recorder.start = vi.fn( () => {
+            failed_recorder.state = `recording`
             throw new Error( `Recorder start failed` )
         } )
 
-        vi.mocked( request_capture_stream )
-            .mockResolvedValueOnce( failed_stream.stream )
-            .mockResolvedValueOnce( recovered_stream.stream )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
         vi.mocked( create_media_recorder )
             .mockReturnValueOnce( failed_recorder )
             .mockReturnValueOnce( recovered_recorder )
@@ -357,22 +359,26 @@ describe( `recording controller`, () => {
         } )
 
         await waitFor( () => {
-            expect( failed_stream.track.stop ).toHaveBeenCalledTimes( 1 )
+            expect( recovered_recorder.start ).toHaveBeenCalledTimes( 1 )
         } )
-        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( create_media_recorder ).toHaveBeenNthCalledWith( 1, stream, {
+            mime_type: `video/webm`,
+            fallback_to_default: false
+        } )
+        expect( create_media_recorder ).toHaveBeenNthCalledWith( 2, stream, {
+            mime_type: null,
+            fallback_to_default: false
+        } )
         expect( failed_recorder.ondataavailable ).toBe( null )
         expect( failed_recorder.onerror ).toBe( null )
         expect( failed_recorder.onstop ).toBe( null )
-
-        await act( async () => {
-            controller.press_record()
-            await Promise.resolve()
-        } )
-
-        await waitFor( () => {
-            expect( recovered_recorder.start ).toHaveBeenCalledTimes( 1 )
-        } )
+        expect( failed_recorder.stop ).toHaveBeenCalledTimes( 1 )
         expect( useAppStore.getState().recording_state ).toBe( `recording` )
+
+        act( () => controller.cancel_record() )
+        await waitFor( () => {
+            expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        } )
     } )
 
     test( `does not play start feedback when recorder start fails`, async () => {

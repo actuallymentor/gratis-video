@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.12] - 2026-05-18
+
+### Added
+- add recording, queue, title, and export edge regressions
+- run Playwright media smoke tests with deterministic fake camera video
+- assert decoded recorded clips and compiled exports in E2E
+
+### Fixed
+- retry recording with default MIME when supported start fails
+- ignore unrelated record-button pointers during active gestures
+- avoid clip preview object URLs after queue unmount
+- keep same-day default project titles unique after renames
+- hide export controls when canvas drawing is unavailable
+- warn when muted export playback may drop audio
+
 ## [0.3.11] - 2026-05-18
 
 ### Added
