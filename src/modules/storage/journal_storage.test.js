@@ -23,7 +23,8 @@ import {
     request_persistent_storage,
     save_export_record,
     save_settings,
-    set_active_project
+    set_active_project,
+    update_clip_media_details
 } from './journal_storage.js'
 import { create_export_hashes } from '../export/cache.js'
 
@@ -219,6 +220,37 @@ describe( `journal storage`, () => {
 
         expect( clips.map( ( { id } ) => id ) ).toEqual( [ second_clip.id, third_clip.id ] )
         expect( clips.map( ( { order_index } ) => order_index ) ).toEqual( [ 1, 2 ] )
+    } )
+
+    test( `updates clip media details after immediate queue persistence`, async () => {
+        const project = await create_project()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+
+        const updated_clip = await update_clip_media_details( {
+            clip_id: clip.id,
+            duration_ms: 1250,
+            width: 640,
+            height: 360,
+            thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
+        } )
+        const [ stored_project ] = await list_projects()
+        const [ stored_clip ] = await get_project_clips( project.id )
+        const thumbnail_blob = await get_clip_thumbnail_blob( clip.id )
+
+        expect( updated_clip ).toMatchObject( {
+            id: clip.id,
+            duration_ms: 1250,
+            width: 640,
+            height: 360
+        } )
+        expect( stored_clip.duration_ms ).toBe( 1250 )
+        expect( stored_project.total_duration_ms ).toBe( 1250 )
+        expect( await thumbnail_blob.text() ).toBe( `thumb` )
     } )
 
     test( `stores, finds, loads, and deletes cached exports`, async () => {

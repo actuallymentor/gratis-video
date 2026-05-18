@@ -6,6 +6,7 @@ import {
     get_all_records,
     get_index_records,
     get_record,
+    has_record,
     put_record,
     write_transaction
 } from './db.js'
@@ -109,17 +110,17 @@ const filter_exports_with_existing_blobs = async ( export_records ) => {
     const export_states = await Promise.all(
         export_records.map( async ( export_record ) => ( {
             export_record,
-            blob: await get_record( `export_blobs`, export_record.id )
+            has_blob: await has_record( `export_blobs`, export_record.id )
         } ) )
     )
     const missing_export_records = export_states
-        .filter( ( { blob } ) => !blob )
+        .filter( ( { has_blob } ) => !has_blob )
         .map( ( { export_record } ) => export_record )
 
     await delete_export_records( missing_export_records )
 
     return export_states
-        .filter( ( { blob } ) => Boolean( blob ) )
+        .filter( ( { has_blob } ) => has_blob )
         .map( ( { export_record } ) => export_record )
 }
 
@@ -404,6 +405,61 @@ export async function add_clip_to_project( {
     } )
 
     return clip
+}
+
+/**
+ * Updates recorded clip details after the queue entry already exists.
+ * @param {Object} options - Media details.
+ * @param {string} options.clip_id - Clip id.
+ * @param {number} options.duration_ms - Refined clip duration.
+ * @param {number|null} options.width - Clip width.
+ * @param {number|null} options.height - Clip height.
+ * @param {Blob|null} options.thumbnail_blob - Generated thumbnail.
+ * @returns {Promise<Object|null>} Updated clip metadata.
+ */
+export async function update_clip_media_details( {
+    clip_id,
+    duration_ms,
+    width = null,
+    height = null,
+    thumbnail_blob = null
+} ) {
+    const clip = await get_record( `clips`, clip_id )
+    if( !clip || clip.deleted_at ) return null
+
+    const project = await get_project( clip.project_id )
+    if( !project ) return null
+
+    const next_duration_ms = duration_ms || clip.duration_ms
+    const duration_delta_ms = next_duration_ms - clip.duration_ms
+    const timestamp = now_iso()
+    const updated_clip = {
+        ...strip_clip_blob_fields( clip ),
+        duration_ms: next_duration_ms,
+        width: width ?? clip.width,
+        height: height ?? clip.height
+    }
+    const updated_project = {
+        ...project,
+        total_duration_ms: Math.max( 0, project.total_duration_ms + duration_delta_ms ),
+        updated_at: timestamp
+    }
+
+    await write_transaction( [ `projects`, `clips`, `clip_thumbnails` ], ( stores ) => {
+        stores.clips.put( updated_clip )
+        if( thumbnail_blob ) stores.clip_thumbnails.put( {
+            id: clip_id,
+            project_id: clip.project_id,
+            blob: thumbnail_blob
+        } )
+        stores.projects.put( updated_project )
+    } )
+
+    await prune_stale_project_exports( clip.project_id ).catch( ( error ) => {
+        log.warn( `Could not prune stale exports after clip media update`, error )
+    } )
+
+    return updated_clip
 }
 
 /**

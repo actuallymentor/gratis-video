@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router'
 import styled from 'styled-components'
@@ -157,6 +157,12 @@ export function SettingsPage() {
     const set_storage_estimate = useAppStore( ( state ) => state.set_storage_estimate )
     const set_storage_persisted = useAppStore( ( state ) => state.set_storage_persisted )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
+    const settings_ref = useRef( null )
+
+    const replace_settings = useCallback( ( next_settings ) => {
+        settings_ref.current = next_settings
+        set_settings( next_settings )
+    }, [] )
 
     useEffect( () => {
         const load = async () => {
@@ -169,7 +175,7 @@ export function SettingsPage() {
 
                 const export_options = get_runtime_export_options()
 
-                set_settings( loaded_settings )
+                replace_settings( loaded_settings )
                 set_supported_mime_types( export_options.mime_types )
                 set_supported_resolution_options( export_options.resolutions )
                 set_export_support_message( export_options.support_message )
@@ -180,7 +186,7 @@ export function SettingsPage() {
                 const export_options = get_runtime_export_options()
 
                 set_storage_error( `Local browser storage is unavailable, so settings cannot be saved here.` )
-                set_settings( default_settings )
+                replace_settings( default_settings )
                 set_supported_mime_types( export_options.mime_types )
                 set_supported_resolution_options( export_options.resolutions )
                 set_export_support_message( export_options.support_message )
@@ -188,17 +194,27 @@ export function SettingsPage() {
         }
 
         load()
-    }, [ set_storage_estimate, set_storage_persisted ] )
+    }, [ replace_settings, set_storage_estimate, set_storage_persisted ] )
 
     const update_setting = async ( patch ) => {
+        const previous_settings = settings_ref.current
+
+        if( !previous_settings ) return
+
+        const next_settings = {
+            ...previous_settings,
+            ...patch
+        }
+
+        // Keep controls responsive while the IndexedDB save settles.
+        replace_settings( next_settings )
+
         try {
-            const saved_settings = await save_settings( {
-                ...settings,
-                ...patch
-            } )
-            set_settings( saved_settings )
+            const saved_settings = await save_settings( next_settings )
+            if( settings_ref.current === next_settings ) replace_settings( saved_settings )
         } catch {
             toast.error( `Setting could not be saved` )
+            if( settings_ref.current === next_settings ) replace_settings( previous_settings )
         }
     }
 

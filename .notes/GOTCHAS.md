@@ -15,3 +15,7 @@
 - Export format choices in Settings must be proven against the canvas export recorder path, not only `MediaRecorder.isTypeSupported()`, because typed construction can still fail.
 - Export setting changes should prune stale cached export blobs; otherwise large exports can accumulate after quality, resolution, or format changes.
 - Project renames should keep cached export filenames current because the export blob can remain valid while its friendly filename changes.
+- Native file share calls should happen as the first async-sensitive operation in a fresh user action. Preload cached export blobs before enabling Share; do not spend the click awaiting IndexedDB.
+- Canvas export playback may happen outside the original tap because React opens the export panel first. Detached videos with audio can hit autoplay policy, so keep a muted retry path instead of failing the export.
+- Service-worker navigation fetches should request `/index.html`, not the current route, so local project IDs in `/projects/:project_id` are not sent again during controlled app navigations.
+- Settings controls are backed by async IndexedDB writes. Keep their React state optimistic so checkbox/segmented interactions update immediately, then roll back only if saving fails.

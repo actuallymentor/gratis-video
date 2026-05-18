@@ -21,6 +21,7 @@ import {
 import { share_export_file } from '../../modules/sharing/share.js'
 import {
     delete_clip,
+    get_active_project,
     get_export_blob,
     get_project,
     get_project_clips,
@@ -101,6 +102,10 @@ const LinkButton = styled( Link )`
     text-decoration: none;
 `
 
+const make_export_cache_key = ( { settings_hash, clip_manifest_hash } ) => {
+    return `${ settings_hash }:${ clip_manifest_hash }`
+}
+
 /**
  * Shows recording controls, live preview, clip queue, and export actions.
  * @returns {JSX.Element} Capture page.
@@ -115,10 +120,19 @@ export function ProjectCapturePage() {
     const [ settings, set_settings ] = useState( null )
     const [ storage_error, set_storage_error ] = useState( null )
     const [ cached_export_record, set_cached_export_record ] = useState( null )
+    const [ cached_export_blob, set_cached_export_blob ] = useState( null )
+    const [ cached_export_key, set_cached_export_key ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
+
+    const redirect_missing_project = useCallback( async () => {
+        const active_project = await get_active_project().catch( () => null )
+
+        set_active_project_id( active_project?.id ?? null )
+        navigate( active_project ? `/projects/${ active_project.id }` : `/projects`, { replace: true } )
+    }, [ navigate, set_active_project_id ] )
 
     const refresh_project = useCallback( async () => {
         try {
@@ -129,7 +143,7 @@ export function ProjectCapturePage() {
             ] )
 
             if( !loaded_project ) {
-                navigate( `/projects`, { replace: true } )
+                await redirect_missing_project()
                 return
             }
 
@@ -140,7 +154,7 @@ export function ProjectCapturePage() {
         } catch {
             set_storage_error( `Local browser storage is unavailable, so clips cannot be loaded or saved.` )
         }
-    }, [ navigate, project_id ] )
+    }, [ project_id, redirect_missing_project ] )
 
     const recording = useRecordingController( {
         project_id,
@@ -154,8 +168,7 @@ export function ProjectCapturePage() {
                 const loaded_project = await get_project( project_id )
 
                 if( !loaded_project ) {
-                    set_active_project_id( null )
-                    navigate( `/projects`, { replace: true } )
+                    await redirect_missing_project()
                     return
                 }
 
@@ -168,7 +181,7 @@ export function ProjectCapturePage() {
         }
 
         activate_project()
-    }, [ navigate, project_id, refresh_project, set_active_project_id ] )
+    }, [ project_id, redirect_missing_project, refresh_project, set_active_project_id ] )
 
     useEffect( () => {
         if( !preview_ref.current ) return
@@ -182,9 +195,41 @@ export function ProjectCapturePage() {
     useEffect( () => {
         if( panel === `export` ) return
 
-        set_cached_export_record( null )
         set_export_requested( false )
     }, [ panel ] )
+
+    useEffect( () => {
+        let cancelled = false
+
+        set_cached_export_record( null )
+        set_cached_export_blob( null )
+        set_cached_export_key( null )
+
+        if( !project || !settings || !clips.length ) return undefined
+
+        const load_cached_export = async () => {
+            const hashes = create_export_hashes( { clips, settings } )
+            const cache_key = make_export_cache_key( hashes )
+            const cached_export = await get_valid_cached_export( {
+                project_id,
+                ...hashes
+            } )
+            const blob = cached_export ? await get_export_blob( cached_export.id ) : null
+
+            if( cancelled ) return
+            if( !cached_export || !blob ) return
+
+            set_cached_export_record( cached_export )
+            set_cached_export_blob( blob )
+            set_cached_export_key( cache_key )
+        }
+
+        load_cached_export().catch( () => null )
+
+        return () => {
+            cancelled = true
+        }
+    }, [ clips, project, project_id, settings ] )
 
     const remove_clip = async ( clip ) => {
         const confirmed = window.confirm( `Delete this clip from the project?` )
@@ -206,12 +251,39 @@ export function ProjectCapturePage() {
         }
 
         const hashes = create_export_hashes( { clips, settings } )
+        const cache_key = make_export_cache_key( hashes )
+
+        if(
+            cached_export_record
+            && cached_export_blob
+            && cached_export_key === cache_key
+        ) {
+            try {
+                const share_result = await share_export_file( {
+                    project,
+                    export_record: cached_export_record,
+                    blob: cached_export_blob
+                } )
+
+                if( share_result === `shared` || share_result === `cancelled` ) return
+            } catch {
+                toast( `Sharing failed. Download is available.` )
+            }
+
+            set_export_requested( true )
+            set_panel( `export` )
+            return
+        }
+
         const cached_export = await get_valid_cached_export( {
             project_id,
             ...hashes
         } ).catch( () => null )
 
         if( !cached_export ) {
+            set_cached_export_record( null )
+            set_cached_export_blob( null )
+            set_cached_export_key( null )
             set_export_requested( true )
             set_panel( `export` )
             return
@@ -220,24 +292,16 @@ export function ProjectCapturePage() {
         const blob = await get_export_blob( cached_export.id )
         if( !blob ) {
             set_cached_export_record( null )
+            set_cached_export_blob( null )
+            set_cached_export_key( null )
             set_export_requested( true )
             set_panel( `export` )
             return
         }
 
-        try {
-            const share_result = await share_export_file( {
-                project,
-                export_record: cached_export,
-                blob
-            } )
-
-            if( share_result === `shared` || share_result === `cancelled` ) return
-        } catch {
-            toast( `Sharing failed. Download is available.` )
-        }
-
         set_cached_export_record( cached_export )
+        set_cached_export_blob( blob )
+        set_cached_export_key( cache_key )
         set_export_requested( true )
         set_panel( `export` )
     }
@@ -332,8 +396,8 @@ export function ProjectCapturePage() {
             clips={ clips }
             settings={ settings }
             initial_export_record={ cached_export_record }
+            initial_export_blob={ cached_export_blob }
             on_close={ () => {
-                set_cached_export_record( null )
                 set_export_requested( false )
                 set_panel( undefined )
             } }

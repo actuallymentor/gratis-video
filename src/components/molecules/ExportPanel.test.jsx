@@ -138,6 +138,38 @@ describe( `export panel`, () => {
             export_record: saved_export,
             blob: compiled_export.blob
         } )
+        expect( get_export_blob ).not.toHaveBeenCalled()
+    } )
+
+    test( `loads a cached export blob before enabling fresh share actions`, async () => {
+        const user = userEvent.setup()
+        const blob_deferred = make_deferred()
+
+        vi.mocked( get_export_blob ).mockReturnValue( blob_deferred.promise )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ saved_export }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Preparing export actions/ ) ).toBeTruthy()
+        expect( screen.queryByRole( `button`, { name: `Share` } ) ).toBe( null )
+
+        await act( async () => {
+            blob_deferred.resolve( compiled_export.blob )
+            await blob_deferred.promise
+        } )
+
+        await user.click( await screen.findByRole( `button`, { name: `Share` } ) )
+
+        expect( share_export_file ).toHaveBeenCalledWith( {
+            project,
+            export_record: saved_export,
+            blob: compiled_export.blob
+        } )
     } )
 
     test( `downloads from the ready share action when native file sharing is unavailable`, async () => {

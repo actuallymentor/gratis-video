@@ -52,7 +52,7 @@ self.addEventListener( `fetch`, ( event ) => {
 
     if( request.mode === `navigate` ) {
         event.respondWith(
-            fetch( request )
+            fetch( `/index.html`, { cache: `reload` } )
                 .then( ( response ) => {
                     const cloned_response = response.clone()
                     caches.open( CACHE_NAME ).then( ( cache ) => cache.put( `/index.html`, cloned_response ) )

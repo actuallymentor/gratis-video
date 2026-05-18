@@ -162,17 +162,14 @@ const connect_video_audio = ( audio_graph, video ) => {
     }
 }
 
-const start_video_playback = async ( video, signal, { allow_muted_retry = false } = {} ) => {
+const start_video_playback = async ( video, signal ) => {
     try {
         await wait_for_abortable( video.play(), signal )
     } catch ( error ) {
         if( error.name !== `NotAllowedError` ) throw error
-        if( !allow_muted_retry ) {
-            throw new Error( `This browser blocked export playback with audio. Try export again while keeping this tab active.` )
-        }
 
         // Mobile autoplay rules can reject detached videos after React effects.
-        // Retrying muted preserves video-only export when no audio route is available.
+        // A muted retry keeps export moving even when the browser will not play audible media.
         throw_if_aborted( signal )
         video.muted = true
         await wait_for_abortable( video.play(), signal )
@@ -226,7 +223,7 @@ const play_clip_to_canvas = async ( {
         video.playsInline = true
         video.preload = `auto`
         await wait_for_event( video, `loadedmetadata`, signal )
-        const audio_connected = connect_video_audio( audio_graph, video )
+        connect_video_audio( audio_graph, video )
 
         const duration_ms = clip.duration_ms || Math.round( ( video.duration || 0 ) * 1000 )
         const project_duration_ms = clips.reduce( ( total, next_clip ) => total + ( next_clip.duration_ms || 0 ), 0 ) || 1
@@ -234,9 +231,7 @@ const play_clip_to_canvas = async ( {
             return total + ( next_clip.duration_ms || 0 )
         }, 0 )
 
-        await start_video_playback( video, signal, {
-            allow_muted_retry: !audio_connected
-        } )
+        await start_video_playback( video, signal )
 
         while( !video.ended ) {
             throw_if_aborted( signal )

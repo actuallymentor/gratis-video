@@ -6,7 +6,8 @@ import { check_media_permissions } from '../modules/permissions/permissions.js'
 import {
     add_clip_to_project,
     estimate_storage,
-    persisted_storage
+    persisted_storage,
+    update_clip_media_details
 } from '../modules/storage/journal_storage.js'
 import {
     HOLD_THRESHOLD_MS,
@@ -98,7 +99,25 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_storage_persisted
     ] )
 
-    const save_recorded_clip = useCallback( async ( { chunks, mime_type, started_at } ) => {
+    const enrich_saved_clip = useCallback( async ( { clip, blob, measured_duration_ms } ) => {
+        const metadata = await get_video_metadata( blob ).catch( () => ( {
+            duration_ms: measured_duration_ms,
+            width: null,
+            height: null
+        } ) )
+        const thumbnail_blob = await generate_video_thumbnail( blob )
+        const updated_clip = await update_clip_media_details( {
+            clip_id: clip.id,
+            duration_ms: metadata.duration_ms || measured_duration_ms,
+            width: metadata.width,
+            height: metadata.height,
+            thumbnail_blob
+        } )
+
+        if( updated_clip ) on_clip_saved?.( updated_clip )
+    }, [ on_clip_saved ] )
+
+    const save_recorded_clip = useCallback( async ( { chunks, mime_type, started_at, error = null } ) => {
         const measured_duration_ms = Date.now() - started_at
         const blob = new Blob( chunks, { type: mime_type || `video/webm` } )
 
@@ -107,27 +126,30 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             return null
         }
 
-        const metadata = await get_video_metadata( blob ).catch( () => ( {
-            duration_ms: measured_duration_ms,
-            width: null,
-            height: null
-        } ) )
-        const duration_ms = metadata.duration_ms || measured_duration_ms
-        const thumbnail_blob = await generate_video_thumbnail( blob )
         const clip = await add_clip_to_project( {
             project_id,
             blob,
             mime_type: mime_type || blob.type || `video/webm`,
-            duration_ms,
-            width: metadata.width,
-            height: metadata.height,
-            thumbnail_blob
+            duration_ms: measured_duration_ms,
+            width: null,
+            height: null,
+            thumbnail_blob: null
         } )
 
         on_clip_saved?.( clip )
         refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
+        enrich_saved_clip( { clip, blob, measured_duration_ms } ).catch( ( enrich_error ) => {
+            log.warn( `Could not finish clip thumbnail or metadata update`, enrich_error )
+        } )
+
+        if( error ) log.warn( `Recorder stopped early; saved available partial clip`, error )
         return clip
-    }, [ on_clip_saved, project_id, refresh_environment_state ] )
+    }, [
+        enrich_saved_clip,
+        on_clip_saved,
+        project_id,
+        refresh_environment_state
+    ] )
 
     const stop_recording = useCallback( async () => {
         if( phase_ref.current === `starting` ) {
@@ -210,15 +232,20 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 if( phase_ref.current === `recording` || phase_ref.current === `starting` ) stop_recording()
             }
 
-            const stopped = new Promise( ( resolve, reject ) => {
+            let recorder_error = null
+            const stopped = new Promise( ( resolve ) => {
                 recorder.ondataavailable = ( event ) => {
                     if( event.data?.size > 0 ) chunks.push( event.data )
                 }
-                recorder.onerror = () => reject( recorder.error ?? new Error( `Recorder error` ) )
+                recorder.onerror = () => {
+                    recorder_error = recorder.error ?? new Error( `Recorder error` )
+                    stop_recording()
+                }
                 recorder.onstop = () => resolve( {
                     chunks,
                     mime_type: recorder.mimeType || chunks.at( 0 )?.type || `video/webm`,
-                    started_at
+                    started_at,
+                    error: recorder_error
                 } )
             } )
 

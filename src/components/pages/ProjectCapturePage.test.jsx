@@ -16,6 +16,7 @@ import {
 } from '../../stores/app_store.js'
 import {
     delete_clip,
+    get_active_project,
     get_export_blob,
     get_clip_thumbnail_blob,
     get_project,
@@ -58,11 +59,14 @@ vi.mock( 'use-query-params', async () => {
 } )
 
 vi.mock( '../molecules/ExportPanel.jsx', () => ( {
-    ExportPanel: () => <div role="dialog">Export panel open</div>
+    ExportPanel: ( { initial_export_blob } ) => <div role="dialog">
+        Export panel open { initial_export_blob ? `with ready blob` : `for compile` }
+    </div>
 } ) )
 
 vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     delete_clip: vi.fn(),
+    get_active_project: vi.fn(),
     get_export_blob: vi.fn(),
     get_clip_thumbnail_blob: vi.fn(),
     get_project: vi.fn(),
@@ -124,6 +128,7 @@ const render_capture = () => render(
 describe( `project capture page`, () => {
     beforeEach( () => {
         vi.mocked( delete_clip ).mockResolvedValue()
+        vi.mocked( get_active_project ).mockResolvedValue( null )
         vi.mocked( get_export_blob ).mockResolvedValue( new Blob( [ `export` ], { type: `video/webm` } ) )
         vi.mocked( get_clip_thumbnail_blob ).mockResolvedValue( null )
         vi.mocked( get_project ).mockResolvedValue( project )
@@ -160,7 +165,7 @@ describe( `project capture page`, () => {
         expect( await screen.findByText( project.title ) ).toBeTruthy()
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
-        expect( await screen.findByText( `Export panel open` ) ).toBeTruthy()
+        expect( await screen.findByText( /Export panel open/ ) ).toBeTruthy()
     } )
 
     test( `does not restart export when history restores the export panel`, async () => {
@@ -171,7 +176,7 @@ describe( `project capture page`, () => {
         expect( await screen.findByText( project.title ) ).toBeTruthy()
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
-        expect( await screen.findByText( `Export panel open` ) ).toBeTruthy()
+        expect( await screen.findByText( /Export panel open/ ) ).toBeTruthy()
 
         act( () => query_state.set_panel( undefined ) )
 
@@ -186,7 +191,7 @@ describe( `project capture page`, () => {
         } )
     } )
 
-    test( `shares a valid cached export from the original export tap`, async () => {
+    test( `shares a preloaded cached export from the original export tap`, async () => {
         const user = userEvent.setup()
 
         vi.mocked( get_valid_cached_export ).mockResolvedValue( export_record )
@@ -195,6 +200,13 @@ describe( `project capture page`, () => {
         render_capture()
 
         expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_export_blob ).toHaveBeenCalledWith( export_record.id )
+        } )
+        await act( async () => {} )
+
+        vi.mocked( get_export_blob ).mockClear()
+
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
         await waitFor( () => {
@@ -204,7 +216,30 @@ describe( `project capture page`, () => {
                 blob: expect.any( Blob )
             } )
         } )
+        expect( get_export_blob ).not.toHaveBeenCalled()
         expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+    } )
+
+    test( `opens a ready export panel when a cached export is found after the tap`, async () => {
+        const user = userEvent.setup()
+        let allow_cache = false
+
+        vi.mocked( get_valid_cached_export ).mockImplementation( async () => {
+            return allow_cache ? export_record : null
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_valid_cached_export ).toHaveBeenCalled()
+        } )
+
+        allow_cache = true
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /with ready blob/ ) ).toBeTruthy()
+        expect( share_export_file ).not.toHaveBeenCalled()
     } )
 
     test( `does not auto-open export from restored URL state`, async () => {
@@ -296,9 +331,31 @@ describe( `project capture page`, () => {
         expect( delete_clip ).toHaveBeenCalledWith( clip.id )
     } )
 
-    test( `redirects to project history when the project cannot be loaded`, async () => {
+    test( `redirects to another active project when the requested project cannot be loaded`, async () => {
+        useAppStore.setState( { active_project_id: `stale-project` } )
+        vi.mocked( get_project ).mockImplementation( async ( project_id ) => {
+            if( project_id === `project-2` ) return {
+                id: `project-2`,
+                title: `Fallback project`
+            }
+
+            return null
+        } )
+        vi.mocked( get_active_project ).mockResolvedValue( {
+            id: `project-2`,
+            title: `Fallback project`
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( `Fallback project` ) ).toBeTruthy()
+        expect( useAppStore.getState().active_project_id ).toBe( `project-2` )
+    } )
+
+    test( `redirects to project history when no project can be loaded`, async () => {
         useAppStore.setState( { active_project_id: `stale-project` } )
         vi.mocked( get_project ).mockResolvedValue( null )
+        vi.mocked( get_active_project ).mockResolvedValue( null )
 
         render_capture()
 

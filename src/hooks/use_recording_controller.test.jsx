@@ -8,10 +8,13 @@ import { check_media_permissions } from '../modules/permissions/permissions.js'
 import {
     add_clip_to_project,
     estimate_storage,
-    persisted_storage
+    persisted_storage,
+    update_clip_media_details
 } from '../modules/storage/journal_storage.js'
 import {
     create_media_recorder,
+    generate_video_thumbnail,
+    get_video_metadata,
     request_capture_stream
 } from '../modules/media/recorder.js'
 
@@ -26,7 +29,8 @@ vi.mock( 'react-hot-toast', () => {
 vi.mock( '../modules/storage/journal_storage.js', () => ( {
     add_clip_to_project: vi.fn(),
     estimate_storage: vi.fn(),
-    persisted_storage: vi.fn()
+    persisted_storage: vi.fn(),
+    update_clip_media_details: vi.fn()
 } ) )
 
 vi.mock( '../modules/permissions/permissions.js', () => ( {
@@ -133,8 +137,11 @@ describe( `recording controller`, () => {
         vi.mocked( check_media_permissions ).mockReset()
         vi.mocked( create_media_recorder ).mockReset()
         vi.mocked( estimate_storage ).mockReset()
+        vi.mocked( generate_video_thumbnail ).mockReset()
+        vi.mocked( get_video_metadata ).mockReset()
         vi.mocked( persisted_storage ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
+        vi.mocked( update_clip_media_details ).mockReset()
         clip_saved.mockReset()
         vi.mocked( add_clip_to_project ).mockResolvedValue( { id: `clip-1` } )
         vi.mocked( check_media_permissions ).mockResolvedValue( {
@@ -146,7 +153,14 @@ describe( `recording controller`, () => {
             offline: false
         } )
         vi.mocked( estimate_storage ).mockResolvedValue( { usage: 128, quota: 1024 } )
+        vi.mocked( generate_video_thumbnail ).mockResolvedValue( new Blob( [ `thumb` ], { type: `image/jpeg` } ) )
+        vi.mocked( get_video_metadata ).mockResolvedValue( {
+            duration_ms: 1000,
+            width: 640,
+            height: 360
+        } )
         vi.mocked( persisted_storage ).mockResolvedValue( true )
+        vi.mocked( update_clip_media_details ).mockResolvedValue( { id: `clip-1` } )
     } )
 
     afterEach( () => {
@@ -289,6 +303,85 @@ describe( `recording controller`, () => {
         } )
     } )
 
+    test( `stops and saves a partial clip when the recorder reports an error`, async () => {
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+
+        recorder.error = new Error( `Encoder stopped` )
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        act( () => recorder.onerror() )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `adds the clip to the queue before thumbnail and metadata enrichment finishes`, async () => {
+        const metadata_deferred = make_deferred()
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( get_video_metadata ).mockReturnValue( metadata_deferred.promise )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        act( () => controller.toggle_recording() )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000,
+                thumbnail_blob: null
+            } ) )
+        } )
+        expect( update_clip_media_details ).not.toHaveBeenCalled()
+
+        await act( async () => {
+            metadata_deferred.resolve( {
+                duration_ms: 1200,
+                width: 640,
+                height: 360
+            } )
+            await metadata_deferred.promise
+        } )
+
+        await waitFor( () => {
+            expect( update_clip_media_details ).toHaveBeenCalledWith( expect.objectContaining( {
+                clip_id: `clip-1`,
+                duration_ms: 1200,
+                thumbnail_blob: expect.any( Blob )
+            } ) )
+        } )
+    } )
+
     test( `surfaces a video-only notice when the stream has no audio track`, async () => {
         const { stream } = make_video_only_stream()
         const recorder = make_recorder()
@@ -386,7 +479,7 @@ describe( `recording controller`, () => {
         await waitFor( () => {
             expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
                 project_id: `project-1`,
-                duration_ms: 1000
+                duration_ms: 1200
             } ) )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )

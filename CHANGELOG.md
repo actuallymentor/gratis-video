@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.8] - 2026-05-18
+
+### Added
+- add browser, service-worker, export, and recording regressions
+
+### Fixed
+- share preloaded cached exports from the original tap
+- load cached export actions before enabling Share or Download
+- append clips before thumbnail and metadata enrichment finishes
+- save valid partial clips after recorder errors
+- retry blocked detached export playback muted
+- keep invalid project routes on the active project when possible
+- keep Settings toggles responsive during local saves
+- fetch PWA navigations through the app shell URL
+- preserve icon touch targets in compact layouts
+
 ## [0.2.7] - 2026-05-18
 
 ### Added

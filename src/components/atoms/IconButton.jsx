@@ -4,7 +4,10 @@ const Button = styled.button`
     display: inline-grid;
     place-items: center;
     width: 3rem;
+    min-width: 3rem;
+    flex: 0 0 auto;
     height: 3rem;
+    min-height: 3rem;
     border: 1px solid var(--color-border);
     border-radius: 999px;
     color: var(--color-ink);

@@ -163,6 +163,32 @@ describe( `settings page`, () => {
         } ) )
     } )
 
+    test( `updates settings controls before storage save completes`, async () => {
+        const user = userEvent.setup()
+        let resolve_save
+
+        vi.mocked( save_settings ).mockImplementation( ( next_settings ) => new Promise( ( resolve ) => {
+            resolve_save = () => resolve( next_settings )
+        } ) )
+
+        render_settings()
+
+        const haptics = await screen.findByLabelText( `Haptics` )
+
+        await user.click( haptics )
+
+        expect( haptics.checked ).toBe( false )
+        expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
+            haptics_enabled: false
+        } ) )
+
+        resolve_save()
+
+        await waitFor( () => {
+            expect( haptics.checked ).toBe( false )
+        } )
+    } )
+
     test( `deletes all local data after confirmation`, async () => {
         const user = userEvent.setup()
         vi.spyOn( window, `confirm` ).mockReturnValue( true )

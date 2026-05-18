@@ -281,6 +281,56 @@ describe( `export compiler`, () => {
         ] )
     } )
 
+    test( `retries blocked detached playback muted during export`, async () => {
+        const create_element = document.createElement.bind( document )
+        let video_element = null
+
+        class AutoplayBlockedVideoElement extends FakeVideoElement {
+
+            play() {
+                if( !this.muted ) {
+                    const error = new Error( `Autoplay blocked` )
+                    error.name = `NotAllowedError`
+                    return Promise.reject( error )
+                }
+
+                this.ended = true
+                return Promise.resolve()
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) {
+                video_element = new AutoplayBlockedVideoElement()
+                return video_element
+            }
+
+            return create_element( tag_name, options )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            duration_ms: 1000
+        } )
+
+        expect( video_element.muted ).toBe( true )
+    } )
+
     test( `keeps landscape export resolution within the selected size`, () => {
         expect( calculate_export_canvas_size( [
             {

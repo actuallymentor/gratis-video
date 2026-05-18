@@ -95,14 +95,32 @@ const TextButton = styled.button`
     font-weight: 900;
 `
 
+const get_initial_export_status = ( { initial_export_record, initial_export_blob } ) => {
+    if( !initial_export_record ) return `compiling`
+    if( initial_export_blob ) return `ready`
+    return `loading`
+}
+
 /**
  * Runs an explicit export flow and presents post-compile share/download actions.
  * @param {Object} props - Export flow props.
  * @returns {JSX.Element} Export panel.
  */
-export function ExportPanel( { project, clips, settings, initial_export_record = null, on_close } ) {
-    const [ status, set_status ] = useState( initial_export_record ? `ready` : `compiling` )
+export function ExportPanel( {
+    project,
+    clips,
+    settings,
+    initial_export_record = null,
+    initial_export_blob = null,
+    on_close
+} ) {
+    const initial_status = get_initial_export_status( {
+        initial_export_blob,
+        initial_export_record
+    } )
+    const [ status, set_status ] = useState( initial_status )
     const [ export_record, set_export_record ] = useState( initial_export_record )
+    const [ export_blob, set_export_blob ] = useState( initial_export_blob )
     const [ error_message, set_error_message ] = useState( null )
     const abort_controller_ref = useRef( null )
     const export_progress = useAppStore( ( state ) => state.export_progress )
@@ -144,10 +162,53 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
         if( initial_export_record ) {
             set_export_progress( {
                 active: false,
-                percent: 100,
-                message: `Export ready`
+                percent: initial_export_blob ? 100 : 0,
+                message: initial_export_blob ? `Export ready` : `Loading export`
             } )
-            return undefined
+
+            if( initial_export_blob ) return undefined
+
+            let active_effect = true
+
+            const load_ready_blob = async () => {
+                const blob = await get_export_blob( initial_export_record.id )
+                if( !active_effect ) return
+
+                if( !blob ) {
+                    set_status( `error` )
+                    set_error_message( `Export file is unavailable.` )
+                    set_export_progress( {
+                        active: false,
+                        percent: 0,
+                        message: `Export unavailable`
+                    } )
+                    return
+                }
+
+                set_export_blob( blob )
+                set_status( `ready` )
+                set_export_progress( {
+                    active: false,
+                    percent: 100,
+                    message: `Export ready`
+                } )
+            }
+
+            load_ready_blob().catch( ( error ) => {
+                if( !active_effect ) return
+
+                set_status( `error` )
+                set_error_message( error.message || `Export file is unavailable.` )
+                set_export_progress( {
+                    active: false,
+                    percent: 0,
+                    message: `Export unavailable`
+                } )
+            } )
+
+            return () => {
+                active_effect = false
+            }
         }
 
         const abort_controller = new AbortController()
@@ -186,6 +247,7 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
                 }
 
                 set_export_record( saved_export )
+                set_export_blob( compiled_export.blob )
                 set_status( `ready` )
                 set_export_progress( {
                     active: false,
@@ -224,40 +286,36 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
             active_effect = false
             abort_controller.abort()
         }
-    }, [ clips, initial_export_record, project.id, set_export_progress, settings, update_active_export_progress ] )
+    }, [
+        clips,
+        initial_export_blob,
+        initial_export_record,
+        project.id,
+        set_export_progress,
+        settings,
+        update_active_export_progress
+    ] )
 
     const share_ready_export = async () => {
-        if( !export_record ) return
-
-        const blob = await get_export_blob( export_record.id )
-        if( !blob ) {
-            toast.error( `Export file is unavailable` )
-            return
-        }
+        if( !export_record || !export_blob ) return
 
         try {
-            const result = await share_export_file( { project, export_record, blob } )
+            const result = await share_export_file( { project, export_record, blob: export_blob } )
 
             if( result !== `unsupported` ) return
 
-            download_export_file( export_record, blob )
+            download_export_file( export_record, export_blob )
             toast( `Native sharing is unavailable here. Download started.` )
         } catch {
-            download_export_file( export_record, blob )
+            download_export_file( export_record, export_blob )
             toast( `Sharing failed. Download started.` )
         }
     }
 
-    const download_ready_export = async () => {
-        if( !export_record ) return
+    const download_ready_export = () => {
+        if( !export_record || !export_blob ) return
 
-        const blob = await get_export_blob( export_record.id )
-        if( !blob ) {
-            toast.error( `Export file is unavailable` )
-            return
-        }
-
-        download_export_file( export_record, blob )
+        download_export_file( export_record, export_blob )
     }
 
     return <Backdrop>
@@ -275,6 +333,10 @@ export function ExportPanel( { project, clips, settings, initial_export_record =
                     { export_progress.percent }% complete. { export_progress.message }
                 </Message>
             </> : null }
+
+            { status === `loading` ? <Message aria-live="polite">
+                Preparing export actions...
+            </Message> : null }
 
             { status === `ready` ? <Message aria-live="polite">
                 Export is ready. Use Share from here so the browser has a fresh user action.

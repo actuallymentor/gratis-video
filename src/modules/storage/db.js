@@ -114,6 +114,20 @@ export async function get_record( store_name, key ) {
 }
 
 /**
+ * Checks whether one object exists without reading its full value.
+ * @param {string} store_name - IndexedDB object store name.
+ * @param {string} key - Object key.
+ * @returns {Promise<boolean>} Whether the key exists.
+ */
+export async function has_record( store_name, key ) {
+    const database = await open_journal_db()
+    const transaction = database.transaction( store_name, `readonly` )
+    const count = await request_to_promise( transaction.objectStore( store_name ).count( key ) )
+
+    return count > 0
+}
+
+/**
  * Reads all objects from an object store.
  * @param {string} store_name - IndexedDB object store name.
  * @returns {Promise<Array>} Stored values.
