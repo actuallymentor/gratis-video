@@ -49,3 +49,4 @@
 - Clear and block cached export sharing as soon as clip delete/reorder work starts; otherwise a preloaded blob can be shared before React has refreshed the changed queue.
 - Keep the record control enabled while `starting` or `recording` even if passive permission state later becomes blocking, so users can still release/stop the active recording.
 - If the first pointer release is lost during capture startup, treat the next fresh record press/release as the stop tap instead of requiring an extra tap.
+- Treat cached exports as reusable only when the blob is non-empty and video-typed. `save_export_record()` also re-checks current clip/settings hashes inside its IndexedDB transaction, so stale export fixtures need to seed legacy records directly instead of using the production save path.

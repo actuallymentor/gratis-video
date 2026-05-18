@@ -6,7 +6,6 @@ import {
     get_all_records,
     get_index_records,
     get_record,
-    has_record,
     put_record,
     write_transaction,
     write_transaction_result
@@ -116,21 +115,39 @@ const delete_export_records = async ( export_records ) => {
     } )
 }
 
-const filter_exports_with_existing_blobs = async ( export_records ) => {
+/**
+ * Checks whether a cached export blob is usable as a video export.
+ * @param {Object} export_record - Export metadata.
+ * @param {Blob|null} blob - Cached export blob.
+ * @returns {boolean} Whether the cached export blob can be reused.
+ */
+export function is_valid_export_blob( export_record, blob ) {
+    const expected_mime_type = export_record?.mime_type ?? ``
+    const blob_mime_type = blob?.type ?? ``
+    const effective_mime_type = blob_mime_type || expected_mime_type
+
+    if( !blob || typeof blob.size !== `number` || blob.size <= 0 ) return false
+    if( !expected_mime_type.startsWith( `video/` ) ) return false
+    if( effective_mime_type && !effective_mime_type.startsWith( `video/` ) ) return false
+
+    return true
+}
+
+const filter_exports_with_valid_blobs = async ( export_records ) => {
     const export_states = await Promise.all(
         export_records.map( async ( export_record ) => ( {
             export_record,
-            has_blob: await has_record( `export_blobs`, export_record.id )
+            blob: ( await get_record( `export_blobs`, export_record.id ) )?.blob ?? null
         } ) )
     )
     const missing_export_records = export_states
-        .filter( ( { has_blob } ) => !has_blob )
+        .filter( ( { export_record, blob } ) => !is_valid_export_blob( export_record, blob ) )
         .map( ( { export_record } ) => export_record )
 
     await delete_export_records( missing_export_records )
 
     return export_states
-        .filter( ( { has_blob } ) => has_blob )
+        .filter( ( { export_record, blob } ) => is_valid_export_blob( export_record, blob ) )
         .map( ( { export_record } ) => export_record )
 }
 
@@ -164,7 +181,7 @@ const with_project_export_status = async ( project, normalized_settings ) => {
         clips: current_clips,
         settings: normalized_settings
     } )
-    const existing_exports = await filter_exports_with_existing_blobs( exports )
+    const existing_exports = await filter_exports_with_valid_blobs( exports )
     const matching_exports = existing_exports.filter( ( export_record ) => {
         return export_record.settings_hash === settings_hash
             && export_record.clip_manifest_hash === clip_manifest_hash
@@ -931,14 +948,48 @@ export async function save_export_record( {
     clip_manifest_hash,
     duration_ms
 } ) {
-    return write_transaction_result( [ `projects`, `exports`, `export_blobs` ], ( stores, { complete, fail } ) => {
-        const project_request = stores.projects.get( project_id )
+    if( !is_valid_export_blob( { mime_type }, blob ) ) {
+        throw new Error( `Export did not produce a valid video file.` )
+    }
 
-        project_request.onerror = fail_request( fail, `Could not load project before saving export.` )
-        project_request.onsuccess = () => {
-            const project = project_request.result
+    return write_transaction_result( [
+        `projects`,
+        `clips`,
+        `settings`,
+        `exports`,
+        `export_blobs`
+    ], ( stores, { complete, fail } ) => {
+        const project_request = stores.projects.get( project_id )
+        const clips_request = stores.clips.index( `project_id` ).getAll( project_id )
+        const settings_request = stores.settings.get( SETTINGS_KEY )
+        let project = null
+        let clips = []
+        let stored_settings = null
+        let project_loaded = false
+        let clips_loaded = false
+        let settings_loaded = false
+
+        const save_when_ready = () => {
+            if( !project_loaded || !clips_loaded || !settings_loaded ) return
             if( !project ) {
                 fail( project_not_found_error() )
+                return
+            }
+
+            const current_settings = {
+                ...default_settings,
+                ...stored_settings
+            }
+            const current_hashes = create_export_hashes( {
+                clips: sort_clips( clips ),
+                settings: normalize_export_settings( current_settings )
+            } )
+
+            if(
+                current_hashes.settings_hash !== settings_hash
+                || current_hashes.clip_manifest_hash !== clip_manifest_hash
+            ) {
+                fail( new Error( `Project changed before export could be cached. Start the export again.` ) )
                 return
             }
 
@@ -956,6 +1007,25 @@ export async function save_export_record( {
             stores.exports.put( export_record )
             stores.export_blobs.put( { id: export_record.id, project_id, blob } )
             complete( export_record )
+        }
+
+        project_request.onerror = fail_request( fail, `Could not load project before saving export.` )
+        clips_request.onerror = fail_request( fail, `Could not load project clips before saving export.` )
+        settings_request.onerror = fail_request( fail, `Could not load settings before saving export.` )
+        project_request.onsuccess = () => {
+            project = project_request.result ?? null
+            project_loaded = true
+            save_when_ready()
+        }
+        clips_request.onsuccess = () => {
+            clips = clips_request.result
+            clips_loaded = true
+            save_when_ready()
+        }
+        settings_request.onsuccess = () => {
+            stored_settings = settings_request.result ?? null
+            settings_loaded = true
+            save_when_ready()
         }
     } )
 }
@@ -976,7 +1046,7 @@ export async function get_valid_cached_export( { project_id, settings_hash, clip
                 && export_record.clip_manifest_hash === clip_manifest_hash
         } )
         .sort( ( first, second ) => new Date( second.created_at ).getTime() - new Date( first.created_at ).getTime() )
-    const valid_exports = await filter_exports_with_existing_blobs( matching_exports )
+    const valid_exports = await filter_exports_with_valid_blobs( matching_exports )
 
     return valid_exports.at( 0 ) ?? null
 }

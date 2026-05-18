@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.8] - 2026-05-18
+
+### Added
+- add cached-export, cleanup, and offline active-route regressions
+
+### Fixed
+- reject empty or non-video cached export blobs
+- validate export cache freshness inside the save transaction
+- avoid exposing stale transient exports after cache validation fails
+
 ## [0.3.7] - 2026-05-18
 
 ### Added

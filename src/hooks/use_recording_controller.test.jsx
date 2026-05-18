@@ -854,7 +854,7 @@ describe( `recording controller`, () => {
 
     test( `records a tap-to-start and tap-to-stop clip`, async () => {
         const stream_deferred = make_deferred()
-        const { stream } = make_stream()
+        const { stream, track } = make_stream()
         const recorder = make_recorder()
         let performance_now = 0
         const date_values = [ 0, 1000 ]
@@ -897,6 +897,7 @@ describe( `recording controller`, () => {
             } ) )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( track.stop ).toHaveBeenCalledTimes( 1 )
         expect( recorder.ondataavailable ).toBe( null )
         expect( recorder.onerror ).toBe( null )
         expect( recorder.onstop ).toBe( null )

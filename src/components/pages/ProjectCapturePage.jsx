@@ -27,6 +27,7 @@ import {
     get_project,
     get_project_clips,
     get_valid_cached_export,
+    is_valid_export_blob,
     load_settings,
     move_clip,
     set_active_project
@@ -279,7 +280,7 @@ export function ProjectCapturePage() {
             const blob = await get_export_blob( cached_export.id )
 
             if( cancelled ) return
-            if( !blob ) {
+            if( !is_valid_export_blob( cached_export, blob ) ) {
                 clear_cached_export()
                 return
             }
@@ -349,22 +350,34 @@ export function ProjectCapturePage() {
             && cached_export_blob_ref.current
             && cached_export_key === cache_key
         ) {
-            try {
-                const share_result = await share_export_file( {
-                    project,
-                    export_record: cached_export_record,
-                    blob: cached_export_blob_ref.current
-                } )
+            if( !is_valid_export_blob( cached_export_record, cached_export_blob_ref.current ) ) {
+                clear_cached_export()
+            } else {
+                try {
+                    const share_result = await share_export_file( {
+                        project,
+                        export_record: cached_export_record,
+                        blob: cached_export_blob_ref.current
+                    } )
 
-                if( share_result === `shared` || share_result === `cancelled` ) return
-            } catch {
-                toast( `Sharing failed. Download is available.` )
+                    if( share_result === `shared` || share_result === `cancelled` ) return
+                } catch {
+                    toast( `Sharing failed. Download is available.` )
+                }
+
+                set_export_panel_record( cached_export_record )
+                set_export_requested( true )
+                set_panel( `export` )
+                return
             }
+        }
 
-            set_export_panel_record( cached_export_record )
-            set_export_requested( true )
-            set_panel( `export` )
-            return
+        if(
+            cached_export_record
+            && cached_export_ready
+            && cached_export_key === cache_key
+        ) {
+            clear_cached_export()
         }
 
         if(
@@ -372,10 +385,21 @@ export function ProjectCapturePage() {
             && !cached_export_ready
             && cached_export_key === cache_key
         ) {
-            set_export_panel_record( cached_export_record )
-            set_export_requested( true )
-            set_panel( `export` )
-            return
+            try {
+                const blob = await load_initial_export_blob( cached_export_record )
+                if( !is_valid_export_blob( cached_export_record, blob ) ) {
+                    clear_cached_export()
+                } else {
+                    cached_export_blob_ref.current = blob
+                    set_cached_export_ready( true )
+                    set_export_panel_record( cached_export_record )
+                    set_export_requested( true )
+                    set_panel( `export` )
+                    return
+                }
+            } catch {
+                clear_cached_export()
+            }
         }
 
         const cached_export = await get_valid_cached_export( {
@@ -393,7 +417,7 @@ export function ProjectCapturePage() {
 
         const cached_blob = await get_export_blob( cached_export.id ).catch( () => null )
 
-        if( cached_blob ) {
+        if( is_valid_export_blob( cached_export, cached_blob ) ) {
             cached_export_blob_ref.current = cached_blob
             set_cached_export_record( cached_export )
             set_cached_export_key( cache_key )

@@ -23,6 +23,7 @@ import {
     get_project,
     get_project_clips,
     get_valid_cached_export,
+    is_valid_export_blob,
     load_settings,
     move_clip,
     set_active_project
@@ -101,6 +102,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     get_project: vi.fn(),
     get_project_clips: vi.fn(),
     get_valid_cached_export: vi.fn(),
+    is_valid_export_blob: vi.fn(),
     load_settings: vi.fn(),
     move_clip: vi.fn(),
     set_active_project: vi.fn()
@@ -182,6 +184,9 @@ describe( `project capture page`, () => {
         vi.mocked( get_project ).mockResolvedValue( project )
         vi.mocked( get_project_clips ).mockResolvedValue( [ clip ] )
         vi.mocked( get_valid_cached_export ).mockResolvedValue( null )
+        vi.mocked( is_valid_export_blob ).mockImplementation( ( export_record, blob ) => {
+            return Boolean( export_record?.mime_type?.startsWith( `video/` ) && blob?.size > 0 )
+        } )
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( move_clip ).mockResolvedValue( [ clip ] )
         vi.mocked( set_active_project ).mockResolvedValue()
@@ -374,6 +379,25 @@ describe( `project capture page`, () => {
 
         vi.mocked( get_valid_cached_export ).mockResolvedValue( export_record )
         vi.mocked( get_export_blob ).mockResolvedValue( null )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_export_blob ).toHaveBeenCalledWith( export_record.id )
+        } )
+
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for compile/ ) ).toBeTruthy()
+        expect( share_export_file ).not.toHaveBeenCalled()
+    } )
+
+    test( `compiles when a preloaded cached export blob is invalid`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( get_valid_cached_export ).mockResolvedValue( export_record )
+        vi.mocked( get_export_blob ).mockResolvedValue( new Blob( [], { type: `video/webm` } ) )
 
         render_capture()
 

@@ -14,6 +14,7 @@ import {
     delete_export,
     get_export_blob,
     get_project_clips,
+    is_valid_export_blob,
     load_settings,
     make_export_filename,
     save_export_record
@@ -122,6 +123,7 @@ const is_storage_quota_error = ( error ) => {
 }
 
 const is_missing_project_error = ( error ) => error?.message === `Project not found.`
+const is_project_changed_error = ( error ) => error?.message?.startsWith( `Project changed` )
 
 const make_transient_export_record = ( { project, compiled_export, settings_hash, clip_manifest_hash } ) => ( {
     id: `unsaved-${ Date.now() }`,
@@ -268,7 +270,7 @@ export function ExportPanel( {
                     } )
                     next_export_record = saved_export
                 } catch ( error ) {
-                    if( is_missing_project_error( error ) ) throw error
+                    if( is_missing_project_error( error ) || is_project_changed_error( error ) ) throw error
 
                     log.warn( `Compiled export could not be cached`, error )
                     cache_warning = is_storage_quota_error( error )
@@ -364,7 +366,7 @@ export function ExportPanel( {
 
             if( !active_effect ) return
 
-            if( !blob ) {
+            if( !is_valid_export_blob( initial_export_record, blob ) ) {
                 await replace_stale_cached_export( new Error( `Cached export blob is missing.` ) )
                 return
             }

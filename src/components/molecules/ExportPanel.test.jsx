@@ -12,6 +12,7 @@ import {
     delete_export,
     get_export_blob,
     get_project_clips,
+    is_valid_export_blob,
     load_settings,
     save_export_record
 } from '../../modules/storage/journal_storage.js'
@@ -38,6 +39,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     delete_export: vi.fn(),
     get_export_blob: vi.fn(),
     get_project_clips: vi.fn(),
+    is_valid_export_blob: vi.fn(),
     load_settings: vi.fn(),
     make_export_filename: vi.fn( () => `may-17-2026.webm` ),
     save_export_record: vi.fn()
@@ -103,6 +105,9 @@ describe( `export panel`, () => {
         vi.mocked( delete_export ).mockResolvedValue()
         vi.mocked( get_export_blob ).mockResolvedValue( compiled_export.blob )
         vi.mocked( get_project_clips ).mockResolvedValue( clips )
+        vi.mocked( is_valid_export_blob ).mockImplementation( ( export_record, blob ) => {
+            return Boolean( export_record?.mime_type?.startsWith( `video/` ) && blob?.size > 0 )
+        } )
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( normalize_export_settings ).mockImplementation( ( settings ) => settings )
         vi.mocked( save_export_record ).mockResolvedValue( saved_export )
@@ -227,6 +232,26 @@ describe( `export panel`, () => {
         expect( save_export_record ).toHaveBeenCalledWith( expect.objectContaining( {
             project_id: project.id,
             blob: compiled_export.blob
+        } ) )
+    } )
+
+    test( `compiles a fresh export when cached export blob is invalid`, async () => {
+        vi.mocked( get_export_blob ).mockResolvedValueOnce( new Blob( [], { type: `video/webm` } ) )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ saved_export }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Export is ready/ ) ).toBeTruthy()
+        expect( delete_export ).toHaveBeenCalledWith( saved_export.id )
+        expect( compile_project_export ).toHaveBeenCalledWith( expect.objectContaining( {
+            clips,
+            settings,
+            signal: expect.any( AbortSignal )
         } ) )
     } )
 
@@ -437,6 +462,23 @@ describe( `export panel`, () => {
         /> )
 
         expect( await screen.findByText( /Project not found/ ) ).toBeTruthy()
+        expect( screen.queryByRole( `button`, { name: `Share` } ) ).toBe( null )
+        expect( screen.queryByRole( `button`, { name: `Download` } ) ).toBe( null )
+    } )
+
+    test( `does not expose a stale export when transactional cache validation fails`, async () => {
+        vi.mocked( save_export_record ).mockRejectedValue(
+            new Error( `Project changed before export could be cached. Start the export again.` )
+        )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Project changed before export could be cached/ ) ).toBeTruthy()
         expect( screen.queryByRole( `button`, { name: `Share` } ) ).toBe( null )
         expect( screen.queryByRole( `button`, { name: `Download` } ) ).toBe( null )
     } )

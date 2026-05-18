@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { delete_record, reset_db_connection } from './db.js'
+import { delete_record, put_record, reset_db_connection } from './db.js'
 import {
     add_clip_to_project,
     create_project,
@@ -551,6 +551,102 @@ describe( `journal storage`, () => {
         expect( ( await list_projects() )[ 0 ].export_count ).toBe( 0 )
     } )
 
+    test( `ignores cached export metadata when the export blob is empty or not video`, async () => {
+        const project = await create_project()
+        const settings = await load_settings()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings
+        } )
+        const export_record = await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash,
+            clip_manifest_hash,
+            duration_ms: 1200
+        } )
+
+        await put_record( `export_blobs`, {
+            id: export_record.id,
+            project_id: project.id,
+            blob: new Blob( [], { type: `video/webm` } )
+        } )
+
+        expect( await get_valid_cached_export( {
+            project_id: project.id,
+            settings_hash,
+            clip_manifest_hash
+        } ) ).toBe( null )
+        expect( await get_export_blob( export_record.id ) ).toBe( null )
+
+        const second_export_record = await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash,
+            clip_manifest_hash,
+            duration_ms: 1200
+        } )
+
+        await put_record( `export_blobs`, {
+            id: second_export_record.id,
+            project_id: project.id,
+            blob: new Blob( [ `not-video` ], { type: `text/plain` } )
+        } )
+
+        expect( await get_valid_cached_export( {
+            project_id: project.id,
+            settings_hash,
+            clip_manifest_hash
+        } ) ).toBe( null )
+        expect( await get_export_blob( second_export_record.id ) ).toBe( null )
+        expect( ( await list_projects() )[ 0 ].export_count ).toBe( 0 )
+    } )
+
+    test( `refuses to cache exports after project clips change`, async () => {
+        const project = await create_project()
+        const settings = await load_settings()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings
+        } )
+
+        await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `second` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 800
+        } )
+
+        await expect( save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash,
+            clip_manifest_hash,
+            duration_ms: 1200
+        } ) ).rejects.toThrow( /Project changed/ )
+
+        expect( await get_valid_cached_export( {
+            project_id: project.id,
+            settings_hash,
+            clip_manifest_hash
+        } ) ).toBe( null )
+    } )
+
     test( `prunes stale export blobs when export settings change`, async () => {
         const project = await create_project()
         const settings = await load_settings()
@@ -593,13 +689,22 @@ describe( `journal storage`, () => {
             duration_ms: 1200
         } )
 
-        const stale_export = await save_export_record( {
+        const stale_export = {
+            id: `legacy-stale-export`,
             project_id: project.id,
-            blob: new Blob( [ `stale-export` ], { type: `video/webm` } ),
             mime_type: `video/webm`,
+            filename: `legacy-stale-export.webm`,
             settings_hash: `stale-settings`,
             clip_manifest_hash: `stale-clips`,
-            duration_ms: 1200
+            duration_ms: 1200,
+            created_at: new Date().toISOString()
+        }
+
+        await put_record( `exports`, stale_export )
+        await put_record( `export_blobs`, {
+            id: stale_export.id,
+            project_id: project.id,
+            blob: new Blob( [ `stale-export` ], { type: `video/webm` } )
         } )
 
         const [ listed_project ] = await list_projects()
@@ -682,18 +787,23 @@ describe( `journal storage`, () => {
 
     test( `deleting a project removes its clips and cached exports`, async () => {
         const project = await create_project()
+        const settings = await load_settings()
         const clip = await add_clip_to_project( {
             project_id: project.id,
             blob: new Blob( [ `video` ], { type: `video/webm` } ),
             mime_type: `video/webm`,
             duration_ms: 1200
         } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings
+        } )
         const export_record = await save_export_record( {
             project_id: project.id,
             blob: new Blob( [ `export` ], { type: `video/webm` } ),
             mime_type: `video/webm`,
-            settings_hash: `settings-a`,
-            clip_manifest_hash: `clips-a`,
+            settings_hash,
+            clip_manifest_hash,
             duration_ms: 1200
         } )
 
@@ -708,6 +818,7 @@ describe( `journal storage`, () => {
 
     test( `deleting all data clears projects media exports settings and active state`, async () => {
         const project = await create_project()
+        const settings = await load_settings()
         const clip = await add_clip_to_project( {
             project_id: project.id,
             blob: new Blob( [ `video` ], { type: `video/webm` } ),
@@ -715,12 +826,16 @@ describe( `journal storage`, () => {
             duration_ms: 1200,
             thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
         } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings
+        } )
         const export_record = await save_export_record( {
             project_id: project.id,
             blob: new Blob( [ `export` ], { type: `video/webm` } ),
             mime_type: `video/webm`,
-            settings_hash: `settings-a`,
-            clip_manifest_hash: `clips-a`,
+            settings_hash,
+            clip_manifest_hash,
             duration_ms: 1200
         } )
 

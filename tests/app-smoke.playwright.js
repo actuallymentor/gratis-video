@@ -3,6 +3,30 @@ import { expect, test } from '@playwright/test'
 const browser_issue_types = new Set( [ `warning`, `error` ] )
 const same_origin = `http://127.0.0.1:5173`
 
+const ensure_service_worker_controlled = async ( page ) => {
+    const controlled = await page.evaluate( async () => {
+        if( !( `serviceWorker` in navigator ) ) throw new Error( `Service worker is unavailable.` )
+
+        await navigator.serviceWorker.ready
+
+        if( navigator.serviceWorker.controller ) return true
+
+        await Promise.race( [
+            new Promise( ( resolve ) => {
+                navigator.serviceWorker.addEventListener( `controllerchange`, resolve, { once: true } )
+            } ),
+            new Promise( ( resolve ) => setTimeout( resolve, 1000 ) )
+        ] )
+
+        return Boolean( navigator.serviceWorker.controller )
+    } )
+
+    if( controlled ) return
+
+    await page.reload()
+    await expect.poll( () => page.evaluate( () => Boolean( navigator.serviceWorker.controller ) ) ).toBe( true )
+}
+
 test.beforeEach( async ( { page } ) => {
     page.browser_issues = []
 
@@ -410,32 +434,27 @@ test.describe( `daily video journal app`, () => {
         await page.goto( `/projects` )
         await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
 
-        const controlled = await page.evaluate( async () => {
-            if( !( `serviceWorker` in navigator ) ) throw new Error( `Service worker is unavailable.` )
-
-            await navigator.serviceWorker.ready
-
-            if( navigator.serviceWorker.controller ) return true
-
-            await Promise.race( [
-                new Promise( ( resolve ) => {
-                    navigator.serviceWorker.addEventListener( `controllerchange`, resolve, { once: true } )
-                } ),
-                new Promise( ( resolve ) => setTimeout( resolve, 1000 ) )
-            ] )
-
-            return Boolean( navigator.serviceWorker.controller )
-        } )
-
-        if( !controlled ) {
-            await page.reload()
-            await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
-            await expect.poll( () => page.evaluate( () => Boolean( navigator.serviceWorker.controller ) ) ).toBe( true )
-        }
+        await ensure_service_worker_controlled( page )
 
         await context.setOffline( true )
         await page.goto( `/projects/offline-startup-check` )
 
         await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+    } )
+
+    test( `reopens the active project from the cached app shell while offline`, async ( { context, page } ) => {
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
+        await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
+
+        const capture_path = new URL( page.url() ).pathname
+
+        await ensure_service_worker_controlled( page )
+
+        await context.setOffline( true )
+        await page.goto( `/` )
+
+        await expect( page ).toHaveURL( new RegExp( `${ capture_path }$` ) )
+        await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
     } )
 } )

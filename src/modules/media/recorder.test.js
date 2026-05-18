@@ -8,6 +8,7 @@ import {
     create_media_recorder,
     generate_video_thumbnail,
     get_capture_error_message,
+    get_video_metadata,
     request_capture_stream,
     select_supported_mime_type
 } from './recorder.js'
@@ -178,5 +179,36 @@ describe( `recorder helpers`, () => {
 
         await expect( thumbnail_promise ).resolves.toBe( null )
         expect( URL.revokeObjectURL ).toHaveBeenCalledWith( `blob:clip` )
+    } )
+
+    test( `releases metadata object URLs after reading clip dimensions`, async () => {
+        const original_create_element = document.createElement.bind( document )
+        const video = {
+            duration: 1.2,
+            videoWidth: 640,
+            videoHeight: 360,
+            load: vi.fn(),
+            removeAttribute: vi.fn()
+        }
+
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name ) => {
+            if( tag_name === `video` ) return video
+            return original_create_element( tag_name )
+        } )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:metadata` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+
+        const metadata_promise = get_video_metadata( new Blob( [ `clip` ], { type: `video/webm` } ) )
+
+        video.onloadedmetadata()
+
+        await expect( metadata_promise ).resolves.toEqual( {
+            duration_ms: 1200,
+            width: 640,
+            height: 360
+        } )
+        expect( video.removeAttribute ).toHaveBeenCalledWith( `src` )
+        expect( video.load ).toHaveBeenCalled()
+        expect( URL.revokeObjectURL ).toHaveBeenCalledWith( `blob:metadata` )
     } )
 } )
