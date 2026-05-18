@@ -1,3 +1,5 @@
+const DOWNLOAD_URL_REVOKE_MS = 60_000
+
 /**
  * Builds a File object from an export blob and metadata.
  * @param {Object} export_record - Export metadata.
@@ -70,5 +72,5 @@ export function download_export_file( export_record, blob ) {
     anchor.click()
     anchor.remove()
 
-    window.setTimeout( () => URL.revokeObjectURL( object_url ), 1000 )
+    window.setTimeout( () => URL.revokeObjectURL( object_url ), DOWNLOAD_URL_REVOKE_MS )
 }

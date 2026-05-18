@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
     HOLD_THRESHOLD_MS,
     classify_recording_gesture,
+    create_media_recorder,
     get_capture_error_message,
     request_capture_stream,
     select_supported_mime_type
@@ -28,6 +29,35 @@ describe( `recorder helpers`, () => {
         vi.stubGlobal( `MediaRecorder`, {} )
 
         expect( select_supported_mime_type( [ `video/mp4` ] ) ).toBe( null )
+    } )
+
+    test( `falls back to the default recorder constructor when a supported MIME option fails`, () => {
+        const constructor_calls = []
+        const stream = {}
+
+        class FallbackMediaRecorder {
+
+            static isTypeSupported() {
+                return true
+            }
+
+            constructor( next_stream, options ) {
+                constructor_calls.push( options )
+                if( options?.mimeType ) throw new Error( `Typed construction failed` )
+
+                this.stream = next_stream
+                this.mimeType = `video/webm`
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, FallbackMediaRecorder )
+
+        expect( create_media_recorder( stream ).stream ).toBe( stream )
+        expect( constructor_calls ).toEqual( [
+            { mimeType: `video/mp4;codecs=avc1.42E01E,mp4a.40.2` },
+            undefined
+        ] )
     } )
 
     test( `classifies short presses as taps and longer presses as holds`, () => {

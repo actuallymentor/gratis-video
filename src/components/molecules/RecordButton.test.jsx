@@ -48,4 +48,12 @@ describe( `record button`, () => {
 
         expect( default_props.on_toggle ).toHaveBeenCalledTimes( 1 )
     } )
+
+    test( `forwards pointer cancellation so partial recordings can be saved`, () => {
+        render( <RecordButton { ...default_props } recording_state="recording" /> )
+
+        fireEvent.pointerCancel( screen.getByRole( `button`, { name: `Stop recording` } ), { pointerId: 1 } )
+
+        expect( default_props.on_cancel ).toHaveBeenCalledTimes( 1 )
+    } )
 } )

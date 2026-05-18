@@ -112,19 +112,23 @@ export function ProjectRow( {
                 />
             </RenameForm>
             <ProjectMeta active={ active } project={ project } />
-        </EditingBlock> : <MainButton type="button" onClick={ on_open }>
+        </EditingBlock> : <MainButton
+            type="button"
+            aria-label={ `Open ${ project.title }` }
+            onClick={ on_open }
+        >
             <Title>{ project.title }</Title>
             <ProjectMeta active={ active } project={ project } />
         </MainButton> }
         <Actions>
             <IconButton
                 icon={ Pencil }
-                label="Rename project"
+                label={ `Rename ${ project.title }` }
                 onClick={ () => set_editing( true ) }
             />
             <IconButton
                 icon={ Trash2 }
-                label="Delete project"
+                label={ `Delete ${ project.title }` }
                 onClick={ on_delete }
             />
         </Actions>

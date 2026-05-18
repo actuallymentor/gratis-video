@@ -12,6 +12,11 @@ import {
 
 const ACTIVE_PROJECT_KEY = `daily_video_journal_active_project_id`
 const SETTINGS_KEY = `global`
+const export_setting_keys = [
+    `export_quality`,
+    `export_resolution`,
+    `preferred_mime_type`
+]
 
 export const default_settings = {
     export_quality: `standard`,
@@ -183,6 +188,32 @@ const make_filename = ( title, mime_type ) => {
     return `${ slug }.${ extension }`
 }
 
+const export_settings_changed = ( previous_settings, next_settings ) => {
+    return export_setting_keys.some( ( key ) => previous_settings[ key ] !== next_settings[ key ] )
+}
+
+const update_project_export_filenames = async ( project_id, title ) => {
+    const exports = await get_index_records( `exports`, `project_id`, project_id )
+    if( !exports.length ) return
+
+    await write_transaction( [ `exports` ], ( stores ) => {
+        exports.forEach( ( export_record ) => {
+            stores.exports.put( {
+                ...export_record,
+                filename: make_filename( title, export_record.mime_type )
+            } )
+        } )
+    } )
+}
+
+const prune_stale_exports_for_all_projects = async () => {
+    const projects = await get_all_records( `projects` )
+
+    await Promise.all(
+        projects.map( ( { id } ) => prune_stale_project_exports( id ) )
+    )
+}
+
 /**
  * Loads all projects sorted by most recent activity.
  * @returns {Promise<Array>} Project records.
@@ -277,13 +308,18 @@ export async function create_project() {
  */
 export async function rename_project( project_id, title ) {
     const project = await get_project( project_id )
+    if( !project ) throw new Error( `Project not found.` )
+
+    const next_title = title.trim() || project.title
     const updated_project = {
         ...project,
-        title: title.trim() || project.title,
+        title: next_title,
         updated_at: now_iso()
     }
 
     await put_record( `projects`, updated_project )
+    await update_project_export_filenames( project_id, next_title )
+
     return updated_project
 }
 
@@ -456,6 +492,10 @@ export async function load_settings() {
  */
 export async function save_settings( settings ) {
     const existing_settings = await get_record( `settings`, SETTINGS_KEY )
+    const previous_settings = {
+        ...default_settings,
+        ...existing_settings
+    }
     const saved_settings = {
         ...default_settings,
         ...existing_settings,
@@ -467,6 +507,11 @@ export async function save_settings( settings ) {
 
     const settings_without_key = { ...saved_settings }
     delete settings_without_key.key
+
+    if( export_settings_changed( previous_settings, settings_without_key ) ) {
+        await prune_stale_exports_for_all_projects()
+    }
+
     return settings_without_key
 }
 

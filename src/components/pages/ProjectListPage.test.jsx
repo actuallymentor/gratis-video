@@ -101,7 +101,7 @@ describe( `project list page`, () => {
 
         render_project_list()
 
-        await user.click( await screen.findByRole( `button`, { name: /Pocket Walk/ } ) )
+        await user.click( await screen.findByRole( `button`, { name: `Open Pocket Walk` } ) )
 
         expect( set_active_project ).toHaveBeenCalledWith( existing_project.id )
         expect( useAppStore.getState().active_project_id ).toBe( existing_project.id )
@@ -116,7 +116,7 @@ describe( `project list page`, () => {
         render_project_list()
 
         await screen.findByText( existing_project.title )
-        await user.click( screen.getByRole( `button`, { name: `Rename project` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Rename Pocket Walk` } ) )
 
         const input = screen.getByLabelText( `Project title` )
         await user.clear( input )
@@ -136,7 +136,7 @@ describe( `project list page`, () => {
         render_project_list()
 
         await screen.findByText( existing_project.title )
-        await user.click( screen.getByRole( `button`, { name: `Delete project` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Delete Pocket Walk` } ) )
 
         expect( delete_project ).toHaveBeenCalledWith( existing_project.id )
         expect( useAppStore.getState().active_project_id ).toBe( null )

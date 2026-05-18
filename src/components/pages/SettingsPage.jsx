@@ -10,9 +10,9 @@ import { SegmentedControl } from '../atoms/SegmentedControl.jsx'
 import { Toggle } from '../atoms/Toggle.jsx'
 import {
     get_export_support_message,
+    get_supported_export_mime_types,
     get_supported_export_resolutions
 } from '../../modules/export/exporter.js'
-import { get_supported_mime_types } from '../../modules/media/recorder.js'
 import {
     default_settings,
     delete_all_data,
@@ -135,7 +135,7 @@ const get_runtime_export_options = () => {
 
     return {
         support_message,
-        mime_types: support_message ? [] : get_supported_mime_types(),
+        mime_types: support_message ? [] : get_supported_export_mime_types(),
         resolutions: support_message ? [] : get_supported_export_resolutions()
     }
 }
@@ -322,7 +322,7 @@ export function SettingsPage() {
                 </SettingGroup>
 
                 <SettingGroup>
-                    <SectionTitle>Feedback</SectionTitle>
+                    <SectionTitle>Accessibility & Feedback</SectionTitle>
                     <Toggle
                         label="Haptics"
                         description="Use short vibration pulses for recording start and stop when the device supports it."

@@ -33,4 +33,5 @@ npm test
 - Known hard capture blockers disable recording and show recovery guidance near capture.
 - Export controls appear only when this browser supports the export pipeline.
 - Project rows show when a cached export is ready for the current clips and settings.
+- Cached export metadata stays current after project renames and export setting changes.
 - The PWA service worker caches the app shell for offline startup after first load.

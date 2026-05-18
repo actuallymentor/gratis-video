@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.7] - 2026-05-18
+
+### Added
+- add export download, storage persistence, and lifecycle regressions
+
+### Fixed
+- refresh cached export filenames after project renames
+- prune stale export blobs after export setting changes
+- prove export formats through canvas recorder construction
+- show critical recording guidance near the record control
+- add contextual labels for project and clip row actions
+- keep export download URLs alive longer
+
 ## [0.2.6] - 2026-05-18
 
 ### Added

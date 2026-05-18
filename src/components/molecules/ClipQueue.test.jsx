@@ -37,7 +37,7 @@ describe( `clip queue`, () => {
         const user = userEvent.setup()
         const { container } = render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
 
-        await user.click( screen.getByRole( `button`, { name: `Preview clip` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
 
         expect( await screen.findByRole( `dialog`, { name: `Clip preview` } ) ).toBeTruthy()
         await waitFor( () => {
@@ -58,7 +58,7 @@ describe( `clip queue`, () => {
 
         render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
 
-        await user.click( screen.getByRole( `button`, { name: `Preview clip` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
 
         expect( await screen.findByText( /clip file is missing/ ) ).toBeTruthy()
     } )

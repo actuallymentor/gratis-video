@@ -78,6 +78,14 @@ const make_stream = () => {
     }
 }
 
+const make_video_only_stream = () => {
+    const { stream, track } = make_stream()
+
+    stream.getAudioTracks = () => []
+
+    return { stream, track }
+}
+
 const make_recorder = () => {
     const recorder = {
         mimeType: `video/webm`,
@@ -145,6 +153,10 @@ describe( `recording controller`, () => {
         cleanup()
         vi.restoreAllMocks()
         vi.clearAllMocks()
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: false
+        } )
         useAppStore.setState( { recording_state: `idle` } )
         controller = null
     } )
@@ -204,6 +216,96 @@ describe( `recording controller`, () => {
         } )
         expect( useAppStore.getState().media_stream_state ).toBe( `idle` )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `stops and saves a valid clip when the tab is hidden`, async () => {
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: true
+        } )
+
+        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `stops and saves when the active media track ends`, async () => {
+        const { stream, track } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        const [ , ended_listener ] = track.addEventListener.mock.calls.find( ( [ event_name ] ) => event_name === `ended` )
+
+        await act( async () => {
+            ended_listener()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
+    } )
+
+    test( `surfaces a video-only notice when the stream has no audio track`, async () => {
+        const { stream } = make_video_only_stream()
+        const recorder = make_recorder()
+
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( controller.error_message ).toMatch( /video only/ )
+        } )
     } )
 
     test( `records a tap-to-start and tap-to-stop clip`, async () => {

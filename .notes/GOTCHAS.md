@@ -12,3 +12,6 @@
 - Export compilation is intentionally gated by an in-memory user-action flag. Do not let `?panel=export` or restored URL state start compilation by itself.
 - When changing recording startup, keep the `getUserMedia()` stream cleanup path covered for failures that happen after stream acquisition but before `MediaRecorder.start()`.
 - `useRecordingController` cleanup depends on callback identity. Tests and callers should pass stable callbacks while recording, or rerenders can exercise the route-change cleanup path.
+- Export format choices in Settings must be proven against the canvas export recorder path, not only `MediaRecorder.isTypeSupported()`, because typed construction can still fail.
+- Export setting changes should prune stale cached export blobs; otherwise large exports can accumulate after quality, resolution, or format changes.
+- Project renames should keep cached export filenames current because the export blob can remain valid while its friendly filename changes.

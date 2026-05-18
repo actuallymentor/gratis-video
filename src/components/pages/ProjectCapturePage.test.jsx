@@ -291,7 +291,7 @@ describe( `project capture page`, () => {
         render_capture()
 
         expect( await screen.findByText( `Clip 1` ) ).toBeTruthy()
-        await user.click( screen.getByRole( `button`, { name: `Delete clip` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Delete clip 1` } ) )
 
         expect( delete_clip ).toHaveBeenCalledWith( clip.id )
     } )

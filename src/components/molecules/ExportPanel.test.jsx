@@ -158,6 +158,22 @@ describe( `export panel`, () => {
         expect( download_export_file ).toHaveBeenCalledWith( saved_export, compiled_export.blob )
     } )
 
+    test( `downloads directly from a ready export`, async () => {
+        const user = userEvent.setup()
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ saved_export }
+            on_close={ vi.fn() }
+        /> )
+
+        await user.click( await screen.findByRole( `button`, { name: `Download` } ) )
+
+        expect( download_export_file ).toHaveBeenCalledWith( saved_export, compiled_export.blob )
+    } )
+
     test( `aborts compile work when the user cancels`, async () => {
         const user = userEvent.setup()
         const on_close = vi.fn()

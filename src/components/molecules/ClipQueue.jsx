@@ -103,7 +103,7 @@ const PreviewMessage = styled.p`
     line-height: 1.5;
 `
 
-function ClipThumbnail( { clip, on_preview } ) {
+function ClipThumbnail( { clip, label, on_preview } ) {
     const [ thumbnail_url, set_thumbnail_url ] = useState( null )
 
     useEffect( () => {
@@ -126,7 +126,7 @@ function ClipThumbnail( { clip, on_preview } ) {
         }
     }, [ clip.id ] )
 
-    return <Thumb type="button" aria-label="Preview clip" onClick={ on_preview }>
+    return <Thumb type="button" aria-label={ label } onClick={ on_preview }>
         { thumbnail_url ? <img src={ thumbnail_url } alt="" /> : <VideoOff size={ 22 } aria-hidden="true" /> }
     </Thumb>
 }
@@ -189,14 +189,18 @@ export function ClipQueue( { clips, on_delete } ) {
     return <>
         <Queue>
             { clips.map( ( clip, index ) => <Row key={ clip.id }>
-                <ClipThumbnail clip={ clip } on_preview={ () => open_preview( clip ) } />
+                <ClipThumbnail
+                    clip={ clip }
+                    label={ `Preview clip ${ index + 1 }` }
+                    on_preview={ () => open_preview( clip ) }
+                />
                 <Details>
                     <strong>Clip { index + 1 }</strong>
                     <span>{ format_duration( clip.duration_ms ) } at { format_time( clip.created_at ) }</span>
                 </Details>
                 <IconButton
                     icon={ Trash2 }
-                    label="Delete clip"
+                    label={ `Delete clip ${ index + 1 }` }
                     onClick={ () => on_delete( clip ) }
                 />
             </Row> ) }

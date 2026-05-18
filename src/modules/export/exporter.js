@@ -260,7 +260,7 @@ const play_clip_to_canvas = async ( {
     }
 }
 
-const can_record_canvas_resolution = ( { width, height } ) => {
+const can_record_canvas_stream = ( { width = 16, height = 16, mime_type = null } = {} ) => {
     if( get_export_support_message() ) return false
 
     const canvas = document.createElement( `canvas` )
@@ -273,13 +273,24 @@ const can_record_canvas_resolution = ( { width, height } ) => {
 
     try {
         stream = canvas.captureStream( FPS )
-        recorder = new MediaRecorder( stream )
+        recorder = mime_type
+            ? new MediaRecorder( stream, { mimeType: mime_type } )
+            : new MediaRecorder( stream )
         return Boolean( recorder )
     } catch {
         return false
     } finally {
         stop_media_stream( stream )
     }
+}
+
+const can_record_canvas_resolution = ( { width, height } ) => {
+    return can_record_canvas_stream( { width, height } )
+}
+
+const can_record_canvas_mime_type = ( mime_type ) => {
+    if( !globalThis.MediaRecorder?.isTypeSupported?.( mime_type ) ) return false
+    return can_record_canvas_stream( { mime_type } )
 }
 
 /**
@@ -318,6 +329,15 @@ export function get_supported_export_resolutions() {
     } )
 
     return [ source_option, ...supported_scaled_options ]
+}
+
+/**
+ * Lists MIME types that this browser can record from the export canvas path.
+ * @returns {Array<string>} Supported export MIME types.
+ */
+export function get_supported_export_mime_types() {
+    if( !can_compile_project_exports() ) return []
+    return recording_mime_candidates.filter( can_record_canvas_mime_type )
 }
 
 /**

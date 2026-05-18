@@ -64,6 +64,27 @@ describe( `journal storage`, () => {
         expect( await stored_thumbnail_blob.text() ).toBe( `thumb` )
     } )
 
+    test( `requests persistent storage after project and clip creation`, async () => {
+        const persist = vi.fn().mockResolvedValue( true )
+
+        vi.stubGlobal( `navigator`, {
+            storage: { persist }
+        } )
+
+        const project = await create_project()
+
+        expect( persist ).toHaveBeenCalledTimes( 1 )
+
+        await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+
+        expect( persist ).toHaveBeenCalledTimes( 2 )
+    } )
+
     test( `loads clips and blobs after reopening local storage`, async () => {
         const project = await create_project()
         const clip = await add_clip_to_project( {
@@ -118,6 +139,40 @@ describe( `journal storage`, () => {
 
         expect( renamed_project.title ).toBe( `Pocket Walk` )
         expect( fallback_project.title ).toBe( `Pocket Walk` )
+    } )
+
+    test( `renaming a project keeps cached export filenames current`, async () => {
+        const project = await create_project()
+        const settings = await load_settings()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings
+        } )
+
+        await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash,
+            clip_manifest_hash,
+            duration_ms: 1200
+        } )
+
+        await rename_project( project.id, `Pocket Walk` )
+
+        const cached_export = await get_valid_cached_export( {
+            project_id: project.id,
+            settings_hash,
+            clip_manifest_hash
+        } )
+
+        expect( cached_export.filename ).toBe( `pocket-walk.webm` )
     } )
 
     test( `deleting a clip removes it from the queue and blob stores`, async () => {
@@ -252,6 +307,38 @@ describe( `journal storage`, () => {
             clip_manifest_hash
         } ) ).toBe( null )
         expect( ( await list_projects() )[ 0 ].last_exported_at ).toBe( null )
+        expect( ( await list_projects() )[ 0 ].export_count ).toBe( 0 )
+    } )
+
+    test( `prunes stale export blobs when export settings change`, async () => {
+        const project = await create_project()
+        const settings = await load_settings()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings
+        } )
+        const export_record = await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash,
+            clip_manifest_hash,
+            duration_ms: 1200
+        } )
+
+        await save_settings( { haptics_enabled: false } )
+
+        expect( await get_export_blob( export_record.id ) ).toBeTruthy()
+
+        await save_settings( { export_quality: `high` } )
+
+        expect( await get_export_blob( export_record.id ) ).toBe( null )
         expect( ( await list_projects() )[ 0 ].export_count ).toBe( 0 )
     } )
 

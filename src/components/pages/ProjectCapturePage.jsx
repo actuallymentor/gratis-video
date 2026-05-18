@@ -74,6 +74,23 @@ const QueuePanel = styled.section`
     min-width: 0;
 `
 
+const BottomNotice = styled.div`
+    position: fixed;
+    right: 1rem;
+    bottom: calc( 6.35rem + env( safe-area-inset-bottom ) );
+    left: 1rem;
+    z-index: 22;
+    display: grid;
+    justify-items: center;
+    pointer-events: none;
+
+    > * {
+        width: min( 100%, 38rem );
+        pointer-events: auto;
+        box-shadow: var(--shadow-soft);
+    }
+`
+
 const LinkButton = styled( Link )`
     display: inline-flex;
     align-items: center;
@@ -248,6 +265,10 @@ export function ProjectCapturePage() {
     const status_message = recording.error_message || media_status_message( permission_status ) || storage_warning
     const permission_denied = has_denied_media_permission( permission_status )
     const recording_disabled = !can_attempt_recording( permission_status )
+    const bottom_status_message = status_message && ( recording.error_message || permission_denied || recording_disabled )
+        ? status_message
+        : null
+    const preview_status_message = storage_error || ( bottom_status_message ? null : status_message )
 
     return <AppFrame>
         <Content>
@@ -270,7 +291,7 @@ export function ProjectCapturePage() {
                         </ReadyState> }
                     </Preview>
                     <PermissionNotice
-                        message={ storage_error || status_message }
+                        message={ preview_status_message }
                         action_to={ permission_denied ? `/settings` : null }
                         action_label={ permission_denied ? `Open settings` : null }
                     />
@@ -297,6 +318,14 @@ export function ProjectCapturePage() {
             /> }
             right={ <IconButton icon={ Download } label="Share or export project" onClick={ share_or_export } /> }
         />
+
+        { bottom_status_message ? <BottomNotice>
+            <PermissionNotice
+                message={ bottom_status_message }
+                action_to={ permission_denied ? `/settings` : null }
+                action_label={ permission_denied ? `Open settings` : null }
+            />
+        </BottomNotice> : null }
 
         { panel === `export` && export_requested ? <ExportPanel
             project={ project }

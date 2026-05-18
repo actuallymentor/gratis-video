@@ -18,9 +18,9 @@ import {
 } from '../../modules/storage/journal_storage.js'
 import {
     get_export_support_message,
+    get_supported_export_mime_types,
     get_supported_export_resolutions
 } from '../../modules/export/exporter.js'
-import { get_supported_mime_types } from '../../modules/media/recorder.js'
 
 vi.mock( 'react-hot-toast', () => {
     const toast = vi.fn()
@@ -47,11 +47,8 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
 
 vi.mock( '../../modules/export/exporter.js', () => ( {
     get_export_support_message: vi.fn(),
+    get_supported_export_mime_types: vi.fn(),
     get_supported_export_resolutions: vi.fn()
-} ) )
-
-vi.mock( '../../modules/media/recorder.js', () => ( {
-    get_supported_mime_types: vi.fn()
 } ) )
 
 const settings = {
@@ -80,7 +77,7 @@ describe( `settings page`, () => {
             { value: `source`, label: `Source` },
             { value: `720p`, label: `720p` }
         ] )
-        vi.mocked( get_supported_mime_types ).mockReturnValue( [ `video/webm` ] )
+        vi.mocked( get_supported_export_mime_types ).mockReturnValue( [ `video/webm` ] )
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( persisted_storage ).mockResolvedValue( true )
         vi.mocked( save_settings ).mockImplementation( async ( next_settings ) => next_settings )
@@ -117,7 +114,7 @@ describe( `settings page`, () => {
     } )
 
     test( `hides the format selector until specific supported formats are proven`, async () => {
-        vi.mocked( get_supported_mime_types ).mockReturnValue( [] )
+        vi.mocked( get_supported_export_mime_types ).mockReturnValue( [] )
 
         render_settings()
 
@@ -128,14 +125,14 @@ describe( `settings page`, () => {
     test( `hides export format choices when export compilation is unsupported`, async () => {
         vi.mocked( get_export_support_message ).mockReturnValue( `This browser cannot capture a video export from the canvas.` )
         vi.mocked( get_supported_export_resolutions ).mockReturnValue( [] )
-        vi.mocked( get_supported_mime_types ).mockReturnValue( [ `video/webm` ] )
+        vi.mocked( get_supported_export_mime_types ).mockReturnValue( [ `video/webm` ] )
 
         render_settings()
 
         expect( await screen.findAllByText( /cannot capture a video export/ ) ).toHaveLength( 1 )
         expect( screen.queryByLabelText( /Format/ ) ).toBe( null )
         expect( screen.queryByRole( `button`, { name: `High` } ) ).toBe( null )
-        expect( get_supported_mime_types ).not.toHaveBeenCalled()
+        expect( get_supported_export_mime_types ).not.toHaveBeenCalled()
     } )
 
     test( `saves changed export and feedback settings`, async () => {

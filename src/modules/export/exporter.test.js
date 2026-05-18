@@ -5,6 +5,7 @@ import {
     calculate_export_canvas_size,
     compile_project_export,
     get_export_support_message,
+    get_supported_export_mime_types,
     get_supported_export_resolutions
 } from './exporter.js'
 import { get_clip_blob } from '../storage/journal_storage.js'
@@ -313,6 +314,25 @@ describe( `export compiler`, () => {
 
         expect( get_supported_export_resolutions() ).toEqual( [] )
         expect( get_export_support_message() ).toMatch( /capture a video export/ )
+    } )
+
+    test( `shows only MIME types accepted by the canvas export recorder`, () => {
+        class SelectiveMediaRecorder extends FakeMediaRecorder {
+
+            static isTypeSupported( mime_type ) {
+                return mime_type === `video/mp4` || mime_type === `video/webm`
+            }
+
+            constructor( stream, options = {} ) {
+                if( options.mimeType === `video/mp4` ) throw new Error( `MP4 export unsupported` )
+                super( stream, options )
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, SelectiveMediaRecorder )
+
+        expect( get_supported_export_mime_types() ).toEqual( [ `video/webm` ] )
     } )
 
     test( `fails clearly before export when canvas capture is unsupported`, async () => {
