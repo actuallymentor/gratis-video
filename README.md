@@ -18,6 +18,7 @@ npm run dev
 npm run build
 npm run lint
 npm test
+npm run test:e2e
 ```
 
 ## Behavior

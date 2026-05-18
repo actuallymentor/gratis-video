@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.14] - 2026-05-18
+
+### Added
+- add active-recording cleanup and Playwright smoke regressions
+- add an e2e test command for desktop and mobile smoke checks
+
 ## [0.2.13] - 2026-05-18
 
 ### Added

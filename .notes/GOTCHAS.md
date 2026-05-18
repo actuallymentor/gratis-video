@@ -29,3 +29,4 @@
 - Keep large media blobs out of React state. Use IndexedDB for persistence and refs for transient share/download blobs that must remain available to event handlers.
 - When updating the service-worker cached app shell, cache the build JS/CSS assets before replacing `/index.html`; otherwise offline startup can point at assets that were never cached.
 - In the service worker, match cached build assets by both the browser `Request` and URL pathname. Chromium offline subresource requests can miss the direct `Request` match even when the pathname is cached.
+- Playwright smoke tests use `*.playwright.js` with an explicit `testMatch` so Vitest does not try to execute `@playwright/test` suites.
