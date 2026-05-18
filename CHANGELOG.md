@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.17] - 2026-05-18
+
+### Fixed
+- pin Cloudflare deploys to Wrangler 4
+- document Cloudflare token permissions and rotation
+
 ## [0.3.16] - 2026-05-18
 
 ### Added

@@ -25,6 +25,15 @@ npm run test:e2e
 
 GitHub Actions deploys version bumps to the `gratis-video-log` Cloudflare Worker with Workers Static Assets. Configure repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
+Create the Cloudflare token from **Account API tokens** with the **Edit Cloudflare Workers** permission policy, scoped to the account that owns `gratis-video-log`. If building the policy manually, use:
+
+- `Account / Workers Scripts / Edit`
+- `Account / Account Settings / Read`
+- `User / User Details / Read` and `User / Memberships / Read` if the token UI offers user policies
+- `Zone / Workers Routes / Edit` only when deploying a custom route for a zone
+
+Treat API tokens as single-use secrets. If a token is pasted into chat, logs, or an issue, revoke it and replace the GitHub secret before rerunning deployment.
+
 ## Behavior
 
 - Projects, clips, thumbnails, settings, and cached exports are stored in IndexedDB.
