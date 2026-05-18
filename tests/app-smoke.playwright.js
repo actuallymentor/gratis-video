@@ -1,5 +1,54 @@
 import { expect, test } from '@playwright/test'
 
+const browser_issue_types = new Set( [ `warning`, `error` ] )
+const same_origin = `http://127.0.0.1:5173`
+
+test.beforeEach( async ( { page } ) => {
+    page.browser_issues = []
+
+    page.on( `console`, ( message ) => {
+        if( browser_issue_types.has( message.type() ) ) {
+            page.browser_issues.push( {
+                kind: `console`,
+                type: message.type(),
+                text: message.text()
+            } )
+        }
+    } )
+    page.on( `pageerror`, ( error ) => {
+        page.browser_issues.push( {
+            kind: `pageerror`,
+            text: error.stack || error.message
+        } )
+    } )
+    page.on( `requestfailed`, ( request ) => {
+        const url = new URL( request.url() )
+
+        if( [ `http:`, `https:` ].includes( url.protocol ) && url.origin === same_origin ) {
+            page.browser_issues.push( {
+                kind: `requestfailed`,
+                url: request.url(),
+                failure: request.failure()?.errorText
+            } )
+        }
+    } )
+    page.on( `response`, ( response ) => {
+        const url = new URL( response.url() )
+
+        if( url.origin === same_origin && response.status() >= 400 ) {
+            page.browser_issues.push( {
+                kind: `badresponse`,
+                url: response.url(),
+                status: response.status()
+            } )
+        }
+    } )
+} )
+
+test.afterEach( async ( { page } ) => {
+    expect( page.browser_issues ).toEqual( [] )
+} )
+
 test.describe( `daily video journal app`, () => {
     test( `creates a project, opens capture, and keeps the active route`, async ( { page } ) => {
         await page.goto( `/` )
@@ -61,6 +110,54 @@ test.describe( `daily video journal app`, () => {
         page.once( `dialog`, ( dialog ) => dialog.accept() )
         await page.getByRole( `button`, { name: `Delete clip 1` } ).click()
         await expect( page.getByText( `Recorded clips will appear here.` ) ).toBeVisible()
+    } )
+
+    test( `exports, downloads, renames, and deletes a browser-recorded project`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `New` } ).click()
+
+        await page.getByRole( `button`, { name: `Record clip` } ).click()
+        await page.waitForTimeout( 900 )
+        await page.getByRole( `button`, { name: `Stop recording` } ).click()
+
+        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+
+        await page.getByRole( `button`, { name: `Preview clip 1` } ).click()
+        await expect( page.getByRole( `dialog`, { name: `Clip preview` } ) ).toBeVisible()
+        await page.getByRole( `button`, { name: `Close preview` } ).click()
+
+        await page.getByRole( `button`, { name: `Share or export project` } ).first().click()
+        await expect( page.getByRole( `dialog`, { name: `Export video` } ) ).toBeVisible()
+        await expect( page.getByText( /Export is ready/ ).first() ).toBeVisible( {
+            timeout: 30_000
+        } )
+
+        const download_promise = page.waitForEvent( `download` )
+
+        await page.getByRole( `button`, { name: `Download` } ).click()
+
+        const download = await download_promise
+
+        expect( download.suggestedFilename() ).toMatch( /\.(webm|mp4)$/ )
+
+        await page.getByRole( `button`, { name: `Close export panel` } ).click()
+        await page.getByRole( `button`, { name: `Open projects` } ).click()
+
+        await expect( page.locator( `article` ).filter( {
+            hasText: `Export ready`
+        } ).first() ).toBeVisible()
+
+        await page.getByRole( `button`, { name: /Rename/ } ).first().click()
+        await page.getByLabel( `Project title` ).fill( `Browser Smoke Project` )
+        await page.getByLabel( `Project title` ).press( `Enter` )
+
+        await expect( page.getByRole( `button`, { name: `Open Browser Smoke Project` } ) ).toBeVisible()
+
+        page.once( `dialog`, ( dialog ) => dialog.accept() )
+        await page.getByRole( `button`, { name: `Delete Browser Smoke Project` } ).click()
+
+        await expect( page.getByText( `No projects yet` ) ).toBeVisible()
     } )
 
     test( `shows recovery guidance when camera permission is denied`, async ( { page } ) => {
