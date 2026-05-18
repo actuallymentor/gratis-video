@@ -49,6 +49,24 @@ describe( `record button`, () => {
         expect( default_props.on_toggle ).toHaveBeenCalledTimes( 1 )
     } )
 
+    test( `supports click-style activation without duplicating pointer gestures`, () => {
+        render( <RecordButton { ...default_props } recording_state="idle" /> )
+
+        const button = screen.getByRole( `button`, { name: `Record clip` } )
+
+        fireEvent.click( button )
+
+        expect( default_props.on_toggle ).toHaveBeenCalledTimes( 1 )
+
+        fireEvent.pointerDown( button, { pointerId: 1 } )
+        fireEvent.pointerUp( button, { pointerId: 1 } )
+        fireEvent.click( button )
+
+        expect( default_props.on_press ).toHaveBeenCalledTimes( 1 )
+        expect( default_props.on_release ).toHaveBeenCalledTimes( 1 )
+        expect( default_props.on_toggle ).toHaveBeenCalledTimes( 1 )
+    } )
+
     test( `forwards pointer cancellation so partial recordings can be saved`, () => {
         render( <RecordButton { ...default_props } recording_state="recording" /> )
 

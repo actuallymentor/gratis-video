@@ -3,7 +3,6 @@ import { create_export_hashes } from '../export/cache.js'
 import { normalize_export_settings } from '../export/settings.js'
 import {
     clear_all_records,
-    delete_record,
     get_all_records,
     get_index_records,
     get_record,
@@ -210,7 +209,13 @@ const save_active_project_pointer = async ( project_id ) => {
     else safe_local_storage.remove( ACTIVE_PROJECT_KEY )
 }
 
-const make_filename = ( title, mime_type ) => {
+/**
+ * Creates a friendly export filename from a project title and MIME type.
+ * @param {string} title - Project title.
+ * @param {string} mime_type - Export MIME type.
+ * @returns {string} Download/share filename.
+ */
+export const make_export_filename = ( title, mime_type ) => {
     const extension = mime_type.includes( `mp4` ) ? `mp4` : `webm`
     const slug = title
         .toLowerCase()
@@ -232,7 +237,7 @@ const update_project_export_filenames = async ( project_id, title ) => {
         exports.forEach( ( export_record ) => {
             stores.exports.put( {
                 ...export_record,
-                filename: make_filename( title, export_record.mime_type )
+                filename: make_export_filename( title, export_record.mime_type )
             } )
         } )
     } )
@@ -657,7 +662,7 @@ export async function save_export_record( {
         id: new_id(),
         project_id,
         mime_type,
-        filename: make_filename( project.title, mime_type ),
+        filename: make_export_filename( project.title, mime_type ),
         settings_hash,
         clip_manifest_hash,
         duration_ms,
@@ -764,6 +769,8 @@ export async function persisted_storage() {
  * @returns {Promise<void>}
  */
 export async function delete_export( export_id ) {
-    await delete_record( `exports`, export_id )
-    await delete_record( `export_blobs`, export_id )
+    await write_transaction( [ `exports`, `export_blobs` ], ( stores ) => {
+        stores.exports.delete( export_id )
+        stores.export_blobs.delete( export_id )
+    } )
 }

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import styled, { css, keyframes } from 'styled-components'
 import { Square, Video } from 'lucide-react'
 import { format_duration } from '../../modules/media/time.js'
@@ -64,8 +65,18 @@ export function RecordButton( {
     const recording = recording_state === `recording`
     const starting = recording_state === `starting`
     const saving = recording_state === `saving`
+    const last_direct_activation_at_ref = useRef( Number.NEGATIVE_INFINITY )
+
+    const mark_direct_activation = () => {
+        last_direct_activation_at_ref.current = performance.now()
+    }
+
+    const recently_handled_direct_activation = () => {
+        return performance.now() - last_direct_activation_at_ref.current < 500
+    }
 
     const press_button = ( event ) => {
+        mark_direct_activation()
         if( event.pointerId !== undefined ) event.currentTarget.setPointerCapture?.( event.pointerId )
         on_press()
     }
@@ -85,6 +96,13 @@ export function RecordButton( {
 
         event.preventDefault()
         if( event.repeat ) return
+        mark_direct_activation()
+        on_toggle()
+    }
+
+    const activate_from_click = () => {
+        if( recently_handled_direct_activation() ) return
+
         on_toggle()
     }
 
@@ -98,6 +116,7 @@ export function RecordButton( {
         onPointerUp={ release_button }
         onPointerCancel={ cancel_button }
         onKeyDown={ use_keyboard }
+        onClick={ activate_from_click }
     >
         <Inner>
             { recording ? <Square size={ 24 } fill="currentColor" aria-hidden="true" /> : <Video size={ 25 } aria-hidden="true" /> }

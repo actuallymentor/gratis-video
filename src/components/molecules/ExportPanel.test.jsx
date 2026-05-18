@@ -39,6 +39,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     get_export_blob: vi.fn(),
     get_project_clips: vi.fn(),
     load_settings: vi.fn(),
+    make_export_filename: vi.fn( () => `may-17-2026.webm` ),
     save_export_record: vi.fn()
 } ) )
 
@@ -244,6 +245,8 @@ describe( `export panel`, () => {
     } )
 
     test( `keeps shared export progress state complete during compilation`, async () => {
+        const deferred_export = make_deferred()
+
         vi.mocked( compile_project_export ).mockImplementation( async ( { on_progress } ) => {
             on_progress( {
                 percent: 42,
@@ -256,7 +259,7 @@ describe( `export panel`, () => {
                 message: `Exporting clip 1 of 1`
             } )
 
-            return compiled_export
+            return deferred_export.promise
         } )
 
         render( <ExportPanel
@@ -266,7 +269,49 @@ describe( `export panel`, () => {
             on_close={ vi.fn() }
         /> )
 
+        expect( ( await screen.findByRole( `progressbar`, { name: `Export progress` } ) ).getAttribute( `aria-valuenow` ) ).toBe( `42` )
+
+        await act( async () => {
+            deferred_export.resolve( compiled_export )
+            await deferred_export.promise
+        } )
+
         expect( await screen.findByText( /Export is ready/ ) ).toBeTruthy()
+    } )
+
+    test( `keeps a compiled export downloadable when caching fails`, async () => {
+        const user = userEvent.setup()
+        const on_export_ready = vi.fn()
+
+        vi.mocked( save_export_record ).mockRejectedValue( new DOMException( `Quota full`, `QuotaExceededError` ) )
+        vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_export_ready={ on_export_ready }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /local browser storage is full/ ) ).toBeTruthy()
+
+        await user.click( screen.getByRole( `button`, { name: `Download` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Share` } ) )
+
+        expect( on_export_ready ).not.toHaveBeenCalled()
+        expect( download_export_file ).toHaveBeenCalledWith(
+            expect.objectContaining( {
+                filename: `may-17-2026.webm`,
+                transient: true
+            } ),
+            compiled_export.blob
+        )
+        expect( share_export_file ).toHaveBeenCalledWith( {
+            project,
+            export_record: expect.objectContaining( { transient: true } ),
+            blob: compiled_export.blob
+        } )
     } )
 
     test( `does not cache an export when project inputs change during compilation`, async () => {

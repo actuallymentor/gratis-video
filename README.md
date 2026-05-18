@@ -29,6 +29,8 @@ npm test
 - Settings include media access status, haptics, and optional sound feedback for recording state changes.
 - Export compiles clips on demand in queue order, preserves orientation when scaling, then offers native sharing when available or a download fallback.
 - Cached exports are reused only while their clips, settings, and stored file remain valid.
+- Cached exports found during an export tap try native sharing before falling back to the export panel.
+- If local caching fails after compilation, the finished export remains available to share or download until the panel closes.
 - Cached exports are rejected if clips or settings change while compilation is running.
 - Export compilation starts only from an explicit Share/Export action.
 - Known hard capture blockers disable recording and show recovery guidance near capture.

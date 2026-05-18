@@ -1,7 +1,7 @@
 {
   "name": "daily-video-journal",
   "private": true,
-  "version": "0.2.12",
+  "version": "0.2.13",
   "type": "module",
   "scripts": {
     "dev": "vite",

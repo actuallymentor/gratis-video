@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
+import { log } from 'mentie/modules/logging.js'
 import styled from 'styled-components'
 import { Download, Share2, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
@@ -14,6 +15,7 @@ import {
     get_export_blob,
     get_project_clips,
     load_settings,
+    make_export_filename,
     save_export_record
 } from '../../modules/storage/journal_storage.js'
 import {
@@ -74,7 +76,11 @@ const ProgressFill = styled.div`
 
 const Message = styled.p`
     margin: 0;
-    color: ${ ( { $tone } ) => $tone === `error` ? `var(--color-danger)` : `var(--color-muted)` };
+    color: ${ ( { $tone } ) => {
+        if( $tone === `error` ) return `var(--color-danger)`
+        if( $tone === `warning` ) return `var(--color-warning)`
+        return `var(--color-muted)`
+    } };
     line-height: 1.5;
 `
 
@@ -105,6 +111,25 @@ const get_initial_export_status = ( { initial_export_record } ) => {
     return `loading`
 }
 
+const is_storage_quota_error = ( error ) => {
+    return error?.name === `QuotaExceededError`
+        || error?.name === `NS_ERROR_DOM_QUOTA_REACHED`
+        || error?.code === 22
+        || error?.code === 1014
+}
+
+const make_transient_export_record = ( { project, compiled_export, settings_hash, clip_manifest_hash } ) => ( {
+    id: `unsaved-${ Date.now() }`,
+    project_id: project.id,
+    filename: make_export_filename( project.title, compiled_export.mime_type ),
+    mime_type: compiled_export.mime_type,
+    settings_hash,
+    clip_manifest_hash,
+    duration_ms: compiled_export.duration_ms,
+    created_at: new Date().toISOString(),
+    transient: true
+} )
+
 /**
  * Runs an explicit export flow and presents post-compile share/download actions.
  * @param {Object} props - Export flow props.
@@ -125,6 +150,7 @@ export function ExportPanel( {
     const [ status, set_status ] = useState( initial_status )
     const [ export_record, set_export_record ] = useState( initial_export_record )
     const [ error_message, set_error_message ] = useState( null )
+    const [ ready_warnings, set_ready_warnings ] = useState( [] )
     const export_blob_ref = useRef( null )
     const abort_controller_ref = useRef( null )
     const export_progress = useAppStore( ( state ) => state.export_progress )
@@ -255,31 +281,57 @@ export function ExportPanel( {
                     throw new Error( `Project changed while the export was compiling. Start the export again.` )
                 }
 
-                const saved_export = await save_export_record( {
-                    project_id: project.id,
-                    settings_hash,
-                    clip_manifest_hash,
-                    ...compiled_export
-                } )
+                let saved_export = null
+                let next_export_record = null
+                let cache_warning = null
+
+                try {
+                    saved_export = await save_export_record( {
+                        project_id: project.id,
+                        settings_hash,
+                        clip_manifest_hash,
+                        ...compiled_export
+                    } )
+                    next_export_record = saved_export
+                } catch ( error ) {
+                    log.warn( `Compiled export could not be cached`, error )
+                    cache_warning = is_storage_quota_error( error )
+                        ? `Export is ready, but local browser storage is full. Share or download it now before closing.`
+                        : `Export is ready, but it could not be cached in local browser storage. Share or download it now before closing.`
+                    next_export_record = make_transient_export_record( {
+                        project,
+                        compiled_export,
+                        settings_hash,
+                        clip_manifest_hash
+                    } )
+                }
 
                 if( !is_current_export() || abort_controller.signal.aborted ) {
-                    await delete_export( saved_export.id ).catch( () => null )
+                    if( saved_export ) await delete_export( saved_export.id ).catch( () => null )
                     return
                 }
 
-                set_export_record( saved_export )
+                const compiled_warnings = compiled_export.warnings ?? []
+
+                set_export_record( next_export_record )
                 export_blob_ref.current = compiled_export.blob
+                set_ready_warnings( [
+                    ...compiled_warnings,
+                    cache_warning
+                ].filter( Boolean ) )
                 set_status( `ready` )
-                on_export_ready?.( {
-                    export_record: saved_export,
-                    blob: compiled_export.blob
-                } )
+                if( saved_export ) {
+                    on_export_ready?.( {
+                        export_record: saved_export,
+                        blob: compiled_export.blob
+                    } )
+                }
                 set_export_progress( {
                     active: false,
                     percent: 100,
                     message: `Export ready`
                 } )
-                toast.success( `Export ready` )
+                toast.success( saved_export ? `Export ready` : `Export ready, but not cached` )
             } catch ( error ) {
                 if( !is_current_export() ) return
 
@@ -356,7 +408,13 @@ export function ExportPanel( {
             </Header>
 
             { status === `compiling` ? <>
-                <ProgressTrack aria-hidden="true">
+                <ProgressTrack
+                    role="progressbar"
+                    aria-label="Export progress"
+                    aria-valuemin={ 0 }
+                    aria-valuemax={ 100 }
+                    aria-valuenow={ export_progress.percent }
+                >
                     <ProgressFill $percent={ export_progress.percent } />
                 </ProgressTrack>
                 <Message aria-live="polite">
@@ -371,6 +429,10 @@ export function ExportPanel( {
             { status === `ready` ? <Message aria-live="polite">
                 Export is ready. Use Share from here so the browser has a fresh user action.
             </Message> : null }
+
+            { status === `ready` ? ready_warnings.map( ( warning ) => <Message key={ warning } $tone="warning" role="status">
+                { warning }
+            </Message> ) : null }
 
             { status === `error` || status === `cancelled` ? <Message $tone="error" aria-live="polite">
                 { error_message }

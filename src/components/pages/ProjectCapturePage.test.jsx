@@ -279,6 +279,62 @@ describe( `project capture page`, () => {
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
         expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
+        expect( share_export_file ).toHaveBeenCalledWith( {
+            project,
+            export_record,
+            blob: expect.any( Blob )
+        } )
+    } )
+
+    test( `shares a cached export discovered during the export tap`, async () => {
+        const user = userEvent.setup()
+        let allow_cache = false
+
+        vi.mocked( get_valid_cached_export ).mockImplementation( async () => {
+            return allow_cache ? export_record : null
+        } )
+        vi.mocked( share_export_file ).mockResolvedValue( `shared` )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_valid_cached_export ).toHaveBeenCalled()
+        } )
+
+        allow_cache = true
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        await waitFor( () => {
+            expect( share_export_file ).toHaveBeenCalledWith( {
+                project,
+                export_record,
+                blob: expect.any( Blob )
+            } )
+        } )
+        expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+    } )
+
+    test( `compiles when cached export metadata is found but its blob is missing`, async () => {
+        const user = userEvent.setup()
+        let allow_cache = false
+
+        vi.mocked( get_valid_cached_export ).mockImplementation( async () => {
+            return allow_cache ? export_record : null
+        } )
+        vi.mocked( get_export_blob ).mockResolvedValue( null )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_valid_cached_export ).toHaveBeenCalled()
+        } )
+
+        allow_cache = true
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for compile/ ) ).toBeTruthy()
         expect( share_export_file ).not.toHaveBeenCalled()
     } )
 

@@ -338,11 +338,34 @@ export function ProjectCapturePage() {
             return
         }
 
-        cached_export_blob_ref.current = null
-        set_cached_export_record( cached_export )
-        set_cached_export_key( cache_key )
-        set_cached_export_ready( false )
-        set_export_panel_record( cached_export )
+        const cached_blob = await get_export_blob( cached_export.id ).catch( () => null )
+
+        if( cached_blob ) {
+            cached_export_blob_ref.current = cached_blob
+            set_cached_export_record( cached_export )
+            set_cached_export_key( cache_key )
+            set_cached_export_ready( true )
+
+            try {
+                const share_result = await share_export_file( {
+                    project,
+                    export_record: cached_export,
+                    blob: cached_blob
+                } )
+
+                if( share_result === `shared` || share_result === `cancelled` ) return
+            } catch {
+                toast( `Sharing failed. Download is available.` )
+            }
+
+            set_export_panel_record( cached_export )
+            set_export_requested( true )
+            set_panel( `export` )
+            return
+        }
+
+        clear_cached_export()
+        set_export_panel_record( null )
         set_export_requested( true )
         set_panel( `export` )
     }

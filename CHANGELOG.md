@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.13] - 2026-05-18
+
+### Added
+- add export activation, cache-failure, cache-missing, and record-click regressions
+
+### Fixed
+- share cached exports discovered during the export tap
+- keep compiled exports available when local caching fails
+- expose export progress as a semantic progress bar
+- mute export playback when audio routing is unavailable
+- support click-style record activation
+- delete cached export records and blobs atomically
+
 ## [0.2.12] - 2026-05-18
 
 ### Added

@@ -235,6 +235,7 @@ const play_clip_to_canvas = async ( {
         video.preload = `auto`
         await wait_for_event( video, `loadedmetadata`, signal )
         audio_source = connect_video_audio( audio_graph, video )
+        if( !audio_source ) video.muted = true
 
         const duration_ms = clip.duration_ms || Math.round( ( video.duration || 0 ) * 1000 )
         const project_duration_ms = clips.reduce( ( total, next_clip ) => total + ( next_clip.duration_ms || 0 ), 0 ) || 1
@@ -261,6 +262,9 @@ const play_clip_to_canvas = async ( {
         }
 
         draw_video_frame( context, video, canvas )
+        return {
+            audio_routed: Boolean( audio_source )
+        }
     } finally {
         try {
             audio_source?.disconnect?.()
@@ -294,6 +298,9 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     const context = canvas.getContext( `2d` )
     const video_stream = canvas.captureStream( FPS )
     let audio_graph = await resume_audio_graph( create_audio_graph() )
+    const audio_warnings = audio_graph ? [] : [
+        `This browser could not route clip audio into the export, so the export may be video-only.`
+    ]
     const audio_tracks = audio_graph?.destination.stream.getAudioTracks() ?? []
     const mixed_stream = new MediaStream( [
         ...video_stream.getVideoTracks(),
@@ -312,9 +319,11 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         recorder.start( 250 )
         on_progress?.( { percent: 1, message: `Preparing export` } )
 
+        const playback_results = []
+
         await clips.reduce( async ( previous_clip, clip, clip_index ) => {
             await previous_clip
-            return play_clip_to_canvas( {
+            const playback_result = await play_clip_to_canvas( {
                 clip,
                 clip_index,
                 clips,
@@ -324,7 +333,12 @@ export async function compile_project_export( { clips, settings, signal, on_prog
                 signal,
                 on_progress
             } )
+            playback_results.push( playback_result )
         }, Promise.resolve() )
+
+        if( audio_graph && playback_results.some( ( { audio_routed } ) => !audio_routed ) ) {
+            audio_warnings.push( `This browser could not route audio from every clip, so the export may be video-only.` )
+        }
 
         recorder.stop()
         await stopped
@@ -341,7 +355,8 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         return {
             blob,
             mime_type: output_type,
-            duration_ms
+            duration_ms,
+            warnings: [ ...new Set( audio_warnings ) ]
         }
     } finally {
         if( recorder && recorder.state !== `inactive` ) recorder.stop()
