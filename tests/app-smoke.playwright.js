@@ -21,6 +21,16 @@ test.beforeEach( async ( { page } ) => {
             text: error.stack || error.message
         } )
     } )
+    page.on( `request`, ( request ) => {
+        const url = new URL( request.url() )
+
+        if( [ `http:`, `https:` ].includes( url.protocol ) && url.origin !== same_origin ) {
+            page.browser_issues.push( {
+                kind: `offorigin`,
+                url: request.url()
+            } )
+        }
+    } )
     page.on( `requestfailed`, ( request ) => {
         const url = new URL( request.url() )
 
@@ -332,6 +342,35 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByText( /stored locally in this browser/ ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Delete all local data` } ) ).toBeVisible()
         await expect( page.getByRole( `heading`, { name: `Export`, exact: true } ) ).toBeVisible()
+    } )
+
+    test( `shows low-storage and persistence status from browser storage estimates`, async ( { page } ) => {
+        await page.addInitScript( () => {
+            Object.defineProperty( navigator, `storage`, {
+                configurable: true,
+                value: {
+                    estimate: () => Promise.resolve( {
+                        usage: 900,
+                        quota: 1000
+                    } ),
+                    persisted: () => Promise.resolve( false ),
+                    persist: () => Promise.resolve( false )
+                }
+            } )
+        } )
+
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
+
+        await expect( page.getByText( /Local browser storage is almost full/ ) ).toBeVisible()
+
+        const capture_path = new URL( page.url() ).pathname
+
+        await page.goto( `/settings?return_to=${ encodeURIComponent( capture_path ) }` )
+
+        await expect( page.getByText( /Local browser storage is almost full/ ) ).toBeVisible()
+        await expect( page.getByText( `900 B used of 1000 B` ) ).toBeVisible()
+        await expect( page.getByText( `Persistent storage not granted` ) ).toBeVisible()
     } )
 
     test( `persists settings changes and deletes all local data`, async ( { page } ) => {

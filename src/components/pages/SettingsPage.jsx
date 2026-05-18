@@ -272,7 +272,7 @@ export function SettingsPage() {
     }
 
     const format_options = [
-        { value: ``, label: `Browser default` },
+        { value: ``, label: `Recommended` },
         ...supported_mime_types.map( ( mime_type ) => ( {
             value: mime_type,
             label: mime_type

@@ -181,9 +181,7 @@ export function get_capture_error_message( error ) {
         return `Camera or microphone access is blocked for this site. Check browser site settings, then try recording again.`
     }
 
-    if( error?.name === `NotFoundError` || error?.name === `DevicesNotFoundError` ) {
-        return `No camera or microphone was found on this device.`
-    }
+    if( error?.name === `NotFoundError` || error?.name === `DevicesNotFoundError` ) return `No camera was found on this device.`
 
     if( error?.name === `NotReadableError` || error?.name === `TrackStartError` ) {
         return `The camera or microphone is already in use by another app or browser tab.`

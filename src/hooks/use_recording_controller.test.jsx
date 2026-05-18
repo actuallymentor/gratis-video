@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
+import toast from 'react-hot-toast'
 import { useRecordingController } from './use_recording_controller.js'
 import {
     default_permission_status,
@@ -716,6 +717,73 @@ describe( `recording controller`, () => {
             } ) )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `recovers to idle and reports quota guidance when clip saving runs out of storage`, async () => {
+        const { stream, track } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+        const quota_error = new DOMException( `Storage full`, `QuotaExceededError` )
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( add_clip_to_project ).mockRejectedValue( quota_error )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        act( () => controller.toggle_recording() )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        } )
+        expect( controller.error_message ).toMatch( /storage is full/ )
+        expect( toast.error ).toHaveBeenCalledWith( `Storage is full` )
+        expect( track.stop ).toHaveBeenCalledTimes( 1 )
+        expect( clip_saved ).not.toHaveBeenCalled()
+        expect( update_clip_media_details ).not.toHaveBeenCalled()
+    } )
+
+    test( `recovers to idle after a generic clip save failure`, async () => {
+        const { stream, track } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( add_clip_to_project ).mockRejectedValue( new Error( `Write failed` ) )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        act( () => controller.toggle_recording() )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        } )
+        expect( controller.error_message ).toBe( `The clip could not be saved.` )
+        expect( toast.error ).toHaveBeenCalledWith( `Clip save failed` )
+        expect( track.stop ).toHaveBeenCalledTimes( 1 )
+        expect( clip_saved ).not.toHaveBeenCalled()
+        expect( update_clip_media_details ).not.toHaveBeenCalled()
     } )
 
     test( `adds the clip to the queue before thumbnail and metadata enrichment finishes`, async () => {

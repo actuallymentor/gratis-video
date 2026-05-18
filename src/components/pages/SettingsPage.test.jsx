@@ -179,6 +179,7 @@ describe( `settings page`, () => {
         render_settings()
 
         expect( await screen.findByText( `Settings` ) ).toBeTruthy()
+        expect( screen.getByRole( `option`, { name: `Recommended` } ) ).toBeTruthy()
 
         await user.selectOptions( screen.getByLabelText( /Format/ ), `video/webm` )
         await user.click( screen.getByRole( `button`, { name: `High` } ) )

@@ -96,7 +96,9 @@ self.addEventListener( `fetch`, ( event ) => {
                     await cache_index_with_build_assets( cache, response )
                     return response
                 } )
-                .catch( () => caches.match( `/index.html` ) )
+                .catch( async () => {
+                    return await caches.match( `/index.html` ) || offline_response()
+                } )
         )
         return
     }

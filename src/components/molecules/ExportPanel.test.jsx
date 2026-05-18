@@ -153,6 +153,28 @@ describe( `export panel`, () => {
         expect( get_export_blob ).not.toHaveBeenCalled()
     } )
 
+    test( `shows export failure without exposing share or download actions`, async () => {
+        vi.mocked( compile_project_export ).mockRejectedValue( new Error( `Encoder failed` ) )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( `Encoder failed` ) ).toBeTruthy()
+        expect( screen.queryByRole( `button`, { name: `Share` } ) ).toBe( null )
+        expect( screen.queryByRole( `button`, { name: `Download` } ) ).toBe( null )
+        expect( save_export_record ).not.toHaveBeenCalled()
+        expect( download_export_file ).not.toHaveBeenCalled()
+        expect( useAppStore.getState().export_progress ).toEqual( {
+            active: false,
+            percent: 0,
+            message: `Export failed`
+        } )
+    } )
+
     test( `loads a cached export blob before enabling fresh share actions`, async () => {
         const user = userEvent.setup()
         const blob_deferred = make_deferred()

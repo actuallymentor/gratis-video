@@ -95,6 +95,15 @@ describe( `project list page`, () => {
         expect( await screen.findByText( `/settings` ) ).toBeTruthy()
     } )
 
+    test( `surfaces unavailable local storage without leaving project history`, async () => {
+        vi.mocked( list_projects ).mockRejectedValue( new Error( `IndexedDB unavailable` ) )
+
+        render_project_list()
+
+        expect( ( await screen.findByRole( `alert` ) ).textContent ).toMatch( /Local browser storage is unavailable/ )
+        expect( screen.getByRole( `button`, { name: `Create Project` } ) ).toBeTruthy()
+    } )
+
     test( `opens an existing project and marks it active`, async () => {
         const user = userEvent.setup()
 

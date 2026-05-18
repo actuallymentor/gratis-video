@@ -291,6 +291,62 @@ const cleanup_video = ( video, object_url ) => {
     URL.revokeObjectURL( object_url )
 }
 
+const missing_clip_blob_error = ( clip_index ) => {
+    return new Error( `Clip ${ clip_index + 1 } is missing from local storage. Export stopped to avoid creating an incomplete video.` )
+}
+
+const get_clip_blob_or_fail = async ( clip, clip_index ) => {
+    const blob = await get_clip_blob( clip.id )
+    if( !blob ) throw missing_clip_blob_error( clip_index )
+
+    return blob
+}
+
+const read_blob_video_metadata = async ( { blob, signal } ) => {
+    const object_url = URL.createObjectURL( blob )
+    const video = document.createElement( `video` )
+
+    try {
+        video.playsInline = true
+        video.preload = `metadata`
+        video.src = object_url
+        await wait_for_event( video, `loadedmetadata`, signal )
+
+        return {
+            duration_ms: Number.isFinite( video.duration ) ? Math.round( video.duration * 1000 ) : 0,
+            width: video.videoWidth || null,
+            height: video.videoHeight || null
+        }
+    } finally {
+        cleanup_video( video, object_url )
+    }
+}
+
+const with_first_clip_canvas_metadata = async ( clips, signal ) => {
+    const [ first_clip ] = clips
+
+    if( !first_clip ||  first_clip.width && first_clip.height  ) return clips
+
+    const blob = await get_clip_blob_or_fail( first_clip, 0 )
+    throw_if_aborted( signal )
+
+    const metadata = await read_blob_video_metadata( { blob, signal } ).catch( () => null )
+
+    if( !metadata?.width || !metadata?.height ) return clips
+
+    const measured_first_clip = {
+        ...first_clip,
+        duration_ms: first_clip.duration_ms || metadata.duration_ms,
+        width: metadata.width,
+        height: metadata.height
+    }
+
+    return [
+        measured_first_clip,
+        ...clips.slice( 1 )
+    ]
+}
+
 const play_clip_to_canvas = async ( {
     clip,
     clip_index,
@@ -303,8 +359,7 @@ const play_clip_to_canvas = async ( {
 } ) => {
     throw_if_aborted( signal )
 
-    const blob = await get_clip_blob( clip.id )
-    if( !blob ) throw new Error( `Clip ${ clip_index + 1 } is missing from local storage. Export stopped to avoid creating an incomplete video.` )
+    const blob = await get_clip_blob_or_fail( clip, clip_index )
     throw_if_aborted( signal )
 
     const object_url = URL.createObjectURL( blob )
@@ -391,7 +446,10 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     if( export_support_message ) throw new Error( export_support_message )
     throw_if_aborted( signal )
 
-    const { width, height } = calculate_export_canvas_size( clips, settings )
+    const export_clips = await with_first_clip_canvas_metadata( clips, signal )
+    throw_if_aborted( signal )
+
+    const { width, height } = calculate_export_canvas_size( export_clips, settings )
     const canvas = document.createElement( `canvas` )
     canvas.width = width
     canvas.height = height
@@ -425,12 +483,12 @@ export async function compile_project_export( { clips, settings, signal, on_prog
 
         const playback_results = []
 
-        await clips.reduce( async ( previous_clip, clip, clip_index ) => {
+        await export_clips.reduce( async ( previous_clip, clip, clip_index ) => {
             await previous_clip
             const playback_result = await play_clip_to_canvas( {
                 clip,
                 clip_index,
-                clips,
+                clips: export_clips,
                 canvas,
                 context,
                 audio_graph,
@@ -455,7 +513,7 @@ export async function compile_project_export( { clips, settings, signal, on_prog
 
         const output_type = recorder.mimeType || mime_type || chunks.at( 0 )?.type || `video/webm`
         const blob = new Blob( chunks, { type: output_type } )
-        const duration_ms = clips.reduce( ( total, clip ) => total + ( clip.duration_ms || 0 ), 0 )
+        const duration_ms = export_clips.reduce( ( total, clip ) => total + ( clip.duration_ms || 0 ), 0 )
 
         if( chunks.length === 0 || blob.size === 0 ) {
             throw new Error( `Export failed because this browser did not produce a video file.` )

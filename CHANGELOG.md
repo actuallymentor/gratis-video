@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.7] - 2026-05-18
+
+### Added
+- add save-failure, export-error, storage, and network regressions
+
+### Fixed
+- size immediate exports from first-clip metadata before cache save
+- return controlled offline responses for uncached navigations
+- show camera-specific missing-device guidance
+- label automatic export format choice as Recommended
+
 ## [0.3.6] - 2026-05-18
 
 ### Added

@@ -142,6 +142,30 @@ describe( `service worker`, () => {
         expect( cache.put ).not.toHaveBeenCalled()
     } )
 
+    test( `returns a controlled offline response when navigation shell is uncached`, async () => {
+        const { caches, fetch, listeners } = await load_service_worker()
+        let response_promise = null
+
+        fetch.mockRejectedValue( new Error( `Offline` ) )
+        caches.match.mockResolvedValue( null )
+
+        listeners.fetch( {
+            request: {
+                method: `GET`,
+                mode: `navigate`,
+                url: `https://journal.test/projects/project-1`
+            },
+            respondWith: ( promise ) => {
+                response_promise = promise
+            }
+        } )
+
+        const response = await response_promise
+
+        expect( response.status ).toBe( 503 )
+        expect( await response.text() ).toMatch( /Offline/ )
+    } )
+
     test( `serves build assets from a cached path when request matching misses`, async () => {
         const cached_asset = new Response( `asset` )
         const { caches, listeners } = await load_service_worker()

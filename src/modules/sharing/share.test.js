@@ -121,6 +121,11 @@ describe( `sharing helpers`, () => {
         expect( createObjectURL ).toHaveBeenCalledWith( blob )
         expect( append ).toHaveBeenCalled()
         expect( click ).toHaveBeenCalled()
+        expect( append.mock.calls[ 0 ][ 0 ] ).toMatchObject( {
+            href_value: object_url,
+            download_value: export_record.filename,
+            rel_value: `noopener`
+        } )
 
         vi.runAllTimers()
 

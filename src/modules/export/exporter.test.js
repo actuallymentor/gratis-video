@@ -327,6 +327,60 @@ describe( `export compiler`, () => {
         ] )
     } )
 
+    test( `measures the first clip before sizing export canvas when stored dimensions are pending`, async () => {
+        const create_element = document.createElement.bind( document )
+        const capture_sizes = []
+
+        class PortraitVideoElement extends FakeVideoElement {
+
+            constructor() {
+                super()
+                this.videoWidth = 720
+                this.videoHeight = 1280
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new PortraitVideoElement()
+            return create_element( tag_name, options )
+        } )
+        HTMLCanvasElement.prototype.captureStream = vi.fn( function captureStream() {
+            capture_sizes.push( {
+                width: this.width,
+                height: this.height
+            } )
+            return new FakeMediaStream( [ make_track() ] )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: null,
+                    height: null
+                }
+            ],
+            settings: {
+                ...default_settings,
+                export_resolution: `720p`
+            },
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            duration_ms: 1000
+        } )
+
+        expect( capture_sizes ).toContainEqual( {
+            width: 720,
+            height: 1280
+        } )
+    } )
+
     test( `finishes with a warning when the export recorder stop event never arrives`, async () => {
         const create_element = document.createElement.bind( document )
 
