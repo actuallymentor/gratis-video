@@ -878,6 +878,32 @@ describe( `journal storage`, () => {
         expect( await get_export_blob( export_record.id ) ).toBe( null )
     } )
 
+    test( `deleting a project removes orphaned media blobs for that project`, async () => {
+        const project = await create_project()
+
+        await put_record( `clip_blobs`, {
+            id: `orphan-clip-blob`,
+            project_id: project.id,
+            blob: new Blob( [ `orphan-video` ], { type: `video/webm` } )
+        } )
+        await put_record( `clip_thumbnails`, {
+            id: `orphan-clip-thumbnail`,
+            project_id: project.id,
+            blob: new Blob( [ `orphan-thumb` ], { type: `image/jpeg` } )
+        } )
+        await put_record( `export_blobs`, {
+            id: `orphan-export-blob`,
+            project_id: project.id,
+            blob: new Blob( [ `orphan-export` ], { type: `video/webm` } )
+        } )
+
+        await delete_project( project.id )
+
+        expect( await get_clip_blob( `orphan-clip-blob` ) ).toBe( null )
+        expect( await get_clip_thumbnail_blob( `orphan-clip-thumbnail` ) ).toBe( null )
+        expect( await get_export_blob( `orphan-export-blob` ) ).toBe( null )
+    } )
+
     test( `deleting all data clears projects media exports settings and active state`, async () => {
         const project = await create_project()
         const settings = await load_settings()

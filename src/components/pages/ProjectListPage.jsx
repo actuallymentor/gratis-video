@@ -33,6 +33,7 @@ const StorageAlert = styled.div`
  */
 export function ProjectListPage() {
     const [ projects, set_projects ] = useState( [] )
+    const [ load_state, set_load_state ] = useState( `loading` )
     const [ storage_error, set_storage_error ] = useState( null )
     const navigate = useNavigate()
     const active_project_id = useAppStore( ( state ) => state.active_project_id )
@@ -41,8 +42,11 @@ export function ProjectListPage() {
     const refresh_projects = useCallback( async () => {
         try {
             set_projects( await list_projects() )
+            set_load_state( `ready` )
             set_storage_error( null )
         } catch {
+            set_load_state( `error` )
+            set_projects( [] )
             set_storage_error( `Local browser storage is unavailable, so projects cannot be loaded.` )
         }
     }, [] )
@@ -52,6 +56,8 @@ export function ProjectListPage() {
     }, [ refresh_projects ] )
 
     const create_next_project = async () => {
+        if( load_state === `error` ) return
+
         try {
             const project = await create_project()
             set_active_project_id( project.id )
@@ -95,6 +101,9 @@ export function ProjectListPage() {
         }
     }
 
+    const project_list_loading = load_state === `loading`
+        ||  load_state === `ready` && active_project_id === undefined
+
     return <AppFrame>
         <Content>
             <HeaderBar>
@@ -111,25 +120,37 @@ export function ProjectListPage() {
 
             { storage_error ? <StorageAlert role="alert">{ storage_error }</StorageAlert> : null }
 
-            { projects.length ? projects.map( ( project ) => <ProjectRow
+            { project_list_loading ? <EmptyState aria-live="polite">
+                <span>Loading projects...</span>
+            </EmptyState> : null }
+
+            { load_state === `ready` && projects.length ? projects.map( ( project ) => <ProjectRow
                 key={ project.id }
                 project={ project }
                 active={ project.id === active_project_id }
                 on_open={ () => open_project( project ) }
                 on_rename={ ( title ) => rename_existing_project( project, title ) }
                 on_delete={ () => delete_existing_project( project ) }
-            /> ) : <EmptyState>
+            /> ) : null }
+
+            { load_state === `ready` && !projects.length ? <EmptyState>
                 <div>
                     <h2>No projects yet</h2>
                     <p>Create a project and start recording clips without a setup step.</p>
                 </div>
                 <PrimaryActionButton icon={ Plus } onClick={ create_next_project }>Create</PrimaryActionButton>
-            </EmptyState> }
+            </EmptyState> : null }
         </Content>
 
         <BottomAppBar
             label="Project actions"
-            center={ <PrimaryActionButton icon={ Plus } onClick={ create_next_project }>Create Project</PrimaryActionButton> }
+            center={ <PrimaryActionButton
+                icon={ Plus }
+                onClick={ create_next_project }
+                disabled={ load_state === `error` }
+            >
+                Create Project
+            </PrimaryActionButton> }
             right={ <IconButton icon={ Settings } label="Open settings" onClick={ () => navigate( `/settings` ) } /> }
         />
     </AppFrame>

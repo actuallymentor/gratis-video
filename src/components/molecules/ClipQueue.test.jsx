@@ -61,6 +61,26 @@ describe( `clip queue`, () => {
         expect( URL.revokeObjectURL ).toHaveBeenCalledWith( `blob:preview` )
     } )
 
+    test( `announces preview loading while the clip blob is being read`, async () => {
+        const user = userEvent.setup()
+        const preview = make_deferred()
+
+        vi.mocked( get_clip_blob ).mockReturnValue( preview.promise )
+
+        render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
+
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
+
+        expect( screen.getByText( `Loading clip preview...` ) ).toBeTruthy()
+
+        await act( async () => {
+            preview.resolve( new Blob( [ `video` ], { type: `video/webm` } ) )
+            await preview.promise
+        } )
+
+        expect( screen.queryByText( `Loading clip preview...` ) ).toBe( null )
+    } )
+
     test( `closes preview with Escape and restores focus to the preview trigger`, async () => {
         const user = userEvent.setup()
 

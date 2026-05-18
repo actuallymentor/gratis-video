@@ -426,6 +426,29 @@ test.describe( `daily video journal app`, () => {
         await expect( clip_rows.nth( 1 ) ).toContainText( `1s` )
     } )
 
+    test( `exports multiple recorded clips without stalling`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
+
+        await record_clip_for( page, 700 )
+        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+
+        await record_clip_for( page, 900 )
+        await expect( page.getByText( `Clip 2` ) ).toBeVisible()
+
+        await page.getByRole( `button`, { name: `Share or export project` } ).first().click()
+
+        await expect( page.getByRole( `dialog`, { name: `Export video` } ) ).toBeVisible()
+        await expect( page.getByText( /Export is ready/ ).first() ).toBeVisible( {
+            timeout: 30_000
+        } )
+
+        expect_fake_capture_video( await read_playable_video_metadata( page, {
+            export_blob: true
+        } ) )
+    } )
+
     test( `records deterministic fake video, exports, shares, downloads, renames, and deletes a project`, async ( { context, page } ) => {
         await page.addInitScript( () => {
             const native_share_calls = []

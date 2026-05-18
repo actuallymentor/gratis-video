@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.14] - 2026-05-18
+
+### Added
+- add project-list, preview, storage, and multi-clip export regressions
+
+### Fixed
+- recover stalled later clips during multi-clip export
+- keep export share/download MIME metadata accurate after fallback
+- remove orphaned media blobs when deleting projects
+- avoid empty project/preview states while local storage is still loading
+
 ## [0.3.13] - 2026-05-18
 
 ### Added

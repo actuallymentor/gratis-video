@@ -327,6 +327,94 @@ describe( `export compiler`, () => {
         ] )
     } )
 
+    test( `recovers a later clip that stalls until muted playback is retried`, async () => {
+        const create_element = document.createElement.bind( document )
+        let video_count = 0
+        let muted_retry_count = 0
+
+        class MutedRecoveryVideoElement extends FakeVideoElement {
+
+            constructor() {
+                super()
+                video_count += 1
+                this.video_index = video_count
+                this.current_time = 0
+                this.paused = true
+                this.playing = false
+                this.readyState = 4
+            }
+
+            get currentTime() {
+                if( this.video_index === 1 ) return 1
+                if( this.muted && this.playing ) {
+                    this.current_time = 1
+                    this.ended = true
+                }
+
+                return this.current_time
+            }
+
+            set currentTime( value ) {
+                this.current_time = value
+            }
+
+            play() {
+                this.paused = false
+                this.playing = true
+                if( this.video_index === 1 ) this.ended = true
+                if( this.video_index === 2 && this.muted ) muted_retry_count += 1
+                return Promise.resolve()
+            }
+
+            pause() {
+                this.paused = true
+                this.playing = false
+            }
+
+        }
+
+        try {
+            vi.useFakeTimers()
+            vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+            vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+            vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+            vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+            vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+                if( tag_name === `video` ) return new MutedRecoveryVideoElement()
+                return create_element( tag_name, options )
+            } )
+
+            const export_promise = compile_project_export( {
+                clips: [
+                    {
+                        id: `clip-1`,
+                        duration_ms: 1000,
+                        width: 640,
+                        height: 360
+                    },
+                    {
+                        id: `clip-2`,
+                        duration_ms: 1000,
+                        width: 640,
+                        height: 360
+                    }
+                ],
+                settings: default_settings,
+                signal: new AbortController().signal
+            } )
+
+            await Promise.resolve()
+            await vi.advanceTimersByTimeAsync( 8_200 )
+
+            await expect( export_promise ).resolves.toMatchObject( {
+                duration_ms: 2000
+            } )
+            expect( muted_retry_count ).toBeGreaterThan( 0 )
+        } finally {
+            vi.useRealTimers()
+        }
+    } )
+
     test( `finishes a clip with infinite media duration near the stored clip end`, async () => {
         const create_element = document.createElement.bind( document )
 
@@ -979,6 +1067,71 @@ describe( `export compiler`, () => {
             mime_type: `video/webm`,
             duration_ms: 1000
         } )
+    } )
+
+    test( `uses the emitted chunk type when typed construction falls back to the default recorder`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        class ConstructorFallbackMediaRecorder extends FakeMediaRecorder {
+
+            static isTypeSupported( mime_type ) {
+                return mime_type === `video/mp4` || mime_type === `video/webm`
+            }
+
+            constructor( stream, options = {} ) {
+                if( options.mimeType === `video/mp4` && !stream.probe ) {
+                    throw new Error( `MP4 cannot construct for the mixed export stream` )
+                }
+
+                super( stream, options )
+                if( !options.mimeType ) this.mimeType = ``
+            }
+
+            stop() {
+                if( this.state === `inactive` ) return
+
+                this.state = `inactive`
+                this.ondataavailable?.( {
+                    data: new Blob( [ `export` ], { type: this.mimeType || `video/webm` } )
+                } )
+                this.onstop?.()
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, ConstructorFallbackMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+        HTMLCanvasElement.prototype.captureStream = vi.fn( function captureStream() {
+            const stream = new FakeMediaStream( [ make_track() ] )
+            stream.probe = this.width === 16 && this.height === 16
+
+            return stream
+        } )
+
+        const export_result = await compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: {
+                ...default_settings,
+                preferred_mime_type: `video/mp4`
+            },
+            signal: new AbortController().signal
+        } )
+
+        expect( export_result.mime_type ).toBe( `video/webm` )
+        expect( export_result.blob.type ).toBe( `video/webm` )
     } )
 
     test( `hides MIME types when the canvas recorder cannot start`, () => {

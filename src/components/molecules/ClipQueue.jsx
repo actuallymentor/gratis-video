@@ -259,6 +259,7 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
         { preview_clip ? <Dialog role="dialog" aria-modal="true" aria-label="Clip preview" onClick={ close_preview }>
             <Preview ref={ preview_dialog_ref } tabIndex={ -1 } onClick={ ( event ) => event.stopPropagation() }>
                 { preview_url ? <video src={ preview_url } controls playsInline autoPlay /> : null }
+                { !preview_url && !preview_error ? <PreviewMessage aria-live="polite">Loading clip preview...</PreviewMessage> : null }
                 { preview_error ? <PreviewMessage>{ preview_error }</PreviewMessage> : null }
                 <IconButton icon={ X } label="Close preview" onClick={ close_preview } />
             </Preview>

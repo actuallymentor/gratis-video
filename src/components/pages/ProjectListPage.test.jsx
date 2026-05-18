@@ -51,6 +51,15 @@ const existing_project = {
     last_exported_at: `2026-05-17T11:00:00.000Z`
 }
 
+const make_deferred = () => {
+    let resolve
+    const promise = new Promise( ( promise_resolve ) => {
+        resolve = promise_resolve
+    } )
+
+    return { promise, resolve }
+}
+
 describe( `project list page`, () => {
     beforeEach( () => {
         vi.mocked( list_projects ).mockResolvedValue( [] )
@@ -95,13 +104,29 @@ describe( `project list page`, () => {
         expect( await screen.findByText( `/settings` ) ).toBeTruthy()
     } )
 
+    test( `waits for project storage before showing an empty state`, async () => {
+        const projects = make_deferred()
+
+        vi.mocked( list_projects ).mockReturnValue( projects.promise )
+
+        render_project_list()
+
+        expect( screen.getByText( `Loading projects...` ) ).toBeTruthy()
+        expect( screen.queryByText( `No projects yet` ) ).toBe( null )
+
+        projects.resolve( [] )
+
+        expect( await screen.findByText( `No projects yet` ) ).toBeTruthy()
+    } )
+
     test( `surfaces unavailable local storage without leaving project history`, async () => {
         vi.mocked( list_projects ).mockRejectedValue( new Error( `IndexedDB unavailable` ) )
 
         render_project_list()
 
         expect( ( await screen.findByRole( `alert` ) ).textContent ).toMatch( /Local browser storage is unavailable/ )
-        expect( screen.getByRole( `button`, { name: `Create Project` } ) ).toBeTruthy()
+        expect( screen.queryByText( `No projects yet` ) ).toBe( null )
+        expect( screen.getByRole( `button`, { name: `Create Project` } ).disabled ).toBe( true )
     } )
 
     test( `opens an existing project and marks it active`, async () => {

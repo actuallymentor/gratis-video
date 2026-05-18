@@ -227,6 +227,31 @@ const fail_request = ( fail, message ) => ( event ) => {
     fail( event.target.error ?? new Error( message ) )
 }
 
+const collect_index_keys = ( {
+    store,
+    index_name,
+    key,
+    on_done,
+    fail,
+    message
+} ) => {
+    const keys = []
+    const request = store.index( index_name ).openKeyCursor( key )
+
+    request.onerror = fail_request( fail, message )
+    request.onsuccess = ( event ) => {
+        const cursor = event.target.result
+
+        if( !cursor ) {
+            on_done( keys )
+            return
+        }
+
+        keys.push( cursor.primaryKey )
+        cursor.continue()
+    }
+}
+
 const load_active_project_pointer = async () => {
     const state = await get_record( `settings`, ACTIVE_PROJECT_STATE_KEY )
 
@@ -507,21 +532,44 @@ export async function delete_project( project_id ) {
         const active_request = stores.settings.get( ACTIVE_PROJECT_STATE_KEY )
         let clips = []
         let exports = []
+        let clip_blob_ids = []
+        let clip_thumbnail_ids = []
+        let export_blob_ids = []
         let active_project_id = safe_local_storage.get( ACTIVE_PROJECT_KEY )
         let clips_loaded = false
         let exports_loaded = false
+        let clip_blobs_loaded = false
+        let clip_thumbnails_loaded = false
+        let export_blobs_loaded = false
         let active_loaded = false
 
         const delete_when_ready = () => {
-            if( !clips_loaded || !exports_loaded || !active_loaded ) return
+            if(
+                !clips_loaded
+                    || !exports_loaded
+                    || !clip_blobs_loaded
+                    || !clip_thumbnails_loaded
+                    || !export_blobs_loaded
+                    || !active_loaded
+            ) return
 
             stores.projects.delete( project_id )
-            clips.forEach( ( { id } ) => {
+            const clip_ids = new Set( [
+                ...clips.map( ( { id } ) => id ),
+                ...clip_blob_ids,
+                ...clip_thumbnail_ids
+            ] )
+            const export_ids = new Set( [
+                ...exports.map( ( { id } ) => id ),
+                ...export_blob_ids
+            ] )
+
+            clip_ids.forEach( ( id ) => {
                 stores.clips.delete( id )
                 stores.clip_blobs.delete( id )
                 stores.clip_thumbnails.delete( id )
             } )
-            exports.forEach( ( { id } ) => {
+            export_ids.forEach( ( id ) => {
                 stores.exports.delete( id )
                 stores.export_blobs.delete( id )
             } )
@@ -536,6 +584,42 @@ export async function delete_project( project_id ) {
         clips_request.onerror = fail_request( fail, `Could not load project clips before deletion.` )
         exports_request.onerror = fail_request( fail, `Could not load project exports before deletion.` )
         active_request.onerror = fail_request( fail, `Could not load active project before deletion.` )
+        collect_index_keys( {
+            store: stores.clip_blobs,
+            index_name: `project_id`,
+            key: project_id,
+            fail,
+            message: `Could not load project clip blobs before deletion.`,
+            on_done: ( keys ) => {
+                clip_blob_ids = keys
+                clip_blobs_loaded = true
+                delete_when_ready()
+            }
+        } )
+        collect_index_keys( {
+            store: stores.clip_thumbnails,
+            index_name: `project_id`,
+            key: project_id,
+            fail,
+            message: `Could not load project clip thumbnails before deletion.`,
+            on_done: ( keys ) => {
+                clip_thumbnail_ids = keys
+                clip_thumbnails_loaded = true
+                delete_when_ready()
+            }
+        } )
+        collect_index_keys( {
+            store: stores.export_blobs,
+            index_name: `project_id`,
+            key: project_id,
+            fail,
+            message: `Could not load project export blobs before deletion.`,
+            on_done: ( keys ) => {
+                export_blob_ids = keys
+                export_blobs_loaded = true
+                delete_when_ready()
+            }
+        } )
         clips_request.onsuccess = () => {
             clips = clips_request.result
             clips_loaded = true

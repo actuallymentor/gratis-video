@@ -288,6 +288,21 @@ const start_video_playback = async ( video, signal ) => {
     }
 }
 
+const retry_stalled_playback_muted = async ( { playback_state, signal, video } ) => {
+    if( video.ended ) return
+
+    try {
+        video.pause?.()
+    } catch {
+        // Some media elements throw on pause during decode stalls; playback retry can continue.
+    }
+
+    throw_if_aborted( signal )
+    video.muted = true
+    await wait_for_abortable( video.play(), signal )
+    playback_state.muted_for_playback = true
+}
+
 const recover_playback = async ( {
     clip_index,
     playback_progress,
@@ -319,6 +334,12 @@ const recover_playback = async ( {
     if( video.paused && !video.ended ) {
         const retry_state = await start_video_playback( video, signal )
         playback_state.muted_for_playback ||= retry_state.muted_for_playback
+    } else if( !video.ended ) {
+        await retry_stalled_playback_muted( {
+            playback_state,
+            signal,
+            video
+        } )
     }
 
     reset_playback_progress( { playback_progress, timestamp: performance.now(), video } )
@@ -461,7 +482,6 @@ const attach_export_video = ( video ) => {
     video.style.height = `1px`
     video.style.opacity = `0`
     video.style.pointerEvents = `none`
-    video.style.transform = `translate( -100vw, -100vh )`
 
     document.body.append( video )
 
@@ -701,7 +721,7 @@ export async function compile_project_export( { clips, settings, signal, on_prog
             audio_warnings.push( `This browser did not confirm export finalization. Check the exported video before deleting clips.` )
         }
 
-        const output_type = recorder.mimeType || mime_type || chunks.at( 0 )?.type || `video/webm`
+        const output_type = recorder.mimeType || chunks.at( 0 )?.type || mime_type || `video/webm`
         const blob = new Blob( chunks, { type: output_type } )
         const duration_ms = export_clips.reduce( ( total, clip ) => total + ( clip.duration_ms || 0 ), 0 )
 

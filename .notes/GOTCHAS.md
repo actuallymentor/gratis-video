@@ -36,12 +36,14 @@
 - When a test decodes a Blob with a temporary `<video>`, snapshot `videoWidth`, `videoHeight`, `currentTime`, and `readyState` before removing `src` or calling `load()`. Cleanup resets media metadata to zero.
 - Recording startup must check `MediaRecorder` before calling `getUserMedia()`; otherwise unsupported browsers can open camera/mic even though no clip can be recorded.
 - Export playback needs event and playback-stall timeouts because damaged or unsupported clip blobs can otherwise leave bounded progress stuck forever.
+- Later clips in a canvas export can stall if invisible playback gets throttled or audible playback silently stops advancing. Keep export video elements attached inside the viewport at 1px/opacity 0, and keep muted retry recovery for non-paused playback stalls.
 - Recording shutdown needs a bounded `MediaRecorder.onstop` fallback. Some browser failure paths may stop tracks or encoders without firing `onstop`; keep available chunks saveable and always release tracks.
 - When microphone permission is already known denied, request video-only capture immediately instead of first requesting audio and relying on a failed combined `getUserMedia()` call.
 - Cached exports should only invoke native file share directly when the blob was preloaded before the user tap. If metadata/blob is discovered during the tap, route through the explicit ready panel so Share has a fresh user action.
 - Do not let a pending cached-export preload force compilation. On Share/Export, re-check the cache and only compile after invalid/missing export metadata and blobs are ruled out.
 - Export recorder shutdown is bounded separately from clip playback. If a browser emits data but never fires `MediaRecorder.onstop`, export may proceed with a warning; if no data arrives before the timeout, fail clearly instead of hanging.
 - Keep project-scoped media writes transactional with the project record. Clip and export saves should read the project inside the same IndexedDB write transaction that stores blobs, so deleted projects are not resurrected by stale async work.
+- Project deletion must remove blob-store rows by `project_id` indexes, not only by clip/export metadata ids, because legacy or orphaned blob rows can otherwise leave local media behind.
 - RecordButton's click fallback must ignore the synthetic click after pointer release, including long press-and-hold recordings. Mark pointer release/cancel as direct activations, not only pointer down.
 - Do not read project records before later IndexedDB write transactions for project-scoped mutations. `rename_project`, `delete_clip`, `move_clip`, and `set_active_project` should verify the project inside their write transaction so concurrent project deletion or delete-all cannot be undone by stale writes.
 - `list_projects()` is also a cleanup boundary for legacy cached exports. Keep stale export metadata/blob pruning there so old invalid exports do not quietly consume local quota.
