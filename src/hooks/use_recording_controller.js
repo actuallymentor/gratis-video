@@ -369,9 +369,16 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         const stop_when_hidden = () => {
             if( document.hidden ) cancel_record()
         }
+        const stop_for_page_lifecycle = () => cancel_record()
 
         document.addEventListener( `visibilitychange`, stop_when_hidden )
-        return () => document.removeEventListener( `visibilitychange`, stop_when_hidden )
+        window.addEventListener( `pagehide`, stop_for_page_lifecycle )
+        document.addEventListener( `freeze`, stop_for_page_lifecycle )
+        return () => {
+            document.removeEventListener( `visibilitychange`, stop_when_hidden )
+            window.removeEventListener( `pagehide`, stop_for_page_lifecycle )
+            document.removeEventListener( `freeze`, stop_for_page_lifecycle )
+        }
     }, [ cancel_record ] )
 
     useEffect( () => {

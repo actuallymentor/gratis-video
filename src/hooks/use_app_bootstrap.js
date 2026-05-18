@@ -21,6 +21,15 @@ export function useAppBootstrap() {
     useEffect( () => {
         let cancelled = false
 
+        const read_boot_value = async ( label, load_value, fallback = null ) => {
+            try {
+                return await load_value()
+            } catch ( error ) {
+                log.warn( `${ label } failed during app bootstrap`, error )
+                return fallback
+            }
+        }
+
         const refresh_permissions = async () => {
             try {
                 const permission_status = await check_media_permissions()
@@ -31,29 +40,24 @@ export function useAppBootstrap() {
         }
 
         const load_boot_state = async () => {
-            try {
-                const [
-                    permission_status,
-                    active_project,
-                    storage_estimate,
-                    storage_persisted
-                ] = await Promise.all( [
-                    check_media_permissions(),
-                    get_active_project(),
-                    estimate_storage(),
-                    persisted_storage()
-                ] )
+            const [
+                permission_status,
+                active_project,
+                storage_estimate,
+                storage_persisted
+            ] = await Promise.all( [
+                read_boot_value( `Permission check`, check_media_permissions ),
+                read_boot_value( `Active project lookup`, get_active_project ),
+                read_boot_value( `Storage estimate`, estimate_storage ),
+                read_boot_value( `Storage persistence check`, persisted_storage )
+            ] )
 
-                if( cancelled ) return
+            if( cancelled ) return
 
-                set_permission_status( permission_status )
-                set_active_project_id( active_project?.id ?? null )
-                set_storage_estimate( storage_estimate )
-                set_storage_persisted( storage_persisted )
-            } catch ( error ) {
-                log.error( `App bootstrap failed`, error )
-                if( !cancelled ) set_active_project_id( null )
-            }
+            if( permission_status ) set_permission_status( permission_status )
+            set_active_project_id( active_project?.id ?? null )
+            set_storage_estimate( storage_estimate )
+            set_storage_persisted( storage_persisted )
         }
 
         load_boot_state()

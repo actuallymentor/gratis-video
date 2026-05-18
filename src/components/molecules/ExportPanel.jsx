@@ -100,9 +100,8 @@ const TextButton = styled.button`
     font-weight: 900;
 `
 
-const get_initial_export_status = ( { initial_export_record, initial_export_blob } ) => {
+const get_initial_export_status = ( { initial_export_record } ) => {
     if( !initial_export_record ) return `compiling`
-    if( initial_export_blob ) return `ready`
     return `loading`
 }
 
@@ -116,17 +115,17 @@ export function ExportPanel( {
     clips,
     settings,
     initial_export_record = null,
-    initial_export_blob = null,
+    load_initial_export_blob = null,
+    on_export_ready = null,
     on_close
 } ) {
     const initial_status = get_initial_export_status( {
-        initial_export_blob,
         initial_export_record
     } )
     const [ status, set_status ] = useState( initial_status )
     const [ export_record, set_export_record ] = useState( initial_export_record )
-    const [ export_blob, set_export_blob ] = useState( initial_export_blob )
     const [ error_message, set_error_message ] = useState( null )
+    const export_blob_ref = useRef( null )
     const abort_controller_ref = useRef( null )
     const export_progress = useAppStore( ( state ) => state.export_progress )
     const set_export_progress = useAppStore( ( state ) => state.set_export_progress )
@@ -167,16 +166,17 @@ export function ExportPanel( {
         if( initial_export_record ) {
             set_export_progress( {
                 active: false,
-                percent: initial_export_blob ? 100 : 0,
-                message: initial_export_blob ? `Export ready` : `Loading export`
+                percent: 0,
+                message: `Loading export`
             } )
-
-            if( initial_export_blob ) return undefined
 
             let active_effect = true
 
             const load_ready_blob = async () => {
-                const blob = await get_export_blob( initial_export_record.id )
+                const blob = load_initial_export_blob
+                    ? await load_initial_export_blob( initial_export_record )
+                    : await get_export_blob( initial_export_record.id )
+
                 if( !active_effect ) return
 
                 if( !blob ) {
@@ -190,7 +190,7 @@ export function ExportPanel( {
                     return
                 }
 
-                set_export_blob( blob )
+                export_blob_ref.current = blob
                 set_status( `ready` )
                 set_export_progress( {
                     active: false,
@@ -268,8 +268,12 @@ export function ExportPanel( {
                 }
 
                 set_export_record( saved_export )
-                set_export_blob( compiled_export.blob )
+                export_blob_ref.current = compiled_export.blob
                 set_status( `ready` )
+                on_export_ready?.( {
+                    export_record: saved_export,
+                    blob: compiled_export.blob
+                } )
                 set_export_progress( {
                     active: false,
                     percent: 100,
@@ -309,8 +313,9 @@ export function ExportPanel( {
         }
     }, [
         clips,
-        initial_export_blob,
         initial_export_record,
+        load_initial_export_blob,
+        on_export_ready,
         project.id,
         set_export_progress,
         settings,
@@ -318,6 +323,8 @@ export function ExportPanel( {
     ] )
 
     const share_ready_export = async () => {
+        const export_blob = export_blob_ref.current
+
         if( !export_record || !export_blob ) return
 
         try {
@@ -334,6 +341,8 @@ export function ExportPanel( {
     }
 
     const download_ready_export = () => {
+        const export_blob = export_blob_ref.current
+
         if( !export_record || !export_blob ) return
 
         download_export_file( export_record, export_blob )

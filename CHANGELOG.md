@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.10] - 2026-05-18
+
+### Added
+- add bootstrap, lifecycle, export-cache, PWA, and thumbnail regressions
+
+### Fixed
+- keep active-project routing when passive boot checks fail
+- reuse exports completed in the current capture session
+- keep transient export blobs out of React state
+- stop recordings on page lifecycle backgrounding
+- finish thumbnail enrichment when video seeking stalls
+- cache PWA build assets before replacing the offline app shell
+
 ## [0.2.9] - 2026-05-18
 
 ### Added

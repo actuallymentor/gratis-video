@@ -6,6 +6,8 @@ const load_service_worker = async ( overrides = {} ) => {
     const listeners = {}
     const cache = {
         addAll: vi.fn(),
+        delete: vi.fn(),
+        keys: vi.fn().mockResolvedValue( [] ),
         put: vi.fn()
     }
     const caches = {
@@ -76,5 +78,67 @@ describe( `service worker`, () => {
                 return String( value?.url ?? value ).includes( `local-project-id` )
             } )
         ).toBe( false )
+    } )
+
+    test( `updates cached navigations only after build assets are cached`, async () => {
+        const stale_request = new Request( `https://journal.test/assets/old.js` )
+        const index_response = new Response( `
+            <html>
+                <script type="module" src="/assets/new.js"></script>
+                <link rel="stylesheet" href="/assets/new.css">
+            </html>
+        ` )
+        const { cache, fetch, listeners } = await load_service_worker()
+        let response_promise = null
+
+        fetch.mockResolvedValue( index_response )
+        cache.keys.mockResolvedValue( [ stale_request ] )
+
+        listeners.fetch( {
+            request: {
+                method: `GET`,
+                mode: `navigate`,
+                url: `https://journal.test/projects/project-1`
+            },
+            respondWith: ( promise ) => {
+                response_promise = promise
+            }
+        } )
+
+        await response_promise
+
+        expect( cache.addAll ).toHaveBeenCalledWith( [
+            `/assets/new.js`,
+            `/assets/new.css`
+        ] )
+        expect( cache.addAll.mock.invocationCallOrder.at( -1 ) ).toBeLessThan(
+            cache.put.mock.invocationCallOrder.at( -1 )
+        )
+        expect( cache.put ).toHaveBeenCalledWith( `/index.html`, expect.any( Response ) )
+        expect( cache.delete ).toHaveBeenCalledWith( stale_request )
+    } )
+
+    test( `falls back to the cached app shell when navigation refresh is not cacheable`, async () => {
+        const fallback_response = new Response( `<html>cached</html>` )
+        const { cache, caches, fetch, listeners } = await load_service_worker()
+        let response_promise = null
+
+        fetch.mockResolvedValue( new Response( `<html>error</html>`, { status: 500 } ) )
+        caches.match.mockResolvedValue( fallback_response )
+
+        listeners.fetch( {
+            request: {
+                method: `GET`,
+                mode: `navigate`,
+                url: `https://journal.test/projects/project-1`
+            },
+            respondWith: ( promise ) => {
+                response_promise = promise
+            }
+        } )
+
+        await expect( response_promise ).resolves.toBe( fallback_response )
+        expect( cache.addAll ).not.toHaveBeenCalled()
+        expect( cache.put ).not.toHaveBeenCalled()
     } )
 } )

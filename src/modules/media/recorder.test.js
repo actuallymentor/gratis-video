@@ -1,8 +1,11 @@
+/* @vitest-environment jsdom */
+
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
     HOLD_THRESHOLD_MS,
     classify_recording_gesture,
     create_media_recorder,
+    generate_video_thumbnail,
     get_capture_error_message,
     request_capture_stream,
     select_supported_mime_type
@@ -10,6 +13,8 @@ import {
 
 describe( `recorder helpers`, () => {
     afterEach( () => {
+        vi.useRealTimers()
+        vi.restoreAllMocks()
         vi.unstubAllGlobals()
     } )
 
@@ -99,5 +104,33 @@ describe( `recorder helpers`, () => {
         expect( getUserMedia.mock.calls[ 1 ][ 0 ] ).toMatchObject( {
             audio: false
         } )
+    } )
+
+    test( `returns no thumbnail when video seeking does not complete`, async () => {
+        vi.useFakeTimers()
+
+        const original_create_element = document.createElement.bind( document )
+        const video = {
+            duration: 1,
+            videoWidth: 640,
+            videoHeight: 360,
+            load: vi.fn(),
+            removeAttribute: vi.fn()
+        }
+
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name ) => {
+            if( tag_name === `video` ) return video
+            return original_create_element( tag_name )
+        } )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+
+        const thumbnail_promise = generate_video_thumbnail( new Blob( [ `clip` ], { type: `video/webm` } ) )
+
+        video.onloadedmetadata()
+        await vi.advanceTimersByTimeAsync( 3_000 )
+
+        await expect( thumbnail_promise ).resolves.toBe( null )
+        expect( URL.revokeObjectURL ).toHaveBeenCalledWith( `blob:clip` )
     } )
 } )

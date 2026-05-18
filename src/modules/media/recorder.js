@@ -8,6 +8,7 @@ export const recording_mime_candidates = [
 
 export const HOLD_THRESHOLD_MS = 250
 export const MINIMUM_CLIP_MS = 400
+const VIDEO_EVENT_TIMEOUT_MS = 3_000
 
 const capture_video_constraints = {
     facingMode: { ideal: `environment` },
@@ -154,16 +155,38 @@ export function get_capture_error_message( error ) {
     return error?.message || `Recording could not start.`
 }
 
-const load_video_metadata = ( video ) => new Promise( ( resolve, reject ) => {
-    video.onloadedmetadata = () => resolve()
-    video.onerror = () => reject( new Error( `Could not read recorded clip metadata.` ) )
+const wait_for_video_event = ( video, event_name, error_message ) => new Promise( ( resolve, reject ) => {
+    let timeout_id = null
+    const event_handler_name = `on${ event_name }`
+    const cleanup = () => {
+        if( timeout_id ) globalThis.clearTimeout( timeout_id )
+        video[ event_handler_name ] = null
+        video.onerror = null
+    }
+
+    video[ event_handler_name ] = () => {
+        cleanup()
+        resolve()
+    }
+    video.onerror = () => {
+        cleanup()
+        reject( new Error( error_message ) )
+    }
+    timeout_id = globalThis.setTimeout( () => {
+        cleanup()
+        reject( new Error( error_message ) )
+    }, VIDEO_EVENT_TIMEOUT_MS )
 } )
 
-const seek_video = ( video, time ) => new Promise( ( resolve, reject ) => {
-    video.onseeked = () => resolve()
-    video.onerror = () => reject( new Error( `Could not seek recorded clip.` ) )
+const load_video_metadata = ( video ) => {
+    return wait_for_video_event( video, `loadedmetadata`, `Could not read recorded clip metadata.` )
+}
+
+const seek_video = async ( video, time ) => {
+    const seeked = wait_for_video_event( video, `seeked`, `Could not seek recorded clip.` )
     video.currentTime = time
-} )
+    return seeked
+}
 
 const canvas_to_blob = ( canvas, type = `image/jpeg`, quality = 0.78 ) => new Promise( ( resolve ) => {
     canvas.toBlob( ( blob ) => resolve( blob ), type, quality )
@@ -212,7 +235,11 @@ export async function generate_video_thumbnail( blob ) {
         await load_video_metadata( video )
 
         const seek_time = Math.min( 0.2, Math.max( 0, ( video.duration || 1 ) / 2 ) )
-        if( Number.isFinite( seek_time ) ) await seek_video( video, seek_time )
+        const seek_completed = Number.isFinite( seek_time )
+            ? await seek_video( video, seek_time ).then( () => true ).catch( () => false )
+            : true
+
+        if( !seek_completed ) return null
 
         const width = video.videoWidth || 320
         const height = video.videoHeight || 180

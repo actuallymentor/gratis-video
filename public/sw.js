@@ -22,17 +22,40 @@ const get_build_asset_urls = ( html ) => {
         .filter( ( asset_path ) => asset_path.startsWith( `/assets/` ) )
 }
 
+const is_build_asset_request = ( request ) => {
+    const url = new URL( request.url )
+    return url.pathname.startsWith( `/assets/` ) && /\.(?:js|css)$/.test( url.pathname )
+}
+
+const prune_stale_build_assets = async ( cache, build_asset_urls ) => {
+    const cached_requests = await cache.keys()
+    const current_assets = new Set( build_asset_urls )
+    const stale_requests = cached_requests.filter( ( request ) => {
+        const url = new URL( request.url )
+        return is_build_asset_request( request ) && !current_assets.has( url.pathname )
+    } )
+
+    await Promise.all( stale_requests.map( ( request ) => cache.delete( request ) ) )
+}
+
+const cache_index_with_build_assets = async ( cache, index_response ) => {
+    if( !index_response.ok ) throw new Error( `App shell response was not cacheable.` )
+
+    const html = await index_response.clone().text()
+    const build_asset_urls = get_build_asset_urls( html )
+
+    if( build_asset_urls.length ) await cache.addAll( build_asset_urls )
+    await cache.put( `/index.html`, index_response.clone() )
+    await prune_stale_build_assets( cache, build_asset_urls )
+}
+
 const cache_app_shell = async () => {
     const cache = await caches.open( CACHE_NAME )
 
     await cache.addAll( APP_SHELL )
 
     const index_response = await fetch( `/index.html`, { cache: `reload` } )
-    const html = await index_response.clone().text()
-    const build_asset_urls = get_build_asset_urls( html )
-
-    await cache.put( `/index.html`, index_response )
-    if( build_asset_urls.length ) await cache.addAll( build_asset_urls )
+    await cache_index_with_build_assets( cache, index_response )
 }
 
 self.addEventListener( `activate`, ( event ) => {
@@ -53,9 +76,9 @@ self.addEventListener( `fetch`, ( event ) => {
     if( request.mode === `navigate` ) {
         event.respondWith(
             fetch( `/index.html`, { cache: `reload` } )
-                .then( ( response ) => {
-                    const cloned_response = response.clone()
-                    caches.open( CACHE_NAME ).then( ( cache ) => cache.put( `/index.html`, cloned_response ) )
+                .then( async ( response ) => {
+                    const cache = await caches.open( CACHE_NAME )
+                    await cache_index_with_build_assets( cache, response )
                     return response
                 } )
                 .catch( () => caches.match( `/index.html` ) )

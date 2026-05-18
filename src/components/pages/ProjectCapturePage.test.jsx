@@ -63,8 +63,24 @@ vi.mock( 'use-query-params', async () => {
 } )
 
 vi.mock( '../molecules/ExportPanel.jsx', () => ( {
-    ExportPanel: ( { initial_export_blob } ) => <div role="dialog">
-        Export panel open { initial_export_blob ? `with ready blob` : `for compile` }
+    ExportPanel: ( { initial_export_record, on_close, on_export_ready } ) => <div role="dialog">
+        Export panel open { initial_export_record ? `for cached export` : `for compile` }
+        <button
+            type="button"
+            onClick={ () => on_export_ready?.( {
+                export_record: {
+                    id: `export-ready`,
+                    filename: `ready.webm`,
+                    mime_type: `video/webm`,
+                    settings_hash: `settings`,
+                    clip_manifest_hash: `clips`
+                },
+                blob: new Blob( [ `ready` ], { type: `video/webm` } )
+            } ) }
+        >
+            Mark export ready
+        </button>
+        <button type="button" onClick={ on_close }>Close export panel</button>
     </div>
 } ) )
 
@@ -225,7 +241,7 @@ describe( `project capture page`, () => {
         expect( screen.queryByText( `Export panel open` ) ).toBe( null )
     } )
 
-    test( `opens a ready export panel when a cached export is found after the tap`, async () => {
+    test( `opens a cached export panel when a cached export is found after the tap`, async () => {
         const user = userEvent.setup()
         let allow_cache = false
 
@@ -243,8 +259,36 @@ describe( `project capture page`, () => {
         allow_cache = true
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
-        expect( await screen.findByText( /with ready blob/ ) ).toBeTruthy()
+        expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
         expect( share_export_file ).not.toHaveBeenCalled()
+    } )
+
+    test( `reuses an export completed in the current capture session`, async () => {
+        const user = userEvent.setup()
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for compile/ ) ).toBeTruthy()
+        await user.click( screen.getByRole( `button`, { name: `Mark export ready` } ) )
+        expect( screen.getByText( /for compile/ ) ).toBeTruthy()
+        await user.click( screen.getByRole( `button`, { name: `Close export panel` } ) )
+
+        vi.mocked( get_valid_cached_export ).mockClear()
+        vi.mocked( get_export_blob ).mockClear()
+        vi.mocked( share_export_file ).mockResolvedValue( `shared` )
+
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( share_export_file ).toHaveBeenCalledWith( {
+            project,
+            export_record: expect.objectContaining( { id: `export-ready` } ),
+            blob: expect.any( Blob )
+        } )
+        expect( get_valid_cached_export ).not.toHaveBeenCalled()
+        expect( get_export_blob ).not.toHaveBeenCalled()
     } )
 
     test( `does not auto-open export from restored URL state`, async () => {

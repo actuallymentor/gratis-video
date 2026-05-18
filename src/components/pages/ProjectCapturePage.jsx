@@ -121,9 +121,11 @@ export function ProjectCapturePage() {
     const [ settings, set_settings ] = useState( null )
     const [ storage_error, set_storage_error ] = useState( null )
     const [ cached_export_record, set_cached_export_record ] = useState( null )
-    const [ cached_export_blob, set_cached_export_blob ] = useState( null )
     const [ cached_export_key, set_cached_export_key ] = useState( null )
+    const [ cached_export_ready, set_cached_export_ready ] = useState( false )
+    const [ export_panel_record, set_export_panel_record ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
+    const cached_export_blob_ref = useRef( null )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
@@ -134,6 +136,31 @@ export function ProjectCapturePage() {
         set_active_project_id( active_project?.id ?? null )
         navigate( active_project ? `/projects/${ active_project.id }` : `/projects`, { replace: true } )
     }, [ navigate, set_active_project_id ] )
+
+    const clear_cached_export = useCallback( () => {
+        cached_export_blob_ref.current = null
+        set_cached_export_record( null )
+        set_cached_export_key( null )
+        set_cached_export_ready( false )
+    }, [] )
+
+    const load_initial_export_blob = useCallback( async ( export_record ) => {
+        if(
+            cached_export_record?.id === export_record.id
+            && cached_export_blob_ref.current
+        ) return cached_export_blob_ref.current
+
+        return get_export_blob( export_record.id )
+    }, [ cached_export_record ] )
+
+    const promote_ready_export = useCallback( ( { export_record, blob } ) => {
+        const hashes = create_export_hashes( { clips, settings } )
+
+        cached_export_blob_ref.current = blob
+        set_cached_export_record( export_record )
+        set_cached_export_key( make_export_cache_key( hashes ) )
+        set_cached_export_ready( true )
+    }, [ clips, settings ] )
 
     const refresh_project = useCallback( async () => {
         try {
@@ -202,9 +229,7 @@ export function ProjectCapturePage() {
     useEffect( () => {
         let cancelled = false
 
-        set_cached_export_record( null )
-        set_cached_export_blob( null )
-        set_cached_export_key( null )
+        clear_cached_export()
 
         if( !project || !settings || !clips.length ) return undefined
 
@@ -220,9 +245,10 @@ export function ProjectCapturePage() {
             if( cancelled ) return
             if( !cached_export || !blob ) return
 
+            cached_export_blob_ref.current = blob
             set_cached_export_record( cached_export )
-            set_cached_export_blob( blob )
             set_cached_export_key( cache_key )
+            set_cached_export_ready( true )
         }
 
         load_cached_export().catch( () => null )
@@ -230,7 +256,7 @@ export function ProjectCapturePage() {
         return () => {
             cancelled = true
         }
-    }, [ clips, project, project_id, settings ] )
+    }, [ clear_cached_export, clips, project, project_id, settings ] )
 
     const remove_clip = async ( clip ) => {
         const confirmed = window.confirm( `Delete this clip from the project?` )
@@ -256,14 +282,15 @@ export function ProjectCapturePage() {
 
         if(
             cached_export_record
-            && cached_export_blob
+            && cached_export_ready
+            && cached_export_blob_ref.current
             && cached_export_key === cache_key
         ) {
             try {
                 const share_result = await share_export_file( {
                     project,
                     export_record: cached_export_record,
-                    blob: cached_export_blob
+                    blob: cached_export_blob_ref.current
                 } )
 
                 if( share_result === `shared` || share_result === `cancelled` ) return
@@ -271,6 +298,7 @@ export function ProjectCapturePage() {
                 toast( `Sharing failed. Download is available.` )
             }
 
+            set_export_panel_record( cached_export_record )
             set_export_requested( true )
             set_panel( `export` )
             return
@@ -282,27 +310,18 @@ export function ProjectCapturePage() {
         } ).catch( () => null )
 
         if( !cached_export ) {
-            set_cached_export_record( null )
-            set_cached_export_blob( null )
-            set_cached_export_key( null )
+            clear_cached_export()
+            set_export_panel_record( null )
             set_export_requested( true )
             set_panel( `export` )
             return
         }
 
-        const blob = await get_export_blob( cached_export.id )
-        if( !blob ) {
-            set_cached_export_record( null )
-            set_cached_export_blob( null )
-            set_cached_export_key( null )
-            set_export_requested( true )
-            set_panel( `export` )
-            return
-        }
-
+        cached_export_blob_ref.current = null
         set_cached_export_record( cached_export )
-        set_cached_export_blob( blob )
         set_cached_export_key( cache_key )
+        set_cached_export_ready( false )
+        set_export_panel_record( cached_export )
         set_export_requested( true )
         set_panel( `export` )
     }
@@ -399,9 +418,11 @@ export function ProjectCapturePage() {
             project={ project }
             clips={ clips }
             settings={ settings }
-            initial_export_record={ cached_export_record }
-            initial_export_blob={ cached_export_blob }
+            initial_export_record={ export_panel_record }
+            load_initial_export_blob={ load_initial_export_blob }
+            on_export_ready={ promote_ready_export }
             on_close={ () => {
+                set_export_panel_record( null )
                 set_export_requested( false )
                 set_panel( undefined )
             } }

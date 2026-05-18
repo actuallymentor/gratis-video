@@ -308,6 +308,66 @@ describe( `recording controller`, () => {
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 
+    test( `stops and saves a valid clip on page lifecycle backgrounding`, async () => {
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        act( () => window.dispatchEvent( new Event( `pagehide` ) ) )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `discards clips below the minimum duration`, async () => {
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 250 ]
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 250 )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        act( () => controller.toggle_recording() )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        } )
+        expect( add_clip_to_project ).not.toHaveBeenCalled()
+        expect( update_clip_media_details ).not.toHaveBeenCalled()
+    } )
+
     test( `stops and saves when the active media track ends`, async () => {
         const { stream, track } = make_stream()
         const recorder = make_recorder()
