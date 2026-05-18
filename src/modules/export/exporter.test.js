@@ -327,6 +327,168 @@ describe( `export compiler`, () => {
         ] )
     } )
 
+    test( `finishes a clip with infinite media duration near the stored clip end`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        class InfiniteDurationVideoElement extends FakeVideoElement {
+
+            constructor() {
+                super()
+                this.duration = Infinity
+                this.current_time = 0
+                this.playing = false
+            }
+
+            get currentTime() {
+                if( this.playing && this.current_time < 0.95 ) this.current_time += 0.25
+                return this.current_time
+            }
+
+            set currentTime( value ) {
+                this.current_time = value
+            }
+
+            play() {
+                this.playing = true
+                return Promise.resolve()
+            }
+
+            pause() {
+                this.playing = false
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new InfiniteDurationVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            duration_ms: 1000
+        } )
+    } )
+
+    test( `finishes a clip when the browser never flips the ended flag`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        class UnendedVideoElement extends FakeVideoElement {
+
+            constructor() {
+                super()
+                this.duration = 1
+                this.current_time = 0
+                this.playing = false
+            }
+
+            get currentTime() {
+                if( this.playing && this.current_time < 0.95 ) this.current_time += 0.25
+                return this.current_time
+            }
+
+            set currentTime( value ) {
+                this.current_time = value
+            }
+
+            play() {
+                this.playing = true
+                return Promise.resolve()
+            }
+
+            pause() {
+                this.playing = false
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new UnendedVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            duration_ms: 1000
+        } )
+    } )
+
+    test( `sets playback attributes before assigning clip video sources`, async () => {
+        const create_element = document.createElement.bind( document )
+        let video_element = null
+
+        class SetupOrderVideoElement extends FakeVideoElement {
+
+            set src( value ) {
+                this.setup_before_source = {
+                    playsInline: this.playsInline,
+                    preload: this.preload
+                }
+                super.src = value
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) {
+                video_element = new SetupOrderVideoElement()
+                return video_element
+            }
+
+            return create_element( tag_name, options )
+        } )
+
+        await compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } )
+
+        expect( video_element.setup_before_source ).toEqual( {
+            playsInline: true,
+            preload: `auto`
+        } )
+    } )
+
     test( `measures the first clip before sizing export canvas when stored dimensions are pending`, async () => {
         const create_element = document.createElement.bind( document )
         const capture_sizes = []

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.13] - 2026-05-18
+
+### Added
+- add unreliable clip-end and share-file export regressions
+
+### Fixed
+- finish exports when browser clip end signals are unreliable
+- retry recoverable export playback stalls before failing
+
 ## [0.3.12] - 2026-05-18
 
 ### Added

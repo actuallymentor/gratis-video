@@ -62,3 +62,5 @@
 - After a clip is stored, keep recording state in `saving` until the capture page refresh callback finishes, but stop media tracks before waiting on IndexedDB/UI refresh work.
 - Recording MIME fallback needs to cover both typed `MediaRecorder` construction failure and typed `recorder.start()` failure. If `start()` partially activates before throwing, clear handlers and stop that failed recorder before trying the browser-default recorder.
 - While export compilation is active, URL/history changes must not unmount the export panel. If an in-flight panel does unmount, clear global export progress so the UI does not stay stuck in an active export state.
+- Export clip playback must not depend solely on `video.ended` or finite `video.duration`; MediaRecorder blobs can report non-finite duration or fail to flip `ended`, so keep the tolerant clip-duration fallback covered.
+- Keep export playback videos configured before `src` assignment and attached invisibly when possible; detached media can pause or stall in some mobile/browser paths.

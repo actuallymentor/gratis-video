@@ -19,6 +19,9 @@ export {
 const FPS = 30
 const MEDIA_EVENT_TIMEOUT_MS = 8_000
 const PLAYBACK_STALL_TIMEOUT_MS = 8_000
+const PLAYBACK_RECOVERY_ATTEMPTS = 2
+const END_OF_CLIP_TOLERANCE_SECONDS = 0.2
+const HAVE_CURRENT_DATA = 2
 const EXPORT_RECORDER_STOP_TIMEOUT_MS = 5_000
 
 const make_abort_error = () => new DOMException( `Export cancelled`, `AbortError` )
@@ -27,14 +30,16 @@ const throw_if_aborted = ( signal ) => {
     if( signal?.aborted ) throw make_abort_error()
 }
 
-const wait_for_event = ( target, event_name, signal ) => new Promise( ( resolve, reject ) => {
+const wait_for_events = ( target, event_names, signal, {
+    timeout_message = `Media playback stalled while preparing export.`
+} = {} ) => new Promise( ( resolve, reject ) => {
     let complete = null
     let fail = null
     let abort = null
     let timeout_id = null
     const cleanup = () => {
         clearTimeout( timeout_id )
-        target.removeEventListener( event_name, complete )
+        event_names.forEach( ( event_name ) => target.removeEventListener( event_name, complete ) )
         target.removeEventListener( `error`, fail )
         signal?.removeEventListener( `abort`, abort )
     }
@@ -52,7 +57,7 @@ const wait_for_event = ( target, event_name, signal ) => new Promise( ( resolve,
     }
     timeout_id = setTimeout( () => {
         cleanup()
-        reject( new Error( `Media playback stalled while preparing export.` ) )
+        reject( new Error( timeout_message ) )
     }, MEDIA_EVENT_TIMEOUT_MS )
 
     if( signal?.aborted ) {
@@ -60,28 +65,32 @@ const wait_for_event = ( target, event_name, signal ) => new Promise( ( resolve,
         return
     }
 
-    target.addEventListener( event_name, complete, { once: true } )
+    event_names.forEach( ( event_name ) => target.addEventListener( event_name, complete, { once: true } ) )
     target.addEventListener( `error`, fail, { once: true } )
     signal?.addEventListener( `abort`, abort, { once: true } )
 } )
 
-const assert_playback_is_moving = ( {
-    clip_index,
-    video,
-    playback_progress,
-    timestamp
-} ) => {
-    const advanced = video.currentTime > playback_progress.last_time + 0.04
+const wait_for_event = ( target, event_name, signal ) => wait_for_events( target, [ event_name ], signal )
 
-    if( advanced ) {
-        playback_progress.last_time = video.currentTime
-        playback_progress.last_progress_at = timestamp
-        return
-    }
+const get_expected_clip_end_seconds = ( { clip, video } ) => {
+    if( Number.isFinite( video.duration ) && video.duration > 0 ) return video.duration
+    if( clip.duration_ms > 0 ) return clip.duration_ms / 1000
 
-    if( timestamp - playback_progress.last_progress_at <= PLAYBACK_STALL_TIMEOUT_MS ) return
+    return null
+}
 
-    throw new Error( `Clip ${ clip_index + 1 } stopped playing during export.` )
+const is_clip_at_export_end = ( { clip, video } ) => {
+    if( video.ended ) return true
+
+    const expected_end_seconds = get_expected_clip_end_seconds( { clip, video } )
+    if( !expected_end_seconds ) return false
+
+    return video.currentTime >= Math.max( 0, expected_end_seconds - END_OF_CLIP_TOLERANCE_SECONDS )
+}
+
+const reset_playback_progress = ( { playback_progress, timestamp, video } ) => {
+    playback_progress.last_time = video.currentTime
+    playback_progress.last_progress_at = timestamp
 }
 
 const wait_for_abortable = ( promise, signal ) => new Promise( ( resolve, reject ) => {
@@ -279,6 +288,78 @@ const start_video_playback = async ( video, signal ) => {
     }
 }
 
+const recover_playback = async ( {
+    clip_index,
+    playback_progress,
+    playback_state,
+    signal,
+    timestamp,
+    video
+} ) => {
+    if( globalThis.document?.hidden ) {
+        reset_playback_progress( { playback_progress, timestamp, video } )
+        return
+    }
+
+    playback_progress.recovery_attempts += 1
+
+    if( playback_progress.recovery_attempts > PLAYBACK_RECOVERY_ATTEMPTS ) {
+        throw new Error( `Clip ${ clip_index + 1 } stalled during export.` )
+    }
+
+    if( Number.isFinite( video.readyState ) && video.readyState < HAVE_CURRENT_DATA ) {
+        await wait_for_events(
+            video,
+            [ `loadeddata`, `canplay`, `playing`, `timeupdate` ],
+            signal,
+            { timeout_message: `Clip playback stalled during export.` }
+        ).catch( () => null )
+    }
+
+    if( video.paused && !video.ended ) {
+        const retry_state = await start_video_playback( video, signal )
+        playback_state.muted_for_playback ||= retry_state.muted_for_playback
+    }
+
+    reset_playback_progress( { playback_progress, timestamp: performance.now(), video } )
+}
+
+const ensure_playback_is_moving = async ( {
+    clip,
+    clip_index,
+    video,
+    playback_progress,
+    playback_state,
+    signal,
+    timestamp
+} ) => {
+    if( is_clip_at_export_end( { clip, video } ) ) return true
+
+    const advanced = video.currentTime > playback_progress.last_time + 0.04
+
+    if( advanced ) {
+        playback_progress.last_time = video.currentTime
+        playback_progress.last_progress_at = timestamp
+        playback_progress.recovery_attempts = 0
+        return false
+    }
+
+    if( timestamp - playback_progress.last_progress_at <= PLAYBACK_STALL_TIMEOUT_MS ) return false
+
+    await recover_playback( {
+        clip_index,
+        playback_progress,
+        playback_state,
+        signal,
+        timestamp,
+        video
+    } )
+
+    if( is_clip_at_export_end( { clip, video } ) ) return true
+
+    return false
+}
+
 const create_export_recorder = ( { stream, mime_type, settings } ) => {
     const base_options = {
         videoBitsPerSecond: export_quality_bits[ settings.export_quality ] ?? export_quality_bits.standard
@@ -368,6 +449,25 @@ const cleanup_video = ( video, object_url ) => {
     URL.revokeObjectURL( object_url )
 }
 
+const attach_export_video = ( video ) => {
+    if( !globalThis.document?.body?.append || !video.style ) return () => {}
+
+    video.setAttribute( `aria-hidden`, `true` )
+    video.tabIndex = -1
+    video.style.position = `fixed`
+    video.style.left = `0`
+    video.style.top = `0`
+    video.style.width = `1px`
+    video.style.height = `1px`
+    video.style.opacity = `0`
+    video.style.pointerEvents = `none`
+    video.style.transform = `translate( -100vw, -100vh )`
+
+    document.body.append( video )
+
+    return () => video.remove()
+}
+
 const missing_clip_blob_error = ( clip_index ) => {
     return new Error( `Clip ${ clip_index + 1 } is missing from local storage. Export stopped to avoid creating an incomplete video.` )
 }
@@ -441,17 +541,19 @@ const play_clip_to_canvas = async ( {
 
     const object_url = URL.createObjectURL( blob )
     const video = document.createElement( `video` )
+    const detach_video = attach_export_video( video )
     let audio_source = null
 
     try {
-        video.src = object_url
         video.playsInline = true
         video.preload = `auto`
+        video.src = object_url
         await wait_for_event( video, `loadedmetadata`, signal )
         audio_source = connect_video_audio( audio_graph, video )
         if( !audio_source ) video.muted = true
 
-        const duration_ms = clip.duration_ms || Math.round( ( video.duration || 0 ) * 1000 )
+        const measured_duration_ms = Number.isFinite( video.duration ) ? Math.round( video.duration * 1000 ) : 0
+        const duration_ms = clip.duration_ms || measured_duration_ms
         const project_duration_ms = clips.reduce( ( total, next_clip ) => total + ( next_clip.duration_ms || 0 ), 0 ) || 1
         const previous_duration_ms = clips.slice( 0, clip_index ).reduce( ( total, next_clip ) => {
             return total + ( next_clip.duration_ms || 0 )
@@ -461,20 +563,25 @@ const play_clip_to_canvas = async ( {
 
         const playback_progress = {
             last_time: -1,
-            last_progress_at: performance.now()
+            last_progress_at: performance.now(),
+            recovery_attempts: 0
         }
 
-        while( !video.ended ) {
+        while( !is_clip_at_export_end( { clip, video } ) ) {
             throw_if_aborted( signal )
             const timestamp = performance.now()
 
             draw_video_frame( context, video, canvas )
-            assert_playback_is_moving( {
+            const reached_end = await ensure_playback_is_moving( {
+                clip,
                 clip_index,
                 video,
                 playback_progress,
+                playback_state,
+                signal,
                 timestamp
             } )
+            if( reached_end ) break
 
             const current_clip_ms = Math.min( duration_ms, Math.round( video.currentTime * 1000 ) )
             const completed_ms = previous_duration_ms + current_clip_ms
@@ -483,12 +590,6 @@ const play_clip_to_canvas = async ( {
                 percent,
                 message: `Exporting clip ${ clip_index + 1 } of ${ clips.length }`
             } )
-
-            if(
-                Number.isFinite( video.duration )
-                && video.duration > 0
-                && video.currentTime >= video.duration - 0.04
-            ) break
 
             await next_animation_frame()
         }
@@ -505,6 +606,7 @@ const play_clip_to_canvas = async ( {
             // The video element and object URL still need cleanup if audio teardown fails.
         }
 
+        detach_video()
         cleanup_video( video, object_url )
     }
 }

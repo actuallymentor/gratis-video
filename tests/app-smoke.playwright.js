@@ -426,7 +426,7 @@ test.describe( `daily video journal app`, () => {
         await expect( clip_rows.nth( 1 ) ).toContainText( `1s` )
     } )
 
-    test( `records deterministic fake video, exports, downloads, renames, and deletes a project`, async ( { context, page } ) => {
+    test( `records deterministic fake video, exports, shares, downloads, renames, and deletes a project`, async ( { context, page } ) => {
         await page.addInitScript( () => {
             const native_share_calls = []
 
@@ -452,10 +452,12 @@ test.describe( `daily video journal app`, () => {
                 configurable: true,
                 value: async ( share_data ) => {
                     const [ file = null ] = share_data.files ?? []
+                    const file_buffer = file ? await file.arrayBuffer() : null
 
                     native_share_calls.push( {
                         kind: `share`,
                         file_name: file?.name ?? null,
+                        file_size: file_buffer?.byteLength ?? null,
                         file_type: file?.type ?? null,
                         title: share_data.title ?? null
                     } )
@@ -517,7 +519,41 @@ test.describe( `daily video journal app`, () => {
 
         expect( share_call.title ).toBeTruthy()
         expect( share_call.file_name ).toMatch( /\.(webm|mp4)$/ )
+        expect( share_call.file_size ).toBeGreaterThan( 1_000 )
         expect( share_call.file_type ).toMatch( /^video\// )
+
+        await page.evaluate( () => {
+            Object.defineProperty( navigator, `canShare`, {
+                configurable: true,
+                value: () => {
+                    window.__native_share_calls.push( {
+                        kind: `canShareUnsupported`
+                    } )
+
+                    return false
+                }
+            } )
+            Object.defineProperty( navigator, `share`, {
+                configurable: true,
+                value: async () => {
+                    window.__native_share_calls.push( {
+                        kind: `unexpectedShare`
+                    } )
+                }
+            } )
+        } )
+
+        const fallback_download_promise = page.waitForEvent( `download` )
+
+        await page.getByRole( `button`, { name: `Share`, exact: true } ).click()
+
+        const fallback_download = await fallback_download_promise
+
+        expect( fallback_download.suggestedFilename() ).toMatch( /\.(webm|mp4)$/ )
+        expect( await read_downloaded_file_size( fallback_download ) ).toBeGreaterThan( 1_000 )
+        await expect.poll( () => page.evaluate( () => {
+            return window.__native_share_calls.filter( ( { kind } ) => kind === `unexpectedShare` ).length
+        } ) ).toBe( 0 )
 
         const download_promise = page.waitForEvent( `download` )
 
