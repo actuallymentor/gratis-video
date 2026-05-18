@@ -129,7 +129,7 @@ export function ProjectListPage() {
 
         <BottomAppBar
             label="Project actions"
-            center={ <PrimaryActionButton icon={ Plus } onClick={ create_next_project }>New</PrimaryActionButton> }
+            center={ <PrimaryActionButton icon={ Plus } onClick={ create_next_project }>Create Project</PrimaryActionButton> }
             right={ <IconButton icon={ Settings } label="Open settings" onClick={ () => navigate( `/settings` ) } /> }
         />
     </AppFrame>

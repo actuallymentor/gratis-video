@@ -77,7 +77,7 @@ describe( `project list page`, () => {
 
         expect( await screen.findByText( `No projects yet` ) ).toBeTruthy()
         expect( screen.getByRole( `button`, { name: `Create` } ) ).toBeTruthy()
-        await user.click( screen.getByRole( `button`, { name: `New` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Create Project` } ) )
 
         expect( create_project ).toHaveBeenCalledTimes( 1 )
         expect( useAppStore.getState().active_project_id ).toBe( `project-1` )

@@ -416,10 +416,15 @@ export function ProjectCapturePage() {
         ? `Local browser storage is almost full. Export or delete old clips before recording more.`
         : null
     const permission_status_message = media_status_message( permission_status )
+    const camera_permission_denied = permission_status.camera === `denied`
+    const microphone_permission_denied = permission_status.microphone === `denied`
     const permission_denied = has_denied_media_permission( permission_status )
     const permission_recovery_needed = permission_denied || recording.permission_recovery_needed
     const settings_return_path = make_settings_return_path( project.id )
-    const status_message = permission_denied
+    const should_prioritize_permission_status = camera_permission_denied
+        ? true
+        : microphone_permission_denied && !recording.error_message
+    const status_message = should_prioritize_permission_status
         ? permission_status_message || recording.error_message || storage_warning
         : recording.error_message || permission_status_message || storage_warning
     const recording_disabled = !can_attempt_recording( permission_status )

@@ -359,6 +359,9 @@ describe( `recording controller`, () => {
             expect( failed_stream.track.stop ).toHaveBeenCalledTimes( 1 )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( failed_recorder.ondataavailable ).toBe( null )
+        expect( failed_recorder.onerror ).toBe( null )
+        expect( failed_recorder.onstop ).toBe( null )
 
         await act( async () => {
             controller.press_record()
@@ -460,6 +463,9 @@ describe( `recording controller`, () => {
             } ) )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( recorder.ondataavailable ).toBe( null )
+        expect( recorder.onerror ).toBe( null )
+        expect( recorder.onstop ).toBe( null )
     } )
 
     test( `stops and saves a valid clip on page lifecycle backgrounding`, async () => {
@@ -491,6 +497,9 @@ describe( `recording controller`, () => {
             } ) )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( recorder.ondataavailable ).toBe( null )
+        expect( recorder.onerror ).toBe( null )
+        expect( recorder.onstop ).toBe( null )
     } )
 
     test( `stops and saves a valid clip after pointer cancellation during recording`, async () => {
@@ -820,6 +829,9 @@ describe( `recording controller`, () => {
             } ) )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( recorder.ondataavailable ).toBe( null )
+        expect( recorder.onerror ).toBe( null )
+        expect( recorder.onstop ).toBe( null )
     } )
 
     test( `records a press-and-hold clip on release`, async () => {

@@ -266,6 +266,29 @@ describe( `project capture page`, () => {
         expect( screen.queryByText( `Export panel open` ) ).toBe( null )
     } )
 
+    test( `opens cached export actions when preloaded native sharing is unsupported`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( get_valid_cached_export ).mockResolvedValue( export_record )
+        vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_export_blob ).toHaveBeenCalledWith( export_record.id )
+        } )
+
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
+        expect( share_export_file ).toHaveBeenCalledWith( {
+            project,
+            export_record,
+            blob: expect.any( Blob )
+        } )
+    } )
+
     test( `opens a cached export panel when a cached export is found after the tap`, async () => {
         const user = userEvent.setup()
         let allow_cache = false
@@ -601,6 +624,25 @@ describe( `project capture page`, () => {
         render_capture()
 
         expect( await screen.findByText( /Recording can continue video-only/ ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( false )
+    } )
+
+    test( `shows capture failure over stale microphone denial guidance`, async () => {
+        recording_state.error_message = `No camera was found on this device.`
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `granted`,
+                microphone: `denied`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /No camera was found/ ) ).toBeTruthy()
+        expect( screen.queryByText( /Recording can continue video-only/ ) ).toBe( null )
         expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( false )
     } )
 

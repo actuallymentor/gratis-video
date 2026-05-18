@@ -40,3 +40,7 @@
 - Export recorder shutdown is bounded separately from clip playback. If a browser emits data but never fires `MediaRecorder.onstop`, export may proceed with a warning; if no data arrives before the timeout, fail clearly instead of hanging.
 - Keep project-scoped media writes transactional with the project record. Clip and export saves should read the project inside the same IndexedDB write transaction that stores blobs, so deleted projects are not resurrected by stale async work.
 - RecordButton's click fallback must ignore the synthetic click after pointer release, including long press-and-hold recordings. Mark pointer release/cancel as direct activations, not only pointer down.
+- Do not read project records before later IndexedDB write transactions for project-scoped mutations. `rename_project`, `delete_clip`, `move_clip`, and `set_active_project` should verify the project inside their write transaction so concurrent project deletion or delete-all cannot be undone by stale writes.
+- `list_projects()` is also a cleanup boundary for legacy cached exports. Keep stale export metadata/blob pruning there so old invalid exports do not quietly consume local quota.
+- When microphone permission is known denied, a later capture failure should take priority over the stale microphone-denied/video-only guidance; otherwise camera failures can be hidden.
+- Recording cleanup should clear `MediaRecorder` event handlers after stop/start failure, in addition to stopping tracks, because browser recorders can otherwise retain callbacks longer than needed.

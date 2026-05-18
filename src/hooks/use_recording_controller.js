@@ -40,6 +40,14 @@ const is_storage_quota_error = ( error ) => {
 const media_recorder_unavailable_message = `This browser cannot record video with MediaRecorder.`
 const RECORDER_STOP_TIMEOUT_MS = 3_000
 
+const clear_recorder_handlers = ( recorder ) => {
+    if( !recorder ) return
+
+    recorder.ondataavailable = null
+    recorder.onerror = null
+    recorder.onstop = null
+}
+
 /**
  * Coordinates pointer/keyboard recording, clip validation, and local persistence.
  * @param {Object} options - Recording options.
@@ -262,6 +270,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 toast.error( is_storage_quota_error( error ) ? `Storage is full` : `Clip save failed` )
                 return null
             } finally {
+                clear_recorder_handlers( recorder )
                 recorder_ref.current = null
                 stop_promise_ref.current = null
                 recording_result_ref.current = empty_recording_result
@@ -412,6 +421,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 )
                 toast.error( `Recording unavailable` )
             }
+            clear_recorder_handlers( recorder_ref.current )
             recorder_ref.current = null
             stop_promise_ref.current = null
             recording_result_ref.current = empty_recording_result

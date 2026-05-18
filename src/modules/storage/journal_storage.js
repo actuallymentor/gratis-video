@@ -169,13 +169,20 @@ const with_project_export_status = async ( project, normalized_settings ) => {
         return export_record.settings_hash === settings_hash
             && export_record.clip_manifest_hash === clip_manifest_hash
     } )
+    const stale_export_records = existing_exports.filter( ( export_record ) => {
+        return export_record.settings_hash !== settings_hash
+            || export_record.clip_manifest_hash !== clip_manifest_hash
+    } )
+
+    await delete_export_records( stale_export_records )
+
     const [ latest_export = null ] = [ ...matching_exports ].sort( ( first, second ) => {
         return new Date( second.created_at ).getTime() - new Date( first.created_at ).getTime()
     } )
 
     return {
         ...project,
-        export_count: existing_exports.length,
+        export_count: matching_exports.length,
         valid_export_count: matching_exports.length,
         last_exported_at: latest_export?.created_at ?? null
     }
@@ -222,6 +229,14 @@ const save_active_project_pointer = async ( project_id ) => {
     else safe_local_storage.remove( ACTIVE_PROJECT_KEY )
 }
 
+const write_active_project_pointer = ( settings_store, project_id, timestamp = now_iso() ) => {
+    settings_store.put( {
+        key: ACTIVE_PROJECT_STATE_KEY,
+        project_id: project_id ?? null,
+        updated_at: timestamp
+    } )
+}
+
 /**
  * Creates a friendly export filename from a project title and MIME type.
  * @param {string} title - Project title.
@@ -240,20 +255,6 @@ export const make_export_filename = ( title, mime_type ) => {
 
 const export_settings_changed = ( previous_settings, next_settings ) => {
     return export_setting_keys.some( ( key ) => previous_settings[ key ] !== next_settings[ key ] )
-}
-
-const update_project_export_filenames = async ( project_id, title ) => {
-    const exports = await get_index_records( `exports`, `project_id`, project_id )
-    if( !exports.length ) return
-
-    await write_transaction( [ `exports` ], ( stores ) => {
-        exports.forEach( ( export_record ) => {
-            stores.exports.put( {
-                ...export_record,
-                filename: make_export_filename( title, export_record.mime_type )
-            } )
-        } )
-    } )
 }
 
 const prune_stale_exports_for_all_projects = async () => {
@@ -334,19 +335,31 @@ export async function set_active_project( project_id ) {
         return
     }
 
-    const project = await get_project( project_id )
-    if( !project ) {
-        await save_active_project_pointer( null )
-        return
-    }
+    const activated_project_id = await write_transaction_result( [ `projects`, `settings` ], ( stores, { complete, fail } ) => {
+        const project_request = stores.projects.get( project_id )
 
-    const updated_project = {
-        ...project,
-        active_at: now_iso()
-    }
+        project_request.onerror = fail_request( fail, `Could not load project before activating it.` )
+        project_request.onsuccess = () => {
+            const project = project_request.result
+            const timestamp = now_iso()
 
-    await put_record( `projects`, updated_project )
-    await save_active_project_pointer( project_id )
+            if( !project ) {
+                write_active_project_pointer( stores.settings, null, timestamp )
+                complete( null )
+                return
+            }
+
+            stores.projects.put( {
+                ...project,
+                active_at: timestamp
+            } )
+            write_active_project_pointer( stores.settings, project_id, timestamp )
+            complete( project_id )
+        }
+    } )
+
+    if( activated_project_id ) safe_local_storage.set( ACTIVE_PROJECT_KEY, activated_project_id )
+    else safe_local_storage.remove( ACTIVE_PROJECT_KEY )
 }
 
 /**
@@ -380,20 +393,51 @@ export async function create_project() {
  * @returns {Promise<Object>} Updated project.
  */
 export async function rename_project( project_id, title ) {
-    const project = await get_project( project_id )
-    if( !project ) throw new Error( `Project not found.` )
+    return write_transaction_result( [ `projects`, `exports` ], ( stores, { complete, fail } ) => {
+        const project_request = stores.projects.get( project_id )
+        const exports_request = stores.exports.index( `project_id` ).getAll( project_id )
+        let project = null
+        let export_records = []
+        let project_loaded = false
+        let exports_loaded = false
 
-    const next_title = title.trim() || project.title
-    const updated_project = {
-        ...project,
-        title: next_title,
-        updated_at: now_iso()
-    }
+        const rename_when_ready = () => {
+            if( !project_loaded || !exports_loaded ) return
+            if( !project ) {
+                fail( project_not_found_error() )
+                return
+            }
 
-    await put_record( `projects`, updated_project )
-    await update_project_export_filenames( project_id, next_title )
+            const next_title = title.trim() || project.title
+            const updated_project = {
+                ...project,
+                title: next_title,
+                updated_at: now_iso()
+            }
 
-    return updated_project
+            stores.projects.put( updated_project )
+            export_records.forEach( ( export_record ) => {
+                stores.exports.put( {
+                    ...export_record,
+                    filename: make_export_filename( next_title, export_record.mime_type )
+                } )
+            } )
+            complete( updated_project )
+        }
+
+        project_request.onerror = fail_request( fail, `Could not load project before renaming it.` )
+        exports_request.onerror = fail_request( fail, `Could not load project exports before renaming it.` )
+        project_request.onsuccess = () => {
+            project = project_request.result ?? null
+            project_loaded = true
+            rename_when_ready()
+        }
+        exports_request.onsuccess = () => {
+            export_records = exports_request.result
+            exports_loaded = true
+            rename_when_ready()
+        }
+    } )
 }
 
 /**
@@ -663,30 +707,57 @@ export async function get_clip_thumbnail_blob( clip_id ) {
  * @returns {Promise<void>}
  */
 export async function delete_clip( clip_id ) {
-    const clip = await get_record( `clips`, clip_id )
-    if( !clip || clip.deleted_at ) return
+    const deleted_project_id = await write_transaction_result( [
+        `projects`,
+        `clips`,
+        `clip_blobs`,
+        `clip_thumbnails`
+    ], ( stores, { complete, fail } ) => {
+        const clip_request = stores.clips.get( clip_id )
 
-    const project = await get_project( clip.project_id )
-    if( !project ) return
+        clip_request.onerror = fail_request( fail, `Could not load clip before deletion.` )
+        clip_request.onsuccess = () => {
+            const clip = clip_request.result
 
-    const updated_clip = {
-        ...strip_clip_blob_fields( clip ),
-        deleted_at: now_iso()
-    }
-    const updated_project = {
-        ...project,
-        clip_count: Math.max( 0, project.clip_count - 1 ),
-        total_duration_ms: Math.max( 0, project.total_duration_ms - clip.duration_ms ),
-        updated_at: now_iso()
-    }
+            if( !clip || clip.deleted_at ) {
+                complete( null )
+                return
+            }
 
-    await write_transaction( [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails` ], ( stores ) => {
-        stores.clips.put( updated_clip )
-        stores.clip_blobs.delete( clip_id )
-        stores.clip_thumbnails.delete( clip_id )
-        stores.projects.put( updated_project )
+            const project_request = stores.projects.get( clip.project_id )
+
+            project_request.onerror = fail_request( fail, `Could not load project before deleting clip.` )
+            project_request.onsuccess = () => {
+                const project = project_request.result
+                const timestamp = now_iso()
+
+                stores.clip_blobs.delete( clip_id )
+                stores.clip_thumbnails.delete( clip_id )
+
+                if( !project ) {
+                    stores.clips.delete( clip_id )
+                    complete( null )
+                    return
+                }
+
+                stores.clips.put( {
+                    ...strip_clip_blob_fields( clip ),
+                    deleted_at: timestamp
+                } )
+                stores.projects.put( {
+                    ...project,
+                    clip_count: Math.max( 0, project.clip_count - 1 ),
+                    total_duration_ms: Math.max( 0, project.total_duration_ms - clip.duration_ms ),
+                    updated_at: timestamp
+                } )
+                complete( clip.project_id )
+            }
+        }
     } )
-    await prune_stale_project_exports( clip.project_id ).catch( ( error ) => {
+
+    if( !deleted_project_id ) return
+
+    await prune_stale_project_exports( deleted_project_id ).catch( ( error ) => {
         log.warn( `Could not prune stale exports after clip deletion`, error )
     } )
 }
@@ -698,47 +769,106 @@ export async function delete_clip( clip_id ) {
  * @returns {Promise<Array>} Updated project clip queue.
  */
 export async function move_clip( clip_id, direction ) {
-    const clip = await get_record( `clips`, clip_id )
-    if( !clip || clip.deleted_at ) return []
+    const move_result = await write_transaction_result( [ `projects`, `clips` ], ( stores, { complete, fail } ) => {
+        const clip_request = stores.clips.get( clip_id )
 
-    const project = await get_project( clip.project_id )
-    if( !project ) return []
+        clip_request.onerror = fail_request( fail, `Could not load clip before moving it.` )
+        clip_request.onsuccess = () => {
+            const clip = clip_request.result
 
-    const project_clips = await get_index_records( `clips`, `project_id`, clip.project_id )
-    const active_clips = [ ...project_clips ]
-        .filter( ( { deleted_at } ) => !deleted_at )
-        .sort( ( first, second ) => first.order_index - second.order_index )
-    const clip_index = active_clips.findIndex( ( { id } ) => id === clip_id )
-    const offset = direction === `earlier` ? -1 : 1
-    const target_index = clip_index + offset
-    const target_clip = active_clips[ target_index ]
+            if( !clip || clip.deleted_at ) {
+                complete( {
+                    changed: false,
+                    clips: [],
+                    project_id: null
+                } )
+                return
+            }
 
-    if( clip_index === -1 || !target_clip ) return sort_clips( project_clips )
+            const project_request = stores.projects.get( clip.project_id )
+            const clips_request = stores.clips.index( `project_id` ).getAll( clip.project_id )
+            let project = null
+            let project_clips = []
+            let project_loaded = false
+            let clips_loaded = false
 
-    const timestamp = now_iso()
-    const moved_clip = {
-        ...increment_clip_version( active_clips[ clip_index ], timestamp ),
-        order_index: target_clip.order_index
-    }
-    const swapped_clip = {
-        ...increment_clip_version( target_clip, timestamp ),
-        order_index: active_clips[ clip_index ].order_index
-    }
-    const updated_project = {
-        ...project,
-        updated_at: timestamp
-    }
+            const move_when_ready = () => {
+                if( !project_loaded || !clips_loaded ) return
 
-    await write_transaction( [ `projects`, `clips` ], ( stores ) => {
-        stores.clips.put( moved_clip )
-        stores.clips.put( swapped_clip )
-        stores.projects.put( updated_project )
+                const sorted_clips = sort_clips( project_clips )
+
+                if( !project ) {
+                    complete( {
+                        changed: false,
+                        clips: sorted_clips,
+                        project_id: null
+                    } )
+                    return
+                }
+
+                const active_clips = [ ...project_clips ]
+                    .filter( ( { deleted_at } ) => !deleted_at )
+                    .sort( ( first, second ) => first.order_index - second.order_index )
+                const clip_index = active_clips.findIndex( ( { id } ) => id === clip_id )
+                const offset = direction === `earlier` ? -1 : 1
+                const target_index = clip_index + offset
+                const target_clip = active_clips[ target_index ]
+
+                if( clip_index === -1 || !target_clip ) {
+                    complete( {
+                        changed: false,
+                        clips: sorted_clips,
+                        project_id: clip.project_id
+                    } )
+                    return
+                }
+
+                const timestamp = now_iso()
+                const moved_clip = {
+                    ...increment_clip_version( active_clips[ clip_index ], timestamp ),
+                    order_index: target_clip.order_index
+                }
+                const swapped_clip = {
+                    ...increment_clip_version( target_clip, timestamp ),
+                    order_index: active_clips[ clip_index ].order_index
+                }
+                const updated_project = {
+                    ...project,
+                    updated_at: timestamp
+                }
+
+                stores.clips.put( moved_clip )
+                stores.clips.put( swapped_clip )
+                stores.projects.put( updated_project )
+                complete( {
+                    changed: true,
+                    clips: null,
+                    project_id: clip.project_id
+                } )
+            }
+
+            project_request.onerror = fail_request( fail, `Could not load project before moving clip.` )
+            clips_request.onerror = fail_request( fail, `Could not load project clips before moving clip.` )
+            project_request.onsuccess = () => {
+                project = project_request.result ?? null
+                project_loaded = true
+                move_when_ready()
+            }
+            clips_request.onsuccess = () => {
+                project_clips = clips_request.result
+                clips_loaded = true
+                move_when_ready()
+            }
+        }
     } )
-    await prune_stale_project_exports( clip.project_id ).catch( ( error ) => {
+
+    if( !move_result?.changed ) return move_result?.clips ?? []
+
+    await prune_stale_project_exports( move_result.project_id ).catch( ( error ) => {
         log.warn( `Could not prune stale exports after clip reorder`, error )
     } )
 
-    return get_project_clips( clip.project_id )
+    return get_project_clips( move_result.project_id )
 }
 
 /**

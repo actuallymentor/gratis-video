@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.5] - 2026-05-18
+
+### Added
+- add stale-write, share fallback, and no-prompt regressions
+
+### Fixed
+- keep stale project mutations from restoring deleted data
+- prune legacy stale cached exports during project listing
+- surface capture failures over stale microphone-denied guidance
+- clear recording MediaRecorder handlers after shutdown
+- label the bottom create action as Create Project
+
 ## [0.3.4] - 2026-05-18
 
 ### Added

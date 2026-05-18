@@ -238,6 +238,17 @@ describe( `journal storage`, () => {
         expect( cached_export.filename ).toBe( `pocket-walk.webm` )
     } )
 
+    test( `late project rename does not restore a deleted project`, async () => {
+        const project = await create_project()
+
+        await Promise.allSettled( [
+            rename_project( project.id, `Deleted rename` ),
+            delete_project( project.id )
+        ] )
+
+        expect( await get_project( project.id ) ).toBe( undefined )
+    } )
+
     test( `deleting a clip removes it from the queue and blob stores`, async () => {
         const project = await create_project()
         const clip = await add_clip_to_project( {
@@ -250,6 +261,27 @@ describe( `journal storage`, () => {
 
         await delete_clip( clip.id )
 
+        expect( await get_project_clips( project.id ) ).toEqual( [] )
+        expect( await get_clip_blob( clip.id ) ).toBe( null )
+        expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
+    } )
+
+    test( `late clip deletion does not restore a deleted project`, async () => {
+        const project = await create_project()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200,
+            thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
+        } )
+
+        await Promise.allSettled( [
+            delete_clip( clip.id ),
+            delete_project( project.id )
+        ] )
+
+        expect( await get_project( project.id ) ).toBe( undefined )
         expect( await get_project_clips( project.id ) ).toEqual( [] )
         expect( await get_clip_blob( clip.id ) ).toBe( null )
         expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
@@ -549,6 +581,32 @@ describe( `journal storage`, () => {
 
         expect( await get_export_blob( export_record.id ) ).toBe( null )
         expect( ( await list_projects() )[ 0 ].export_count ).toBe( 0 )
+    } )
+
+    test( `project listing prunes legacy stale cached export blobs`, async () => {
+        const project = await create_project()
+
+        await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+
+        const stale_export = await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `stale-export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash: `stale-settings`,
+            clip_manifest_hash: `stale-clips`,
+            duration_ms: 1200
+        } )
+
+        const [ listed_project ] = await list_projects()
+
+        expect( listed_project.export_count ).toBe( 0 )
+        expect( listed_project.last_exported_at ).toBe( null )
+        expect( await get_export_blob( stale_export.id ) ).toBe( null )
     } )
 
     test( `uses normalized export settings for project export status and pruning`, async () => {

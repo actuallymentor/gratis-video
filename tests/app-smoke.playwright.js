@@ -56,7 +56,7 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
         await expect( page.getByText( `Everything stays on this device and browser.` ) ).toBeVisible()
 
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
         await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
@@ -107,16 +107,23 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
         await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBe( 0 )
 
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
         await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
+        await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBe( 0 )
+
+        const active_capture_url = page.url()
+
+        await page.goto( `/` )
+
+        await expect( page ).toHaveURL( active_capture_url )
         await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBe( 0 )
     } )
 
     test( `keeps bottom capture actions stable at the viewport edge`, async ( { page } ) => {
         await page.goto( `/projects` )
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         const record_button = page.getByRole( `button`, { name: `Record clip` } )
         const app_bar = page.getByRole( `navigation`, { name: `Capture actions` } )
@@ -137,7 +144,7 @@ test.describe( `daily video journal app`, () => {
     test( `records, reloads, and deletes a clip with browser media`, async ( { context, page } ) => {
         await context.grantPermissions( [ `camera`, `microphone` ] )
         await page.goto( `/projects` )
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await page.getByRole( `button`, { name: `Record clip` } ).click()
         await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
@@ -160,7 +167,7 @@ test.describe( `daily video journal app`, () => {
     test( `records a press-and-hold clip with browser media`, async ( { context, page } ) => {
         await context.grantPermissions( [ `camera`, `microphone` ] )
         await page.goto( `/projects` )
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         const record_button = page.getByRole( `button`, { name: `Record clip` } )
         await expect( record_button ).toBeVisible()
@@ -184,7 +191,7 @@ test.describe( `daily video journal app`, () => {
     test( `exports, downloads, renames, and deletes a browser-recorded project`, async ( { context, page } ) => {
         await context.grantPermissions( [ `camera`, `microphone` ] )
         await page.goto( `/projects` )
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await page.getByRole( `button`, { name: `Record clip` } ).click()
         await page.waitForTimeout( 900 )
@@ -242,7 +249,7 @@ test.describe( `daily video journal app`, () => {
         } )
 
         await page.goto( `/projects` )
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await expect( page.getByText( /Camera access is blocked/ ) ).toBeVisible()
         await expect( page.getByRole( `link`, { name: `Open settings` } ) ).toHaveAttribute( `href`, /\/settings\?return_to=/ )
@@ -261,7 +268,7 @@ test.describe( `daily video journal app`, () => {
         } )
 
         await page.goto( `/projects` )
-        await page.getByRole( `button`, { name: `New` } ).click()
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await expect( page.getByText( /Recording can continue video-only/ ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeEnabled()
