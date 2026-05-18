@@ -79,7 +79,26 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `New` } ).click()
 
         await expect( page.getByText( /Camera access is blocked/ ) ).toBeVisible()
-        await expect( page.getByRole( `link`, { name: `Open settings` } ) ).toHaveAttribute( `href`, `/settings` )
+        await expect( page.getByRole( `link`, { name: `Open settings` } ) ).toHaveAttribute( `href`, /\/settings\?return_to=/ )
+    } )
+
+    test( `keeps video-only recording available when microphone permission is denied`, async ( { page } ) => {
+        await page.addInitScript( () => {
+            Object.defineProperty( navigator, `permissions`, {
+                configurable: true,
+                value: {
+                    query: ( { name } ) => Promise.resolve( {
+                        state: name === `microphone` ? `denied` : `granted`
+                    } )
+                }
+            } )
+        } )
+
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `New` } ).click()
+
+        await expect( page.getByText( /Recording can continue video-only/ ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeEnabled()
     } )
 
     test( `opens settings with storage and export controls`, async ( { page } ) => {

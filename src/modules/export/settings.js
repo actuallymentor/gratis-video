@@ -1,4 +1,4 @@
-import { recording_mime_candidates, select_supported_mime_type, stop_media_stream } from '../media/recorder.js'
+import { recording_mime_candidates, stop_media_stream } from '../media/recorder.js'
 
 const EXPORT_PROBE_FPS = 30
 
@@ -133,7 +133,8 @@ export function normalize_export_settings( settings = {} ) {
  */
 export function choose_export_mime_type( settings ) {
     const preferred = settings.preferred_mime_type
+    const supported_mime_types = get_supported_export_mime_types()
 
-    if( preferred && globalThis.MediaRecorder?.isTypeSupported?.( preferred ) ) return preferred
-    return select_supported_mime_type( recording_mime_candidates )
+    if( preferred && supported_mime_types.includes( preferred ) ) return preferred
+    return supported_mime_types.at( 0 ) ?? null
 }

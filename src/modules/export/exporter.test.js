@@ -539,6 +539,48 @@ describe( `export compiler`, () => {
         expect( get_supported_export_mime_types() ).toEqual( [ `video/webm` ] )
     } )
 
+    test( `compiles with a canvas-proven MIME fallback when the first supported type cannot start`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        class CanvasSelectiveMediaRecorder extends DataMediaRecorder {
+
+            static isTypeSupported( mime_type ) {
+                return mime_type.includes( `mp4` ) || mime_type === `video/webm`
+            }
+
+            start() {
+                if( this.mimeType.includes( `mp4` ) ) throw new Error( `MP4 canvas recorder cannot start` )
+                super.start()
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, CanvasSelectiveMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+    } )
+
     test( `hides MIME types when the canvas recorder cannot start`, () => {
         class StartBlockedMediaRecorder extends FakeMediaRecorder {
 

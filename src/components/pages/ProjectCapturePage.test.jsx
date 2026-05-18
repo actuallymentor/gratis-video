@@ -285,21 +285,16 @@ describe( `project capture page`, () => {
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
         expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
-        expect( share_export_file ).toHaveBeenCalledWith( {
-            project,
-            export_record,
-            blob: expect.any( Blob )
-        } )
+        expect( share_export_file ).not.toHaveBeenCalled()
     } )
 
-    test( `shares a cached export discovered during the export tap`, async () => {
+    test( `requires a fresh share action for a cached export discovered during the export tap`, async () => {
         const user = userEvent.setup()
         let allow_cache = false
 
         vi.mocked( get_valid_cached_export ).mockImplementation( async () => {
             return allow_cache ? export_record : null
         } )
-        vi.mocked( share_export_file ).mockResolvedValue( `shared` )
 
         render_capture()
 
@@ -311,14 +306,8 @@ describe( `project capture page`, () => {
         allow_cache = true
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
-        await waitFor( () => {
-            expect( share_export_file ).toHaveBeenCalledWith( {
-                project,
-                export_record,
-                blob: expect.any( Blob )
-            } )
-        } )
-        expect( screen.queryByText( `Export panel open` ) ).toBe( null )
+        expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
+        expect( share_export_file ).not.toHaveBeenCalled()
     } )
 
     test( `compiles when cached export metadata is found but its blob is missing`, async () => {
@@ -428,7 +417,7 @@ describe( `project capture page`, () => {
         render_capture()
 
         expect( await screen.findByText( /Camera access is blocked/ ) ).toBeTruthy()
-        expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings` )
+        expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings?return_to=%2Fprojects%2Fproject-1` )
     } )
 
     test( `prefers specific permission denial guidance after a blocked recording attempt`, async () => {
@@ -465,7 +454,7 @@ describe( `project capture page`, () => {
         render_capture()
 
         expect( await screen.findByText( /Camera or microphone access is blocked/ ) ).toBeTruthy()
-        expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings` )
+        expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings?return_to=%2Fprojects%2Fproject-1` )
     } )
 
     test( `keeps video-only recording available when microphone permission is denied`, async () => {

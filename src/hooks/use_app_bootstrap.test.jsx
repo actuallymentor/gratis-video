@@ -31,6 +31,15 @@ const permission_status = ( camera ) => ( {
     media_recorder: `supported`
 } )
 
+const make_deferred = () => {
+    let resolve
+    const promise = new Promise( ( promise_resolve ) => {
+        resolve = promise_resolve
+    } )
+
+    return { promise, resolve }
+}
+
 function Harness() {
     useAppBootstrap()
     return <span>booting</span>
@@ -96,5 +105,34 @@ describe( `app bootstrap`, () => {
         expect( useAppStore.getState().permission_status.camera ).toBe( `granted` )
         expect( useAppStore.getState().storage_estimate ).toBe( null )
         expect( useAppStore.getState().storage_persisted ).toBe( null )
+    } )
+
+    test( `resolves the active project before slower passive checks finish`, async () => {
+        const permission_check = make_deferred()
+        const storage_estimate = make_deferred()
+        const storage_persisted = make_deferred()
+
+        vi.mocked( check_media_permissions ).mockReturnValue( permission_check.promise )
+        vi.mocked( estimate_storage ).mockReturnValue( storage_estimate.promise )
+        vi.mocked( persisted_storage ).mockReturnValue( storage_persisted.promise )
+
+        render( <Harness /> )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().active_project_id ).toBe( `project-1` )
+        } )
+        expect( useAppStore.getState().permission_status ).toEqual( default_permission_status )
+
+        await act( async () => {
+            permission_check.resolve( permission_status( `granted` ) )
+            storage_estimate.resolve( { usage: 128, quota: 1024 } )
+            storage_persisted.resolve( true )
+        } )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().permission_status.camera ).toBe( `granted` )
+        } )
+        expect( useAppStore.getState().storage_estimate ).toEqual( { usage: 128, quota: 1024 } )
+        expect( useAppStore.getState().storage_persisted ).toBe( true )
     } )
 } )

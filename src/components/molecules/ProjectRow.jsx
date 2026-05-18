@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { CalendarDays, CheckCircle2, Clock3, FileCheck2, Film, Pencil, Trash2 } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
@@ -79,6 +79,14 @@ function ProjectMeta( { active, project } ) {
     </Meta>
 }
 
+const describe_project_meta = ( { active, project } ) => [
+    active ? `Active project` : null,
+    `Created ${ format_date( project.created_at ) }`,
+    `${ project.clip_count } ${ project.clip_count === 1 ? `clip` : `clips` }`,
+    format_duration( project.total_duration_ms ),
+    project.last_exported_at ? `Export ready` : null
+].filter( Boolean ).join( `. ` )
+
 /**
  * Displays one project row with open, rename, and delete actions.
  * @param {Object} props - Project row props.
@@ -93,10 +101,22 @@ export function ProjectRow( {
 } ) {
     const [ editing, set_editing ] = useState( false )
     const [ title, set_title ] = useState( project.title )
+    const committed_title_ref = useRef( project.title )
+    const meta_description_id = `project-meta-${ project.id }`
+
+    useEffect( () => {
+        set_title( project.title )
+        committed_title_ref.current = project.title
+    }, [ project.title ] )
 
     const save_title = ( event ) => {
-        event.preventDefault()
-        on_rename( title )
+        event?.preventDefault()
+
+        if( title !== committed_title_ref.current ) {
+            committed_title_ref.current = title
+            on_rename( title )
+        }
+
         set_editing( false )
     }
 
@@ -115,10 +135,12 @@ export function ProjectRow( {
         </EditingBlock> : <MainButton
             type="button"
             aria-label={ `Open ${ project.title }` }
+            aria-describedby={ meta_description_id }
             onClick={ on_open }
         >
             <Title>{ project.title }</Title>
             <ProjectMeta active={ active } project={ project } />
+            <span id={ meta_description_id } className="sr-only">{ describe_project_meta( { active, project } ) }</span>
         </MainButton> }
         <Actions>
             <IconButton

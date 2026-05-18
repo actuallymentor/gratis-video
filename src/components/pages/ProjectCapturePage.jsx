@@ -108,6 +108,10 @@ const make_export_cache_key = ( { settings_hash, clip_manifest_hash } ) => {
     return `${ settings_hash }:${ clip_manifest_hash }`
 }
 
+const make_settings_return_path = ( project_id ) => {
+    return `/settings?return_to=${ encodeURIComponent( `/projects/${ project_id }` ) }`
+}
+
 /**
  * Shows recording controls, live preview, clip queue, and export actions.
  * @returns {JSX.Element} Capture page.
@@ -124,6 +128,7 @@ export function ProjectCapturePage() {
     const [ cached_export_record, set_cached_export_record ] = useState( null )
     const [ cached_export_key, set_cached_export_key ] = useState( null )
     const [ cached_export_ready, set_cached_export_ready ] = useState( false )
+    const [ cached_export_loading, set_cached_export_loading ] = useState( false )
     const [ export_panel_record, set_export_panel_record ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
     const cached_export_blob_ref = useRef( null )
@@ -148,6 +153,7 @@ export function ProjectCapturePage() {
         set_cached_export_record( null )
         set_cached_export_key( null )
         set_cached_export_ready( false )
+        set_cached_export_loading( false )
     }, [] )
 
     const load_initial_export_blob = useCallback( async ( export_record ) => {
@@ -254,6 +260,7 @@ export function ProjectCapturePage() {
         clear_cached_export()
 
         if( !project || !settings || !clips.length ) return undefined
+        set_cached_export_loading( true )
 
         const load_cached_export = async () => {
             const hashes = create_export_hashes( { clips, settings } )
@@ -262,18 +269,29 @@ export function ProjectCapturePage() {
                 project_id,
                 ...hashes
             } )
-            const blob = cached_export ? await get_export_blob( cached_export.id ) : null
 
             if( cancelled ) return
-            if( !cached_export || !blob ) return
+            if( !cached_export ) {
+                set_cached_export_loading( false )
+                return
+            }
 
-            cached_export_blob_ref.current = blob
             set_cached_export_record( cached_export )
             set_cached_export_key( cache_key )
+
+            const blob = await get_export_blob( cached_export.id )
+
+            if( cancelled ) return
+            set_cached_export_loading( false )
+            if( !blob ) return
+
+            cached_export_blob_ref.current = blob
             set_cached_export_ready( true )
         }
 
-        load_cached_export().catch( () => null )
+        load_cached_export().catch( () => {
+            if( !cancelled ) set_cached_export_loading( false )
+        } )
 
         return () => {
             cancelled = true
@@ -335,6 +353,24 @@ export function ProjectCapturePage() {
             return
         }
 
+        if(
+            cached_export_record
+            && !cached_export_ready
+            && cached_export_key === cache_key
+        ) {
+            set_export_panel_record( cached_export_record )
+            set_export_requested( true )
+            set_panel( `export` )
+            return
+        }
+
+        if( cached_export_loading ) {
+            set_export_panel_record( null )
+            set_export_requested( true )
+            set_panel( `export` )
+            return
+        }
+
         const cached_export = await get_valid_cached_export( {
             project_id,
             ...hashes
@@ -355,18 +391,6 @@ export function ProjectCapturePage() {
             set_cached_export_record( cached_export )
             set_cached_export_key( cache_key )
             set_cached_export_ready( true )
-
-            try {
-                const share_result = await share_export_file( {
-                    project,
-                    export_record: cached_export,
-                    blob: cached_blob
-                } )
-
-                if( share_result === `shared` || share_result === `cancelled` ) return
-            } catch {
-                toast( `Sharing failed. Download is available.` )
-            }
 
             set_export_panel_record( cached_export )
             set_export_requested( true )
@@ -403,6 +427,7 @@ export function ProjectCapturePage() {
     const permission_status_message = media_status_message( permission_status )
     const permission_denied = has_denied_media_permission( permission_status )
     const permission_recovery_needed = permission_denied || recording.permission_recovery_needed
+    const settings_return_path = make_settings_return_path( project.id )
     const status_message = permission_denied
         ? permission_status_message || recording.error_message || storage_warning
         : recording.error_message || permission_status_message || storage_warning
@@ -434,7 +459,7 @@ export function ProjectCapturePage() {
                     </Preview>
                     <PermissionNotice
                         message={ preview_status_message }
-                        action_to={ permission_recovery_needed ? `/settings` : null }
+                        action_to={ permission_recovery_needed ? settings_return_path : null }
                         action_label={ permission_recovery_needed ? `Open settings` : null }
                     />
                 </PreviewPanel>
@@ -464,7 +489,7 @@ export function ProjectCapturePage() {
         { bottom_status_message ? <BottomNotice>
             <PermissionNotice
                 message={ bottom_status_message }
-                action_to={ permission_recovery_needed ? `/settings` : null }
+                action_to={ permission_recovery_needed ? settings_return_path : null }
                 action_label={ permission_recovery_needed ? `Open settings` : null }
             />
         </BottomNotice> : null }

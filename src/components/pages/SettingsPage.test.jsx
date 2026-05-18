@@ -3,7 +3,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import {
+    MemoryRouter,
+    Route,
+    Routes,
+    useLocation
+} from 'react-router'
 import { SettingsPage } from './SettingsPage.jsx'
 import {
     default_permission_status,
@@ -61,9 +66,18 @@ const settings = {
     sounds_enabled: false
 }
 
-const render_settings = () => render(
-    <MemoryRouter>
-        <SettingsPage />
+const LocationProbe = () => {
+    const location = useLocation()
+    return <div>{ location.pathname }</div>
+}
+
+const render_settings = ( initial_entry = `/settings` ) => render(
+    <MemoryRouter initialEntries={ [ initial_entry ] }>
+        <Routes>
+            <Route path="/settings" element={ <SettingsPage /> } />
+            <Route path="/projects" element={ <LocationProbe /> } />
+            <Route path="/projects/:project_id" element={ <LocationProbe /> } />
+        </Routes>
     </MemoryRouter>
 )
 
@@ -234,5 +248,16 @@ describe( `settings page`, () => {
 
         expect( delete_all_data ).toHaveBeenCalledTimes( 1 )
         expect( useAppStore.getState().active_project_id ).toBe( null )
+    } )
+
+    test( `returns to the capture route that opened permission recovery`, async () => {
+        const user = userEvent.setup()
+
+        render_settings( `/settings?return_to=/projects/project-1` )
+
+        await screen.findByText( `Settings` )
+        await user.click( screen.getAllByRole( `button`, { name: `Back to capture` } )[ 0 ] )
+
+        expect( await screen.findByText( `/projects/project-1` ) ).toBeTruthy()
     } )
 } )

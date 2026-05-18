@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+    CAPTURE_WARNING_KEY,
     HOLD_THRESHOLD_MS,
     classify_recording_gesture,
     create_media_recorder,
@@ -94,6 +95,7 @@ describe( `recorder helpers`, () => {
         } )
 
         await expect( request_capture_stream() ).resolves.toBe( video_only_stream )
+        expect( video_only_stream[ CAPTURE_WARNING_KEY ] ).toBe( `microphone_unavailable` )
         expect( getUserMedia ).toHaveBeenCalledTimes( 2 )
         expect( getUserMedia.mock.calls[ 0 ][ 0 ] ).toMatchObject( {
             audio: {
@@ -104,6 +106,50 @@ describe( `recorder helpers`, () => {
         expect( getUserMedia.mock.calls[ 1 ][ 0 ] ).toMatchObject( {
             audio: false
         } )
+    } )
+
+    test( `requests video-only capture immediately when microphone is known denied`, async () => {
+        const video_only_stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn().mockResolvedValue( video_only_stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( video_only_stream )
+        expect( getUserMedia ).toHaveBeenCalledTimes( 1 )
+        expect( getUserMedia ).toHaveBeenCalledWith( expect.objectContaining( {
+            audio: false
+        } ) )
+    } )
+
+    test( `marks microphone denial when video-only retry succeeds`, async () => {
+        const video_only_stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn()
+            .mockRejectedValueOnce( new DOMException( `Denied`, `NotAllowedError` ) )
+            .mockResolvedValueOnce( video_only_stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream() ).resolves.toBe( video_only_stream )
+        expect( video_only_stream[ CAPTURE_WARNING_KEY ] ).toBe( `microphone_denied` )
+    } )
+
+    test( `reports camera denial when video-only retry is also blocked`, async () => {
+        const getUserMedia = vi.fn()
+            .mockRejectedValueOnce( new DOMException( `Denied`, `NotAllowedError` ) )
+            .mockRejectedValueOnce( new DOMException( `Still denied`, `NotAllowedError` ) )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream() ).rejects.toThrow( /Camera access is blocked/ )
     } )
 
     test( `returns no thumbnail when video seeking does not complete`, async () => {

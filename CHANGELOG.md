@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.1] - 2026-05-18
+
+### Added
+- add bootstrap, media, export, PWA, and browser smoke regressions
+
+### Fixed
+- route active projects before passive boot checks finish
+- request video-only capture when microphone permission is blocked
+- save partial clips and release tracks if recorder stop stalls
+- choose export formats from canvas-proven recorder support
+- require fresh Share actions for late-discovered cached exports
+- return Settings permission recovery to the capture screen
+- improve project row accessibility and rename idempotence
+- return controlled offline responses for uncached PWA requests
+
 ## [0.3.0] - 2026-05-18
 
 ### Added

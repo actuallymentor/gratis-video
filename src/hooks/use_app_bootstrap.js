@@ -39,28 +39,38 @@ export function useAppBootstrap() {
             }
         }
 
-        const load_boot_state = async () => {
+        const load_active_project_state = async () => {
+            const active_project = await read_boot_value( `Active project lookup`, get_active_project )
+
+            if( !cancelled ) set_active_project_id( active_project?.id ?? null )
+        }
+
+        const load_permission_state = async () => {
+            const permission_status = await read_boot_value( `Permission check`, check_media_permissions )
+
+            if( permission_status && !cancelled ) set_permission_status( permission_status )
+        }
+
+        const load_storage_state = async () => {
             const [
-                permission_status,
-                active_project,
                 storage_estimate,
                 storage_persisted
             ] = await Promise.all( [
-                read_boot_value( `Permission check`, check_media_permissions ),
-                read_boot_value( `Active project lookup`, get_active_project ),
                 read_boot_value( `Storage estimate`, estimate_storage ),
                 read_boot_value( `Storage persistence check`, persisted_storage )
             ] )
 
             if( cancelled ) return
 
-            if( permission_status ) set_permission_status( permission_status )
-            set_active_project_id( active_project?.id ?? null )
             set_storage_estimate( storage_estimate )
             set_storage_persisted( storage_persisted )
         }
 
-        load_boot_state()
+        // Resolve the first route from the active project lookup; permission and
+        // storage probes are useful background context but should not hold the app shell.
+        load_active_project_state()
+        load_permission_state()
+        load_storage_state()
         window.addEventListener( `focus`, refresh_permissions )
         window.addEventListener( `online`, refresh_permissions )
         window.addEventListener( `offline`, refresh_permissions )

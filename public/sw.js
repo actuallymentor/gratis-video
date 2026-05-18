@@ -56,6 +56,14 @@ const match_cached_request = async ( request ) => {
     return cached_response || caches.match( url.pathname )
 }
 
+const offline_response = () => new Response( `Offline and not cached.`, {
+    status: 503,
+    statusText: `Offline`,
+    headers: {
+        'content-type': `text/plain; charset=utf-8`
+    }
+} )
+
 const cache_app_shell = async () => {
     const cache = await caches.open( CACHE_NAME )
 
@@ -103,7 +111,9 @@ self.addEventListener( `fetch`, ( event ) => {
                 const cloned_response = response.clone()
                 caches.open( CACHE_NAME ).then( ( cache ) => cache.put( request, cloned_response ) )
                 return response
-            } ).catch( () => match_cached_request( request ) )
+            } ).catch( async () => {
+                return await match_cached_request( request ) || offline_response()
+            } )
         } )
     )
 } )

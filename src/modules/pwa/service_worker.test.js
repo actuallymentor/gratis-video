@@ -162,4 +162,24 @@ describe( `service worker`, () => {
         expect( caches.match ).toHaveBeenNthCalledWith( 1, expect.any( Request ) )
         expect( caches.match ).toHaveBeenNthCalledWith( 2, `/assets/index.js` )
     } )
+
+    test( `returns a controlled offline response for uncached same-origin requests`, async () => {
+        const { caches, fetch, listeners } = await load_service_worker()
+        let response_promise = null
+
+        fetch.mockRejectedValue( new Error( `Offline` ) )
+        caches.match.mockResolvedValue( null )
+
+        listeners.fetch( {
+            request: new Request( `https://journal.test/assets/missing.js` ),
+            respondWith: ( promise ) => {
+                response_promise = promise
+            }
+        } )
+
+        const response = await response_promise
+
+        expect( response.status ).toBe( 503 )
+        expect( await response.text() ).toMatch( /Offline/ )
+    } )
 } )

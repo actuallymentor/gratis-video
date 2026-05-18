@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import styled from 'styled-components'
 import { ArrowLeft, Camera, Mic, Trash2 } from 'lucide-react'
 import { BottomAppBar } from '../atoms/BottomAppBar.jsx'
@@ -160,6 +160,15 @@ const get_runtime_export_options = () => {
     }
 }
 
+const get_safe_return_to = ( search ) => {
+    const return_to = new URLSearchParams( search ).get( `return_to` )
+
+    if( return_to === `/projects` ) return return_to
+    if( return_to?.startsWith( `/projects/` ) ) return return_to
+
+    return `/projects`
+}
+
 /**
  * Shows global recording, export, storage, and destructive settings.
  * @returns {JSX.Element} Settings page.
@@ -171,6 +180,7 @@ export function SettingsPage() {
     const [ export_support_message, set_export_support_message ] = useState( null )
     const [ storage_error, set_storage_error ] = useState( null )
     const navigate = useNavigate()
+    const location = useLocation()
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const storage_persisted = useAppStore( ( state ) => state.storage_persisted )
     const permission_status = useAppStore( ( state ) => state.permission_status )
@@ -290,6 +300,9 @@ export function SettingsPage() {
     const has_specific_format_options = export_settings_available && supported_mime_types.length > 0
     const permission_message = media_status_message( permission_status )
     const permission_recovery_text = get_permission_recovery_text( permission_status )
+    const return_to = get_safe_return_to( location.search )
+    const back_label = return_to.startsWith( `/projects/` ) ? `Back to capture` : `Back to projects`
+    const go_back = () => navigate( return_to )
 
     return <AppFrame>
         <Content>
@@ -298,7 +311,7 @@ export function SettingsPage() {
                     <h1>Settings</h1>
                     <p>Configure defaults without adding steps to capture.</p>
                 </HeaderText>
-                <IconButton icon={ ArrowLeft } label="Back to projects" onClick={ () => navigate( `/projects` ) } />
+                <IconButton icon={ ArrowLeft } label={ back_label } onClick={ go_back } />
             </HeaderBar>
 
             { storage_error ? <StorageAlert role="alert">{ storage_error }</StorageAlert> : null }
@@ -400,7 +413,7 @@ export function SettingsPage() {
 
         <BottomAppBar
             label="Settings navigation"
-            center={ <IconButton icon={ ArrowLeft } label="Back to projects" onClick={ () => navigate( `/projects` ) } /> }
+            center={ <IconButton icon={ ArrowLeft } label={ back_label } onClick={ go_back } /> }
         />
     </AppFrame>
 }

@@ -8,6 +8,7 @@ export const recording_mime_candidates = [
 
 export const HOLD_THRESHOLD_MS = 250
 export const MINIMUM_CLIP_MS = 400
+export const CAPTURE_WARNING_KEY = `daily_video_journal_capture_warning`
 const VIDEO_EVENT_TIMEOUT_MS = 3_000
 
 const capture_video_constraints = {
@@ -33,6 +34,28 @@ const video_only_retry_errors = [
 ]
 
 const should_retry_video_only = ( error ) => video_only_retry_errors.includes( error?.name )
+
+const mark_capture_warning = ( stream, warning ) => {
+    try {
+        Object.defineProperty( stream, CAPTURE_WARNING_KEY, {
+            configurable: true,
+            value: warning
+        } )
+    } catch {
+        try {
+            stream[ CAPTURE_WARNING_KEY ] = warning
+        } catch {
+            // Warning metadata is best-effort; the media stream itself is still valid.
+        }
+    }
+
+    return stream
+}
+
+const camera_denied_error = () => new DOMException(
+    `Camera access is blocked for this site.`,
+    `NotAllowedError`
+)
 
 /**
  * Selects the first MediaRecorder MIME type supported by this browser.
@@ -76,9 +99,11 @@ export function stop_media_stream( stream ) {
 
 /**
  * Opens the camera and microphone from an explicit user action.
+ * @param {Object} options - Capture request options.
+ * @param {boolean} options.audio_enabled - Whether to request microphone audio.
  * @returns {Promise<MediaStream>} Media stream.
  */
-export async function request_capture_stream() {
+export async function request_capture_stream( { audio_enabled = true } = {} ) {
     if( globalThis.isSecureContext === false ) {
         throw new Error( `Camera and microphone require a secure browser origin.` )
     }
@@ -89,18 +114,37 @@ export async function request_capture_stream() {
 
     const capture_constraints = {
         video: capture_video_constraints,
-        audio: capture_audio_constraints
+        audio: audio_enabled ? capture_audio_constraints : false
     }
+
+    if( !audio_enabled ) return navigator.mediaDevices.getUserMedia( capture_constraints )
 
     try {
         return await navigator.mediaDevices.getUserMedia( capture_constraints )
     } catch ( error ) {
         if( !should_retry_video_only( error ) ) throw error
 
-        return navigator.mediaDevices.getUserMedia( {
-            video: capture_video_constraints,
-            audio: false
-        } )
+        try {
+            const video_only_stream = await navigator.mediaDevices.getUserMedia( {
+                video: capture_video_constraints,
+                audio: false
+            } )
+
+            const warning = error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError`
+                ? `microphone_denied`
+                : `microphone_unavailable`
+
+            return mark_capture_warning( video_only_stream, warning )
+        } catch ( retry_error ) {
+            if(
+                ( error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError` )
+                && ( retry_error?.name === `NotAllowedError` || retry_error?.name === `PermissionDeniedError` )
+            ) {
+                throw camera_denied_error()
+            }
+
+            throw retry_error
+        }
     }
 }
 

@@ -3,7 +3,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { useRecordingController } from './use_recording_controller.js'
-import { useAppStore } from '../stores/app_store.js'
+import {
+    default_permission_status,
+    useAppStore
+} from '../stores/app_store.js'
 import { check_media_permissions } from '../modules/permissions/permissions.js'
 import {
     add_clip_to_project,
@@ -38,6 +41,7 @@ vi.mock( '../modules/permissions/permissions.js', () => ( {
 } ) )
 
 vi.mock( '../modules/media/recorder.js', () => ( {
+    CAPTURE_WARNING_KEY: `daily_video_journal_capture_warning`,
     HOLD_THRESHOLD_MS: 250,
     MINIMUM_CLIP_MS: 400,
     classify_recording_gesture: ( duration_ms, threshold_ms = 250 ) => duration_ms < threshold_ms ? `tap` : `hold`,
@@ -131,7 +135,8 @@ describe( `recording controller`, () => {
     beforeEach( () => {
         useAppStore.setState( {
             media_stream_state: `idle`,
-            recording_state: `idle`
+            recording_state: `idle`,
+            permission_status: default_permission_status
         } )
         vi.mocked( add_clip_to_project ).mockReset()
         vi.mocked( check_media_permissions ).mockReset()
@@ -173,7 +178,10 @@ describe( `recording controller`, () => {
             configurable: true,
             value: false
         } )
-        useAppStore.setState( { recording_state: `idle` } )
+        useAppStore.setState( {
+            recording_state: `idle`,
+            permission_status: default_permission_status
+        } )
         controller = null
     } )
 
@@ -237,6 +245,36 @@ describe( `recording controller`, () => {
         } )
         expect( controller.error_message ).toBe( `Permission denied` )
         expect( create_media_recorder ).not.toHaveBeenCalled()
+    } )
+
+    test( `requests video-only capture when microphone permission is known denied`, async () => {
+        const { stream } = make_video_only_stream()
+        const recorder = make_recorder()
+
+        useAppStore.setState( {
+            permission_status: {
+                camera: `granted`,
+                microphone: `denied`,
+                secure_context: true,
+                media_devices: `supported`,
+                media_recorder: `supported`,
+                offline: false
+            }
+        } )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        expect( request_capture_stream ).toHaveBeenCalledWith( {
+            audio_enabled: false
+        } )
+        expect( controller.error_message ).toMatch( /Microphone access is blocked/ )
     } )
 
     test( `stops keyboard-started pending capture on page lifecycle cancellation`, async () => {
@@ -423,6 +461,62 @@ describe( `recording controller`, () => {
             } ) )
         } )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `saves available chunks and clears tracks when recorder stop never resolves`, async () => {
+        const { stream, track } = make_stream()
+        const recorder = make_recorder()
+        const date_values = [ 0, 1000 ]
+        let fake_timers_active = false
+
+        try {
+            vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+            recorder.start = vi.fn( () => {
+                recorder.state = `recording`
+                recorder.ondataavailable?.( {
+                    data: new Blob( [ `video` ], { type: `video/webm` } )
+                } )
+            } )
+            recorder.stop = vi.fn( () => {
+                recorder.state = `inactive`
+            } )
+            vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+            vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+            render( <Harness /> )
+
+            await act( async () => {
+                controller.press_record()
+                await Promise.resolve()
+            } )
+
+            await waitFor( () => {
+                expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+            } )
+
+            vi.useFakeTimers()
+            fake_timers_active = true
+            vi.setSystemTime( 1000 )
+
+            act( () => controller.cancel_record() )
+
+            await act( async () => {
+                await vi.advanceTimersByTimeAsync( 3_000 )
+            } )
+            vi.useRealTimers()
+            fake_timers_active = false
+
+            await waitFor( () => {
+                expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                    project_id: `project-1`,
+                    duration_ms: 1000
+                } ) )
+            } )
+            expect( track.stop ).toHaveBeenCalledTimes( 1 )
+            expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        } finally {
+            if( fake_timers_active ) vi.useRealTimers()
+        }
     } )
 
     test( `stops and saves a valid clip when the capture component unmounts`, async () => {

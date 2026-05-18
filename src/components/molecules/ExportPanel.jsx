@@ -35,8 +35,11 @@ const Backdrop = styled.div`
 
 const Panel = styled.section`
     width: min( 100%, 44rem );
+    max-height: calc( 100svh - 1rem );
     margin: 0 auto;
     padding: 1rem 1rem calc( 1rem + env( safe-area-inset-bottom ) );
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border: 1px solid var(--color-border);
     border-bottom: 0;
     border-radius: 0.75rem 0.75rem 0 0;
