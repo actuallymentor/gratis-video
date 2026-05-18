@@ -14,6 +14,15 @@ import {
     select_supported_mime_type
 } from './recorder.js'
 
+const expect_uncropped_video_constraints = ( constraints ) => {
+    expect( constraints.video ).toMatchObject( {
+        facingMode: { ideal: `environment` },
+        width: { ideal: 4096 },
+        height: { ideal: 4096 },
+        resizeMode: { ideal: `none` }
+    } )
+}
+
 describe( `recorder helpers`, () => {
     afterEach( () => {
         vi.useRealTimers()
@@ -116,9 +125,11 @@ describe( `recorder helpers`, () => {
                 noiseSuppression: true
             }
         } )
+        expect_uncropped_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
         expect( getUserMedia.mock.calls[ 1 ][ 0 ] ).toMatchObject( {
             audio: false
         } )
+        expect_uncropped_video_constraints( getUserMedia.mock.calls[ 1 ][ 0 ] )
     } )
 
     test( `requests video-only capture immediately when microphone is known denied`, async () => {
@@ -135,6 +146,37 @@ describe( `recorder helpers`, () => {
         expect( getUserMedia ).toHaveBeenCalledWith( expect.objectContaining( {
             audio: false
         } ) )
+        expect_uncropped_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
+    } )
+
+    test( `refines opened streams toward the largest native camera frame`, async () => {
+        const applyConstraints = vi.fn().mockResolvedValue()
+        const track = {
+            applyConstraints,
+            getCapabilities: () => ( {
+                width: { max: 4032 },
+                height: { max: 3024 },
+                zoom: { min: 1 }
+            } )
+        }
+        const stream = {
+            getTracks: () => [ track ],
+            getVideoTracks: () => [ track ]
+        }
+        const getUserMedia = vi.fn().mockResolvedValue( stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
+        expect( applyConstraints ).toHaveBeenCalledWith( {
+            width: { ideal: 4032 },
+            height: { ideal: 3024 },
+            resizeMode: { ideal: `none` },
+            zoom: { ideal: 1 }
+        } )
     } )
 
     test( `marks microphone denial when video-only retry succeeds`, async () => {

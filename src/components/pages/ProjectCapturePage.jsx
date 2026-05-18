@@ -64,7 +64,8 @@ const Preview = styled.div`
         width: 100%;
         height: 100%;
         max-height: 66svh;
-        object-fit: cover;
+        object-fit: contain;
+        background: #0d1718;
     }
 `
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.18] - 2026-05-18
+
+### Fixed
+- record native uncropped camera frames instead of forcing 16:9 capture
+
 ## [0.3.17] - 2026-05-18
 
 ### Fixed

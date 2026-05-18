@@ -39,6 +39,7 @@ Treat API tokens as single-use secrets. If a token is pasted into chat, logs, or
 - Projects, clips, thumbnails, settings, and cached exports are stored in IndexedDB.
 - No backend, account, sync, analytics, or upload path is included.
 - Recording supports tap-to-start/tap-to-stop and press-and-hold.
+- Recording requests the camera's native uncropped frame instead of a fixed 16:9 crop.
 - Clip queues support preview, move earlier/later, and delete actions.
 - If microphone capture fails or is blocked, recording can continue as video-only with a local notice.
 - Settings include media access status, haptics, and optional sound feedback for recording state changes.
