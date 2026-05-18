@@ -27,6 +27,7 @@ import {
     update_clip_media_details
 } from './journal_storage.js'
 import { create_export_hashes } from '../export/cache.js'
+import { normalize_export_settings } from '../export/settings.js'
 
 describe( `journal storage`, () => {
     beforeEach( async () => {
@@ -83,6 +84,15 @@ describe( `journal storage`, () => {
             blob: new Blob( [ `video` ], { type: `video/webm` } ),
             mime_type: `video/webm`,
             duration_ms: 1200
+        } )
+
+        expect( persist ).toHaveBeenCalledTimes( 2 )
+
+        await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `second` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 900
         } )
 
         expect( persist ).toHaveBeenCalledTimes( 2 )
@@ -393,6 +403,42 @@ describe( `journal storage`, () => {
 
         expect( await get_export_blob( export_record.id ) ).toBe( null )
         expect( ( await list_projects() )[ 0 ].export_count ).toBe( 0 )
+    } )
+
+    test( `uses normalized export settings for project export status and pruning`, async () => {
+        await save_settings( {
+            export_resolution: `1080p`,
+            preferred_mime_type: `video/mp4`
+        } )
+
+        const project = await create_project()
+        const loaded_settings = await load_settings()
+        const normalized_settings = normalize_export_settings( loaded_settings )
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1200
+        } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ clip ],
+            settings: normalized_settings
+        } )
+        const export_record = await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash,
+            clip_manifest_hash,
+            duration_ms: 1200
+        } )
+
+        expect( ( await list_projects() )[ 0 ].last_exported_at ).toBe( export_record.created_at )
+
+        await save_settings( { haptics_enabled: false } )
+
+        expect( await get_export_blob( export_record.id ) ).toBeTruthy()
+        expect( ( await list_projects() )[ 0 ].valid_export_count ).toBe( 1 )
     } )
 
     test( `merges saved settings with new defaults`, async () => {

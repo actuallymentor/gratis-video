@@ -175,15 +175,11 @@ describe( `recording controller`, () => {
         controller = null
     } )
 
-    test( `stops and saves when startup is cancelled before getUserMedia resolves`, async () => {
+    test( `stops pending startup without opening a recorder after pointer cancellation`, async () => {
         const stream_deferred = make_deferred()
-        const { stream } = make_stream()
-        const recorder = make_recorder()
-        const now_values = [ 0, 1000 ]
+        const { stream, track } = make_stream()
 
-        vi.spyOn( Date, `now` ).mockImplementation( () => now_values.shift() ?? 1000 )
         vi.mocked( request_capture_stream ).mockReturnValue( stream_deferred.promise )
-        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
 
         render( <Harness /> )
 
@@ -198,15 +194,36 @@ describe( `recording controller`, () => {
         } )
 
         await waitFor( () => {
-            expect( recorder.stop ).toHaveBeenCalledTimes( 1 )
+            expect( track.stop ).toHaveBeenCalledTimes( 1 )
         } )
+        expect( create_media_recorder ).not.toHaveBeenCalled()
+        expect( add_clip_to_project ).not.toHaveBeenCalled()
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `stops keyboard-started pending capture on page lifecycle cancellation`, async () => {
+        const stream_deferred = make_deferred()
+        const { stream, track } = make_stream()
+
+        vi.mocked( request_capture_stream ).mockReturnValue( stream_deferred.promise )
+
+        render( <Harness /> )
+
+        act( () => {
+            controller.toggle_recording()
+            window.dispatchEvent( new Event( `pagehide` ) )
+        } )
+
+        await act( async () => {
+            stream_deferred.resolve( stream )
+            await stream_deferred.promise
+        } )
+
         await waitFor( () => {
-            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
-                project_id: `project-1`,
-                mime_type: `video/webm`,
-                duration_ms: 1000
-            } ) )
+            expect( track.stop ).toHaveBeenCalledTimes( 1 )
         } )
+        expect( create_media_recorder ).not.toHaveBeenCalled()
+        expect( add_clip_to_project ).not.toHaveBeenCalled()
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 

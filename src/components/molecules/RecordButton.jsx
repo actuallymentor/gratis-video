@@ -1,4 +1,4 @@
-import styled, { keyframes } from 'styled-components'
+import styled, { css, keyframes } from 'styled-components'
 import { Square, Video } from 'lucide-react'
 import { format_duration } from '../../modules/media/time.js'
 
@@ -21,7 +21,17 @@ const Button = styled.button`
     box-shadow: var(--shadow-soft);
     touch-action: none;
     user-select: none;
-    animation: ${ ( { $recording } ) => $recording ? pulse : `none` } 900ms ease-out infinite;
+    animation: none;
+
+    ${ ( { $recording } ) => $recording ? css`
+        @media (prefers-reduced-motion: no-preference) {
+            animation: ${ pulse } 900ms ease-out infinite;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            box-shadow: 0 0 0 0.35rem rgba( 216, 57, 43, 0.24 ), var(--shadow-soft);
+        }
+    ` : `` }
 
     &:disabled {
         opacity: 0.72;

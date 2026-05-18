@@ -1,5 +1,6 @@
 import { log } from 'mentie/modules/logging.js'
 import { create_export_hashes } from '../export/cache.js'
+import { normalize_export_settings } from '../export/settings.js'
 import {
     clear_all_records,
     delete_record,
@@ -19,6 +20,8 @@ const export_setting_keys = [
     `export_resolution`,
     `preferred_mime_type`
 ]
+
+let first_clip_persistence_requested = false
 
 export const default_settings = {
     export_quality: `standard`,
@@ -132,9 +135,10 @@ const prune_stale_project_exports = async ( project_id ) => {
         load_settings()
     ] )
     const current_clips = sort_clips( clips )
+    const normalized_settings = normalize_export_settings( settings )
     const { settings_hash, clip_manifest_hash } = create_export_hashes( {
         clips: current_clips,
-        settings
+        settings: normalized_settings
     } )
     const stale_export_records = exports.filter( ( export_record ) => {
         return export_record.settings_hash !== settings_hash
@@ -144,16 +148,15 @@ const prune_stale_project_exports = async ( project_id ) => {
     await delete_export_records( stale_export_records )
 }
 
-const with_project_export_status = async ( project ) => {
-    const [ exports, clips, settings ] = await Promise.all( [
+const with_project_export_status = async ( project, normalized_settings ) => {
+    const [ exports, clips ] = await Promise.all( [
         get_index_records( `exports`, `project_id`, project.id ),
-        get_index_records( `clips`, `project_id`, project.id ),
-        load_settings()
+        get_index_records( `clips`, `project_id`, project.id )
     ] )
     const current_clips = sort_clips( clips )
     const { settings_hash, clip_manifest_hash } = create_export_hashes( {
         clips: current_clips,
-        settings
+        settings: normalized_settings
     } )
     const existing_exports = await filter_exports_with_existing_blobs( exports )
     const matching_exports = existing_exports.filter( ( export_record ) => {
@@ -243,13 +246,25 @@ const prune_stale_exports_for_all_projects = async () => {
     )
 }
 
+const request_persistent_storage_soon = () => {
+    request_persistent_storage().catch( ( error ) => {
+        log.warn( `Persistent storage request failed`, error )
+    } )
+}
+
 /**
  * Loads all projects sorted by most recent activity.
  * @returns {Promise<Array>} Project records.
  */
 export async function list_projects() {
-    const projects = await get_all_records( `projects` )
-    const projects_with_export_status = await Promise.all( projects.map( with_project_export_status ) )
+    const [ projects, settings ] = await Promise.all( [
+        get_all_records( `projects` ),
+        load_settings()
+    ] )
+    const normalized_settings = normalize_export_settings( settings )
+    const projects_with_export_status = await Promise.all(
+        projects.map( ( project ) => with_project_export_status( project, normalized_settings ) )
+    )
 
     return sort_projects( projects_with_export_status )
 }
@@ -335,7 +350,7 @@ export async function create_project() {
 
     await put_record( `projects`, project )
     await save_active_project_pointer( project.id )
-    await request_persistent_storage()
+    request_persistent_storage_soon()
 
     return project
 }
@@ -446,7 +461,11 @@ export async function add_clip_to_project( {
         stores.projects.put( updated_project )
     } )
 
-    await request_persistent_storage()
+    if( !first_clip_persistence_requested ) {
+        first_clip_persistence_requested = true
+        request_persistent_storage_soon()
+    }
+
     await prune_stale_project_exports( project_id ).catch( ( error ) => {
         log.warn( `Could not prune stale exports after clip save`, error )
     } )
@@ -691,6 +710,7 @@ export async function get_export_blob( export_id ) {
 export async function delete_all_data() {
     await clear_all_records()
     safe_local_storage.remove( ACTIVE_PROJECT_KEY )
+    first_clip_persistence_requested = false
 }
 
 /**

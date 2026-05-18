@@ -120,6 +120,7 @@ describe( `settings page`, () => {
         render_settings()
 
         expect( await screen.findByText( /Camera access is blocked/ ) ).toBeTruthy()
+        expect( screen.getByText( /allow camera access, then return and try recording again/ ) ).toBeTruthy()
         expect( screen.getByText( `Camera: denied` ) ).toBeTruthy()
         expect( screen.getByText( `Microphone: prompt` ) ).toBeTruthy()
     } )

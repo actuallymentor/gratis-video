@@ -143,6 +143,7 @@ export function ClipQueue( { clips, on_delete } ) {
     const [ preview_url, set_preview_url ] = useState( null )
     const [ preview_error, set_preview_error ] = useState( null )
     const preview_url_ref = useRef( null )
+    const preview_request_ref = useRef( 0 )
 
     const replace_preview_url = useCallback( ( object_url ) => {
         if( preview_url_ref.current ) URL.revokeObjectURL( preview_url_ref.current )
@@ -152,17 +153,26 @@ export function ClipQueue( { clips, on_delete } ) {
     }, [] )
 
     const open_preview = async ( clip ) => {
+        const request_id = preview_request_ref.current + 1
+        preview_request_ref.current = request_id
         set_preview_clip( clip )
+        set_preview_error( null )
+        replace_preview_url( null )
+
+        const preview_is_current = () => preview_request_ref.current === request_id
 
         let blob = null
 
         try {
             blob = await get_clip_blob( clip.id )
         } catch {
+            if( !preview_is_current() ) return
             replace_preview_url( null )
             set_preview_error( `This clip could not be read from local browser storage.` )
             return
         }
+
+        if( !preview_is_current() ) return
 
         if( !blob ) {
             replace_preview_url( null )
@@ -175,6 +185,7 @@ export function ClipQueue( { clips, on_delete } ) {
     }
 
     const close_preview = useCallback( () => {
+        preview_request_ref.current += 1
         set_preview_clip( null )
         set_preview_error( null )
         replace_preview_url( null )

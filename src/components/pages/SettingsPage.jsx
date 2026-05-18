@@ -131,6 +131,25 @@ const format_status_label = ( status ) => {
     return status ? status.replace( /_/g, ` ` ) : `unknown`
 }
 
+const get_permission_recovery_text = ( permission_status ) => {
+    const camera_denied = permission_status.camera === `denied`
+    const microphone_denied = permission_status.microphone === `denied`
+
+    if( camera_denied && microphone_denied ) {
+        return `Open this site's browser permissions, allow camera and microphone access, then return and try recording again.`
+    }
+
+    if( camera_denied ) {
+        return `Open this site's browser permissions, allow camera access, then return and try recording again.`
+    }
+
+    if( microphone_denied ) {
+        return `Open this site's browser permissions to allow microphone access. You can still record video-only clips.`
+    }
+
+    return null
+}
+
 const get_runtime_export_options = () => {
     const support_message = get_export_support_message()
 
@@ -270,6 +289,7 @@ export function SettingsPage() {
     const export_settings_available = !export_support_message
     const has_specific_format_options = export_settings_available && supported_mime_types.length > 0
     const permission_message = media_status_message( permission_status )
+    const permission_recovery_text = get_permission_recovery_text( permission_status )
 
     return <AppFrame>
         <Content>
@@ -291,6 +311,7 @@ export function SettingsPage() {
                         Recording asks for camera and microphone access only when you press record.
                     </StorageText>
                     { permission_message ? <StorageText>{ permission_message }</StorageText> : null }
+                    { permission_recovery_text ? <StorageText>{ permission_recovery_text }</StorageText> : null }
                     <StatusLine>
                         <StatusBadge>
                             <Camera size={ 16 } aria-hidden="true" />

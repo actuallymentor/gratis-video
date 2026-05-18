@@ -1,24 +1,22 @@
 import { get_clip_blob } from '../storage/journal_storage.js'
-import { recording_mime_candidates, select_supported_mime_type, stop_media_stream } from '../media/recorder.js'
+import { stop_media_stream } from '../media/recorder.js'
+import {
+    choose_export_mime_type,
+    export_quality_bits,
+    export_resolution_limits,
+    get_export_support_message
+} from './settings.js'
+
+export {
+    can_compile_project_exports,
+    export_resolution_options,
+    get_export_support_message,
+    get_supported_export_mime_types,
+    get_supported_export_resolutions,
+    normalize_export_settings
+} from './settings.js'
 
 const FPS = 30
-
-const quality_bits = {
-    standard: 2_500_000,
-    high: 5_500_000
-}
-
-const resolution_limits = {
-    source: null,
-    '720p': { width: 1280, height: 720 },
-    '1080p': { width: 1920, height: 1080 }
-}
-
-export const export_resolution_options = [
-    { value: `source`, label: `Source` },
-    { value: `720p`, label: `720p` },
-    { value: `1080p`, label: `1080p` }
-]
 
 const make_abort_error = () => new DOMException( `Export cancelled`, `AbortError` )
 
@@ -99,7 +97,7 @@ const orient_resolution_limit = ( limit, { width, height } ) => {
 export function calculate_export_canvas_size( clips, settings ) {
     const source_width = clips.find( ( clip ) => clip.width )?.width ?? 1280
     const source_height = clips.find( ( clip ) => clip.height )?.height ?? 720
-    const limit = orient_resolution_limit( resolution_limits[ settings.export_resolution ], {
+    const limit = orient_resolution_limit( export_resolution_limits[ settings.export_resolution ], {
         width: source_width,
         height: source_height
     } )
@@ -125,13 +123,6 @@ const draw_video_frame = ( context, video, canvas ) => {
     context.fillStyle = `#0d1718`
     context.fillRect( 0, 0, canvas.width, canvas.height )
     context.drawImage( video, draw_x, draw_y, draw_width, draw_height )
-}
-
-const choose_export_mime_type = ( settings ) => {
-    const preferred = settings.preferred_mime_type
-
-    if( preferred && globalThis.MediaRecorder?.isTypeSupported?.( preferred ) ) return preferred
-    return select_supported_mime_type( recording_mime_candidates )
 }
 
 const create_audio_graph = () => {
@@ -197,7 +188,7 @@ const start_video_playback = async ( video, signal ) => {
 
 const create_export_recorder = ( { stream, mime_type, settings } ) => {
     const base_options = {
-        videoBitsPerSecond: quality_bits[ settings.export_quality ] ?? quality_bits.standard
+        videoBitsPerSecond: export_quality_bits[ settings.export_quality ] ?? export_quality_bits.standard
     }
     const recorder_options = mime_type
         ? { ...base_options, mimeType: mime_type }
@@ -278,110 +269,6 @@ const play_clip_to_canvas = async ( {
         }
 
         cleanup_video( video, object_url )
-    }
-}
-
-const can_record_canvas_stream = ( { width = 16, height = 16, mime_type = null } = {} ) => {
-    if( get_export_support_message() ) return false
-
-    const canvas = document.createElement( `canvas` )
-
-    canvas.width = width
-    canvas.height = height
-
-    let stream = null
-    let recorder = null
-
-    try {
-        stream = canvas.captureStream( FPS )
-        recorder = mime_type
-            ? new MediaRecorder( stream, { mimeType: mime_type } )
-            : new MediaRecorder( stream )
-        return Boolean( recorder )
-    } catch {
-        return false
-    } finally {
-        stop_media_stream( stream )
-    }
-}
-
-const can_record_canvas_resolution = ( { width, height } ) => {
-    return can_record_canvas_stream( { width, height } )
-}
-
-const can_record_canvas_mime_type = ( mime_type ) => {
-    if( !globalThis.MediaRecorder?.isTypeSupported?.( mime_type ) ) return false
-    return can_record_canvas_stream( { mime_type } )
-}
-
-/**
- * Explains why browser-native export compilation is unavailable.
- * @returns {string|null} User-facing unavailable message, or null when supported.
- */
-export function get_export_support_message() {
-    if( !globalThis.MediaRecorder ) return `This browser cannot compile video exports.`
-    if( !globalThis.MediaStream ) return `This browser cannot build a combined export stream.`
-    if( !globalThis.document?.createElement ) return `This browser cannot prepare the export canvas.`
-
-    const canvas = document.createElement( `canvas` )
-    if( !canvas.captureStream ) return `This browser cannot capture a video export from the canvas.`
-
-    return null
-}
-
-/**
- * Checks if this browser has the primitives needed for MVP export compilation.
- * @returns {boolean} Whether export compilation is available.
- */
-export function can_compile_project_exports() {
-    return !get_export_support_message()
-}
-
-/**
- * Lists export resolution options this browser can prove through canvas capture.
- * @returns {Array<Object>} Supported resolution options.
- */
-export function get_supported_export_resolutions() {
-    if( !can_compile_project_exports() ) return []
-
-    const [ source_option, ...scaled_options ] = export_resolution_options
-    const supported_scaled_options = scaled_options.filter( ( { value } ) => {
-        return can_record_canvas_resolution( resolution_limits[ value ] )
-    } )
-
-    return [ source_option, ...supported_scaled_options ]
-}
-
-/**
- * Lists MIME types that this browser can record from the export canvas path.
- * @returns {Array<string>} Supported export MIME types.
- */
-export function get_supported_export_mime_types() {
-    if( !can_compile_project_exports() ) return []
-    return recording_mime_candidates.filter( can_record_canvas_mime_type )
-}
-
-/**
- * Removes persisted export settings that this browser cannot prove at runtime.
- * @param {Object} settings - Stored export and feedback settings.
- * @returns {Object} Settings safe for export UI, cache hashes, and compilation.
- */
-export function normalize_export_settings( settings = {} ) {
-    const supported_resolution_values = get_supported_export_resolutions().map( ( { value } ) => value )
-    const supported_mime_types = get_supported_export_mime_types()
-    const export_quality = quality_bits[ settings.export_quality ] ? settings.export_quality : `standard`
-    const export_resolution = supported_resolution_values.includes( settings.export_resolution )
-        ? settings.export_resolution
-        : `source`
-    const preferred_mime_type = supported_mime_types.includes( settings.preferred_mime_type )
-        ? settings.preferred_mime_type
-        : null
-
-    return {
-        ...settings,
-        export_quality,
-        export_resolution,
-        preferred_mime_type
     }
 }
 

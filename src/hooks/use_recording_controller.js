@@ -58,11 +58,13 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const set_storage_estimate = useAppStore( ( state ) => state.set_storage_estimate )
     const set_storage_persisted = useAppStore( ( state ) => state.set_storage_persisted )
 
+    const mounted_ref = useRef( true )
     const recorder_ref = useRef( null )
     const stream_ref = useRef( null )
     const stop_promise_ref = useRef( null )
     const phase_ref = useRef( `idle` )
     const pointer_started_at_ref = useRef( 0 )
+    const pending_forced_stop_ref = useRef( false )
     const pending_release_duration_ref = useRef( null )
     const stopping_ref = useRef( null )
     const recording_mode_ref = useRef( null )
@@ -75,9 +77,30 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const clear_current_stream = useCallback( () => {
         stop_media_stream( stream_ref.current )
         stream_ref.current = null
-        set_stream( null )
+        if( mounted_ref.current ) set_stream( null )
         set_media_stream_state( `idle` )
     }, [ set_media_stream_state ] )
+
+    const reset_startup_after_forced_stop = useCallback( ( next_stream ) => {
+        stop_media_stream( next_stream )
+        pending_forced_stop_ref.current = false
+        pending_release_duration_ref.current = null
+        recorder_ref.current = null
+        stop_promise_ref.current = null
+        recording_mode_ref.current = null
+        stream_ref.current = null
+        set_media_stream_state( `idle` )
+        set_phase( `idle` )
+
+        if( !mounted_ref.current ) return
+
+        set_stream( null )
+        set_recording_mode( null )
+        set_recording_started_at( null )
+    }, [
+        set_media_stream_state,
+        set_phase
+    ] )
 
     const refresh_environment_state = useCallback( async () => {
         const [
@@ -153,6 +176,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
     const stop_recording = useCallback( async () => {
         if( phase_ref.current === `starting` ) {
+            pending_forced_stop_ref.current = true
             pending_release_duration_ref.current = HOLD_THRESHOLD_MS
             return null
         }
@@ -184,10 +208,13 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             } finally {
                 recorder_ref.current = null
                 stop_promise_ref.current = null
+                pending_forced_stop_ref.current = false
                 pending_release_duration_ref.current = null
                 recording_mode_ref.current = null
-                set_recording_mode( null )
-                set_recording_started_at( null )
+                if( mounted_ref.current ) {
+                    set_recording_mode( null )
+                    set_recording_started_at( null )
+                }
                 clear_current_stream()
                 set_phase( `idle` )
                 stopping_ref.current = null
@@ -208,6 +235,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         if( phase_ref.current !== `idle` || !project_id ) return
 
         set_error_message( null )
+        pending_forced_stop_ref.current = false
         pending_release_duration_ref.current = null
         recording_mode_ref.current = null
         set_recording_mode( null )
@@ -219,6 +247,11 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
         try {
             next_stream = await request_capture_stream()
+            if( pending_forced_stop_ref.current ) {
+                reset_startup_after_forced_stop( next_stream )
+                return
+            }
+
             stream_ref.current = next_stream
             set_media_stream_state( `active` )
             if( next_stream.getAudioTracks?.().length === 0 ) {
@@ -282,15 +315,18 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 set_recording_mode( `tap` )
             }
         } catch ( error ) {
-            set_error_message( get_capture_error_message( error ) )
-            toast.error( `Recording unavailable` )
+            if( mounted_ref.current ) {
+                set_error_message( get_capture_error_message( error ) )
+                toast.error( `Recording unavailable` )
+            }
             recorder_ref.current = null
             stop_promise_ref.current = null
             stopping_ref.current = null
+            pending_forced_stop_ref.current = false
             if( next_stream && stream_ref.current !== next_stream ) stop_media_stream( next_stream )
             pending_release_duration_ref.current = null
             recording_mode_ref.current = null
-            set_recording_mode( null )
+            if( mounted_ref.current ) set_recording_mode( null )
             clear_current_stream()
             set_phase( `idle` )
             refresh_environment_state().catch( ( refresh_error ) => log.warn( `Environment refresh failed`, refresh_error ) )
@@ -299,6 +335,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         clear_current_stream,
         project_id,
         refresh_environment_state,
+        reset_startup_after_forced_stop,
         set_phase,
         set_media_stream_state,
         settings.haptics_enabled,
@@ -355,8 +392,19 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             return
         }
 
+        if( phase_ref.current === `starting` ) {
+            stop_recording()
+            return
+        }
+
         if( phase_ref.current === `recording` ) stop_recording()
     }, [ start_recording, stop_recording ] )
+
+    useEffect( () => {
+        return () => {
+            mounted_ref.current = false
+        }
+    }, [] )
 
     useEffect( () => {
         if( recording_state !== `recording` || !recording_started_at ) return undefined

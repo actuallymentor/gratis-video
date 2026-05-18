@@ -126,12 +126,17 @@ export function ProjectCapturePage() {
     const [ export_panel_record, set_export_panel_record ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
     const cached_export_blob_ref = useRef( null )
+    const project_id_ref = useRef( project_id )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
 
-    const redirect_missing_project = useCallback( async () => {
+    project_id_ref.current = project_id
+
+    const redirect_missing_project = useCallback( async ( missing_project_id ) => {
         const active_project = await get_active_project().catch( () => null )
+
+        if( project_id_ref.current !== missing_project_id ) return
 
         set_active_project_id( active_project?.id ?? null )
         navigate( active_project ? `/projects/${ active_project.id }` : `/projects`, { replace: true } )
@@ -163,15 +168,19 @@ export function ProjectCapturePage() {
     }, [ clips, settings ] )
 
     const refresh_project = useCallback( async () => {
+        const requested_project_id = project_id
+
         try {
             const [ loaded_project, loaded_clips, loaded_settings ] = await Promise.all( [
-                get_project( project_id ),
-                get_project_clips( project_id ),
+                get_project( requested_project_id ),
+                get_project_clips( requested_project_id ),
                 load_settings()
             ] )
 
+            if( project_id_ref.current !== requested_project_id ) return
+
             if( !loaded_project ) {
-                await redirect_missing_project()
+                await redirect_missing_project( requested_project_id )
                 return
             }
 
@@ -191,24 +200,36 @@ export function ProjectCapturePage() {
     } )
 
     useEffect( () => {
+        let cancelled = false
+        const requested_project_id = project_id
+
         const activate_project = async () => {
             try {
-                const loaded_project = await get_project( project_id )
+                const loaded_project = await get_project( requested_project_id )
+
+                if( cancelled || project_id_ref.current !== requested_project_id ) return
 
                 if( !loaded_project ) {
-                    await redirect_missing_project()
+                    await redirect_missing_project( requested_project_id )
                     return
                 }
 
-                await set_active_project( project_id )
-                set_active_project_id( project_id )
+                await set_active_project( requested_project_id )
+                if( cancelled || project_id_ref.current !== requested_project_id ) return
+
+                set_active_project_id( requested_project_id )
                 await refresh_project()
             } catch {
+                if( cancelled || project_id_ref.current !== requested_project_id ) return
                 set_storage_error( `Local browser storage is unavailable, so this project cannot be opened.` )
             }
         }
 
         activate_project()
+
+        return () => {
+            cancelled = true
+        }
     }, [ project_id, redirect_missing_project, refresh_project, set_active_project_id ] )
 
     useEffect( () => {

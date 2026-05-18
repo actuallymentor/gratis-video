@@ -7,7 +7,8 @@ import {
     MemoryRouter,
     Route,
     Routes,
-    useLocation
+    useLocation,
+    useNavigate
 } from 'react-router'
 import { ProjectCapturePage } from './ProjectCapturePage.jsx'
 import {
@@ -136,6 +137,15 @@ const LocationProbe = () => {
     return <div>{ location.pathname }</div>
 }
 
+const make_deferred = () => {
+    let resolve
+    const promise = new Promise( ( promise_resolve ) => {
+        resolve = promise_resolve
+    } )
+
+    return { promise, resolve }
+}
+
 const render_capture = () => render(
     <MemoryRouter initialEntries={ [ `/projects/project-1` ] }>
         <Routes>
@@ -144,6 +154,15 @@ const render_capture = () => render(
         </Routes>
     </MemoryRouter>
 )
+
+function SwitchableCapture() {
+    const navigate = useNavigate()
+
+    return <>
+        <button type="button" onClick={ () => navigate( `/projects/project-2` ) }>Open second project</button>
+        <ProjectCapturePage />
+    </>
+}
 
 describe( `project capture page`, () => {
     beforeEach( () => {
@@ -428,5 +447,45 @@ describe( `project capture page`, () => {
 
         expect( await screen.findByText( `/projects` ) ).toBeTruthy()
         expect( useAppStore.getState().active_project_id ).toBe( null )
+    } )
+
+    test( `ignores stale project loads after navigating to another capture route`, async () => {
+        const user = userEvent.setup()
+        const first_project = {
+            id: `project-1`,
+            title: `First project`
+        }
+        const second_project = {
+            id: `project-2`,
+            title: `Second project`
+        }
+        const first_project_lookup = make_deferred()
+
+        vi.mocked( get_project ).mockImplementation( async ( project_id ) => {
+            if( project_id === `project-1` ) return first_project_lookup.promise
+            return second_project
+        } )
+        vi.mocked( get_project_clips ).mockResolvedValue( [] )
+
+        render(
+            <MemoryRouter initialEntries={ [ `/projects/project-1` ] }>
+                <Routes>
+                    <Route path="/projects/:project_id" element={ <SwitchableCapture /> } />
+                </Routes>
+            </MemoryRouter>
+        )
+
+        await user.click( screen.getByRole( `button`, { name: `Open second project` } ) )
+
+        expect( await screen.findByText( `Second project` ) ).toBeTruthy()
+
+        await act( async () => {
+            first_project_lookup.resolve( first_project )
+            await first_project_lookup.promise
+        } )
+
+        expect( screen.queryByText( `First project` ) ).toBe( null )
+        expect( useAppStore.getState().active_project_id ).toBe( `project-2` )
+        expect( set_active_project ).not.toHaveBeenCalledWith( `project-1` )
     } )
 } )

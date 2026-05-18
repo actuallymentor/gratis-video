@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.12] - 2026-05-18
+
+### Added
+- add startup, route-race, preview, and export-cache regressions
+
+### Fixed
+- keep export-ready status aligned with normalized settings
+- stop pending camera startup before opening a recorder
+- ignore stale capture route and clip preview loads
+- respect reduced motion and clarify permission recovery
+
 ## [0.2.11] - 2026-05-18
 
 ### Added

@@ -20,6 +20,15 @@ const clip = {
     created_at: `2026-05-17T10:00:00.000Z`
 }
 
+const make_deferred = () => {
+    let resolve
+    const promise = new Promise( ( promise_resolve ) => {
+        resolve = promise_resolve
+    } )
+
+    return { promise, resolve }
+}
+
 describe( `clip queue`, () => {
     beforeEach( () => {
         vi.clearAllMocks()
@@ -74,6 +83,39 @@ describe( `clip queue`, () => {
         await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
 
         expect( await screen.findByText( /could not be read from local browser storage/ ) ).toBeTruthy()
+    } )
+
+    test( `ignores stale preview loads after a newer clip is selected`, async () => {
+        const user = userEvent.setup()
+        const first_preview = make_deferred()
+        const second_clip = {
+            ...clip,
+            id: `clip-2`,
+            created_at: `2026-05-17T10:00:02.000Z`
+        }
+        const { container } = render( <ClipQueue clips={ [ clip, second_clip ] } on_delete={ vi.fn() } /> )
+
+        vi.mocked( get_clip_blob ).mockImplementation( ( clip_id ) => {
+            if( clip_id === `clip-1` ) return first_preview.promise
+            return Promise.resolve( new Blob( [ `second` ], { type: `video/webm` } ) )
+        } )
+        URL.createObjectURL
+            .mockReturnValueOnce( `blob:second-preview` )
+            .mockReturnValueOnce( `blob:first-preview` )
+
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 2` } ) )
+
+        await waitFor( () => {
+            expect( container.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:second-preview` )
+        } )
+
+        first_preview.resolve( new Blob( [ `first` ], { type: `video/webm` } ) )
+
+        await waitFor( () => {
+            expect( container.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:second-preview` )
+        } )
+        expect( URL.createObjectURL ).toHaveBeenCalledTimes( 1 )
     } )
 
     test( `reloads thumbnails when async media details update the clip`, async () => {
