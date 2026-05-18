@@ -171,6 +171,7 @@ export function ExportPanel( {
     const set_export_progress = useAppStore( ( state ) => state.set_export_progress )
 
     const update_active_export_progress = useCallback( ( progress ) => {
+        log.insane( `Export progress update`, progress )
         set_export_progress( {
             active: true,
             percent: progress.percent ?? 0,
@@ -179,6 +180,9 @@ export function ExportPanel( {
     }, [ set_export_progress ] )
 
     const cancel_export = useCallback( () => {
+        log.info( `Export cancelled by user`, {
+            project_id: project.id
+        } )
         abort_controller_ref.current?.abort()
         set_export_progress( {
             active: false,
@@ -186,7 +190,7 @@ export function ExportPanel( {
             message: `Export cancelled`
         } )
         on_close()
-    }, [ on_close, set_export_progress ] )
+    }, [ on_close, project.id, set_export_progress ] )
 
     const close_export_panel = useCallback( () => {
         if( status === `compiling` ) return
@@ -231,9 +235,18 @@ export function ExportPanel( {
             } )
 
             try {
+                log.info( `Export panel compile started`, {
+                    project_id: export_project.id,
+                    clip_count: export_clips.length
+                } )
                 const { settings_hash, clip_manifest_hash } = create_export_hashes( {
                     clips: export_clips,
                     settings: export_settings
+                } )
+                log.debug( `Export cache hashes created`, {
+                    project_id: export_project.id,
+                    settings_hash,
+                    clip_manifest_hash
                 } )
                 const compiled_export = await compile_project_export( {
                     clips: export_clips,
@@ -257,6 +270,13 @@ export function ExportPanel( {
                     current_hashes.settings_hash !== settings_hash
                     || current_hashes.clip_manifest_hash !== clip_manifest_hash
                 ) {
+                    log.warn( `Project changed while export was compiling`, {
+                        project_id: export_project.id,
+                        expected_settings_hash: settings_hash,
+                        actual_settings_hash: current_hashes.settings_hash,
+                        expected_clip_manifest_hash: clip_manifest_hash,
+                        actual_clip_manifest_hash: current_hashes.clip_manifest_hash
+                    } )
                     throw new Error( `Project changed while the export was compiling. Start the export again.` )
                 }
 
@@ -272,6 +292,12 @@ export function ExportPanel( {
                         ...compiled_export
                     } )
                     next_export_record = saved_export
+                    log.info( `Compiled export cached`, {
+                        project_id: export_project.id,
+                        export_id: saved_export.id,
+                        size: compiled_export.blob.size,
+                        mime_type: compiled_export.mime_type
+                    } )
                 } catch ( error ) {
                     if( is_missing_project_error( error ) || is_project_changed_error( error ) ) throw error
 
@@ -313,6 +339,15 @@ export function ExportPanel( {
                     percent: 100,
                     message: `Export ready`
                 } )
+                log.info( `Export panel ready`, {
+                    project_id: export_project.id,
+                    export_id: next_export_record.id,
+                    cached: Boolean( saved_export ),
+                    warning_count: [
+                        ...compiled_warnings,
+                        cache_warning
+                    ].filter( Boolean ).length
+                } )
                 toast.success( saved_export ? `Export ready` : `Export ready, but not cached` )
             } catch ( error ) {
                 if( !is_current_export() ) return
@@ -326,6 +361,9 @@ export function ExportPanel( {
                         percent: 0,
                         message: `Export cancelled`
                     } )
+                    log.info( `Export compile aborted`, {
+                        project_id: export_project.id
+                    } )
                     return
                 }
 
@@ -337,6 +375,7 @@ export function ExportPanel( {
                     percent: 0,
                     message: `Export failed`
                 } )
+                log.error( `Export panel failed`, error )
                 toast.error( `Export failed` )
             }
         }
@@ -365,6 +404,10 @@ export function ExportPanel( {
             set_ready_warnings( [] )
             set_export_record( initial_export_record )
             export_blob_ref.current = null
+            log.debug( `Loading ready export blob`, {
+                project_id: project.id,
+                export_id: initial_export_record.id
+            } )
 
             const blob = load_initial_export_blob_ref.current
                 ? await load_initial_export_blob_ref.current( initial_export_record )
@@ -384,6 +427,11 @@ export function ExportPanel( {
                 active: false,
                 percent: 100,
                 message: `Export ready`
+            } )
+            log.info( `Ready export blob loaded`, {
+                project_id: project.id,
+                export_id: initial_export_record.id,
+                size: blob.size
             } )
         }
 
@@ -420,13 +468,25 @@ export function ExportPanel( {
         if( !export_record || !export_blob ) return
 
         try {
+            log.info( `Ready export share requested`, {
+                project_id: project.id,
+                export_id: export_record.id
+            } )
             const result = await share_export_file( { project, export_record, blob: export_blob } )
 
-            if( result !== `unsupported` ) return
+            if( result !== `unsupported` ) {
+                log.info( `Ready export share finished`, {
+                    project_id: project.id,
+                    export_id: export_record.id,
+                    result
+                } )
+                return
+            }
 
             download_export_file( export_record, export_blob )
             toast( `Native sharing is unavailable here. Download started.` )
-        } catch {
+        } catch ( error ) {
+            log.warn( `Ready export share failed; falling back to download`, error )
             download_export_file( export_record, export_blob )
             toast( `Sharing failed. Download started.` )
         }
@@ -437,6 +497,10 @@ export function ExportPanel( {
 
         if( !export_record || !export_blob ) return
 
+        log.info( `Ready export download requested`, {
+            project_id: project.id,
+            export_id: export_record.id
+        } )
         download_export_file( export_record, export_blob )
     }
 

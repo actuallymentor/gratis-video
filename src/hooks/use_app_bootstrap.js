@@ -21,9 +21,16 @@ export function useAppBootstrap() {
     useEffect( () => {
         let cancelled = false
 
+        log.info( `App bootstrap started` )
+
         const read_boot_value = async ( label, load_value, fallback = null ) => {
             try {
-                return await load_value()
+                const value = await load_value()
+
+                log.debug( `${ label } loaded during app bootstrap` )
+                log.insane( `${ label } bootstrap payload`, value )
+
+                return value
             } catch ( error ) {
                 log.warn( `${ label } failed during app bootstrap`, error )
                 return fallback
@@ -31,9 +38,14 @@ export function useAppBootstrap() {
         }
 
         const refresh_permissions = async () => {
+            log.debug( `Refreshing passive permission status` )
+
             try {
                 const permission_status = await check_media_permissions()
-                if( !cancelled ) set_permission_status( permission_status )
+                if( !cancelled ) {
+                    set_permission_status( permission_status )
+                    log.info( `Permission status refreshed`, permission_status )
+                }
             } catch ( error ) {
                 log.warn( `Permission refresh failed`, error )
             }
@@ -42,13 +54,21 @@ export function useAppBootstrap() {
         const load_active_project_state = async () => {
             const active_project = await read_boot_value( `Active project lookup`, get_active_project )
 
-            if( !cancelled ) set_active_project_id( active_project?.id ?? null )
+            if( !cancelled ) {
+                set_active_project_id( active_project?.id ?? null )
+                log.info( `Active project resolved`, {
+                    project_id: active_project?.id ?? null
+                } )
+            }
         }
 
         const load_permission_state = async () => {
             const permission_status = await read_boot_value( `Permission check`, check_media_permissions )
 
-            if( permission_status && !cancelled ) set_permission_status( permission_status )
+            if( permission_status && !cancelled ) {
+                set_permission_status( permission_status )
+                log.info( `Initial permission status loaded`, permission_status )
+            }
         }
 
         const load_storage_state = async () => {
@@ -64,6 +84,11 @@ export function useAppBootstrap() {
 
             set_storage_estimate( storage_estimate )
             set_storage_persisted( storage_persisted )
+            log.info( `Initial storage status loaded`, {
+                persisted: storage_persisted,
+                usage: storage_estimate?.usage ?? null,
+                quota: storage_estimate?.quota ?? null
+            } )
         }
 
         // Resolve the first route from the active project lookup; permission and

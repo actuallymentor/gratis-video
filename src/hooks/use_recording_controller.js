@@ -86,9 +86,13 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const recording_mode_ref = useRef( null )
 
     const set_phase = useCallback( ( phase ) => {
+        log.debug( `Recording phase changed`, {
+            project_id,
+            phase
+        } )
         phase_ref.current = phase
         set_recording_state( phase )
-    }, [ set_recording_state ] )
+    }, [ project_id, set_recording_state ] )
 
     const clear_current_stream = useCallback( () => {
         stop_media_stream( stream_ref.current )
@@ -132,6 +136,12 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_permission_status( permission_status )
         set_storage_estimate( storage_estimate )
         set_storage_persisted( storage_persisted )
+        log.debug( `Recording environment state refreshed`, {
+            permission_status,
+            storage_persisted,
+            storage_usage: storage_estimate?.usage ?? null,
+            storage_quota: storage_estimate?.quota ?? null
+        } )
     }, [
         set_permission_status,
         set_storage_estimate,
@@ -205,7 +215,26 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         const measured_duration_ms = ( ended_at ?? Date.now() ) - started_at
         const blob = new Blob( chunks, { type: mime_type || `video/webm` } )
 
+        log.debug( `Recording save started`, {
+            project_id,
+            chunk_count: chunks.length,
+            measured_duration_ms,
+            size: blob.size,
+            mime_type: blob.type || mime_type
+        } )
+        log.insane( `Recording chunks payload`, {
+            chunks: chunks.map( ( chunk ) => ( {
+                size: chunk.size,
+                type: chunk.type
+            } ) )
+        } )
+
         if( measured_duration_ms < MINIMUM_CLIP_MS || blob.size === 0 ) {
+            log.debug( `Recording discarded because it was too short`, {
+                project_id,
+                measured_duration_ms,
+                size: blob.size
+            } )
             toast( `Clip was too short to save.` )
             return null
         }
@@ -218,6 +247,14 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             width: null,
             height: null,
             thumbnail_blob: null
+        } )
+
+        log.debug( `Clip saved`, {
+            project_id,
+            clip_id: clip.id,
+            duration_ms: clip.duration_ms,
+            size: blob.size,
+            mime_type: clip.mime_type
         } )
 
         try {
@@ -242,18 +279,30 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
     const stop_recording = useCallback( async () => {
         if( phase_ref.current === `starting` ) {
+            log.debug( `Recording stop requested while capture is still starting`, {
+                project_id
+            } )
             pending_forced_stop_ref.current = true
             pending_release_duration_ref.current = HOLD_THRESHOLD_MS
             return null
         }
 
-        if( stopping_ref.current ) return stopping_ref.current
+        if( stopping_ref.current ) {
+            log.debug( `Recording stop already in progress`, {
+                project_id
+            } )
+            return stopping_ref.current
+        }
 
         const stop_work = async () => {
             const recorder = recorder_ref.current
 
             if( !recorder ) return null
 
+            log.debug( `Recording stop requested`, {
+                project_id,
+                recorder_state: recorder.state
+            } )
             set_phase( `saving` )
             pulse_haptic( settings.haptics_enabled )
             const ended_at = Date.now()
@@ -299,6 +348,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         return stopping_ref.current
     }, [
         clear_current_stream,
+        project_id,
         save_recorded_clip,
         set_phase,
         settings.haptics_enabled,
@@ -306,12 +356,19 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     ] )
 
     const start_recording = useCallback( async ( { classify_later = false } = {} ) => {
-        if( phase_ref.current !== `idle` || !project_id ) return
+        if( phase_ref.current !== `idle` || !project_id ) {
+            log.debug( `Recording start ignored`, {
+                project_id,
+                phase: phase_ref.current
+            } )
+            return
+        }
 
         set_error_message( null )
         set_permission_recovery_needed( false )
 
         if( !globalThis.MediaRecorder ) {
+            log.error( `Recording unavailable because MediaRecorder is missing` )
             set_error_message( media_recorder_unavailable_message )
             toast.error( `Recording unavailable` )
             refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
@@ -328,10 +385,17 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         let next_stream = null
 
         try {
+            log.debug( `Recording start requested`, {
+                project_id,
+                audio_enabled: permission_status.microphone !== `denied`
+            } )
             next_stream = await request_capture_stream( {
                 audio_enabled: permission_status.microphone !== `denied`
             } )
             if( pending_forced_stop_ref.current ) {
+                log.debug( `Recording startup stopped before recorder activation`, {
+                    project_id
+                } )
                 reset_startup_after_forced_stop( next_stream )
                 return
             }
@@ -339,13 +403,26 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             stream_ref.current = next_stream
             set_media_stream_state( `active` )
             const capture_warning = next_stream[ CAPTURE_WARNING_KEY ]
+            log.debug( `Capture stream opened`, {
+                project_id,
+                video_tracks: next_stream.getVideoTracks?.().length ?? 0,
+                audio_tracks: next_stream.getAudioTracks?.().length ?? 0,
+                capture_warning: capture_warning ?? null
+            } )
 
             if(
                 permission_status.microphone === `denied`
                 || capture_warning === `microphone_denied`
             ) {
+                log.warn( `Recording continues without microphone access`, {
+                    project_id,
+                    capture_warning: capture_warning ?? null
+                } )
                 set_error_message( `Microphone access is blocked, so this clip is recording video only.` )
             } else if( next_stream.getAudioTracks?.().length === 0 ) {
+                log.warn( `Recording stream has no audio tracks`, {
+                    project_id
+                } )
                 set_error_message( `Microphone could not be used, so this clip is recording video only.` )
             }
 
@@ -353,6 +430,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 if( phase_ref.current === `recording` || phase_ref.current === `starting` ) stop_recording()
             }
             const start_recorder_attempt = ( mime_type ) => {
+                log.debug( `Recorder start attempt`, {
+                    project_id,
+                    mime_type: mime_type ?? `browser-default`
+                } )
                 const recorder = create_media_recorder( next_stream, {
                     mime_type,
                     fallback_to_default: false
@@ -395,6 +476,11 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 recording_result_ref.current.mime_type = recorder.mimeType || null
                 stop_promise_ref.current = stopped
                 recorder.start( 250 )
+                log.debug( `Recorder started`, {
+                    project_id,
+                    requested_mime_type: mime_type ?? null,
+                    recorder_mime_type: recorder.mimeType || null
+                } )
 
                 return {
                     recorder,
@@ -412,6 +498,11 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 } catch ( error ) {
                     const failed_recorder = recorder_ref.current
 
+                    log.warn( `Recorder start attempt failed`, {
+                        project_id,
+                        mime_type: mime_type ?? `browser-default`,
+                        error
+                    } )
                     start_errors.push( error )
                     clear_recorder_handlers( failed_recorder )
                     try {
@@ -441,6 +532,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             pulse_haptic( settings.haptics_enabled )
             play_sound_feedback( settings.sounds_enabled, `start` )
             set_phase( `recording` )
+            log.debug( `Recording started`, {
+                project_id,
+                started_at
+            } )
             refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
 
             if( classify_later ) {
@@ -463,6 +558,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 set_recording_mode( `tap` )
             }
         } catch ( error ) {
+            log.error( `Recording could not start`, error )
             if( mounted_ref.current ) {
                 set_error_message( get_capture_error_message( error ) )
                 set_permission_recovery_needed(

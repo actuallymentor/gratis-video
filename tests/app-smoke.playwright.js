@@ -256,6 +256,38 @@ test.afterEach( async ( { page } ) => {
 } )
 
 test.describe( `daily video journal app`, () => {
+    test( `emits mentie diagnostics to the browser console`, async ( { page } ) => {
+        const console_messages = []
+        const console_text = () => console_messages.join( `\n` )
+
+        page.on( `console`, ( message ) => {
+            if( [ `log`, `info` ].includes( message.type() ) ) {
+                console_messages.push( message.text() )
+            }
+        } )
+
+        await page.goto( `/projects?loglevel=info` )
+
+        await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+        await expect.poll( console_text ).toContain( `Daily Video Journal app starting` )
+        await expect.poll( console_text ).toContain( `Project list loaded` )
+
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
+
+        await expect( page ).toHaveURL( /\/projects\/[^/]+/ )
+        await expect.poll( console_text ).toContain( `Project created` )
+
+        await page.goto( `/projects?loglevel=debug` )
+
+        await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+        await expect.poll( console_text ).toContain( `Project list load started` )
+
+        await page.goto( `/projects?loglevel=insane` )
+
+        await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+        await expect.poll( console_text ).toContain( `Project list payload` )
+    } )
+
     test( `creates a project, opens capture, and keeps the active route`, async ( { page } ) => {
         await page.goto( `/` )
 

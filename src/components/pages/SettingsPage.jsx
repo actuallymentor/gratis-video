@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useLocation, useNavigate } from 'react-router'
+import { log } from 'mentie/modules/logging.js'
 import styled from 'styled-components'
 import { ArrowLeft, Camera, Mic, Trash2 } from 'lucide-react'
 import { BottomAppBar } from '../atoms/BottomAppBar.jsx'
@@ -196,6 +197,8 @@ export function SettingsPage() {
 
     useEffect( () => {
         const load = async () => {
+            log.debug( `Settings load started` )
+
             try {
                 const [ loaded_settings, estimate, persisted ] = await Promise.all( [
                     load_settings(),
@@ -212,7 +215,20 @@ export function SettingsPage() {
                 set_storage_estimate( estimate )
                 set_storage_persisted( persisted )
                 set_storage_error( null )
-            } catch {
+                log.info( `Settings loaded`, {
+                    persisted,
+                    usage: estimate?.usage ?? null,
+                    quota: estimate?.quota ?? null,
+                    export_format_count: export_options.mime_types.length,
+                    export_resolution_count: export_options.resolutions.length
+                } )
+                log.insane( `Settings payload`, {
+                    settings: normalize_export_settings( loaded_settings ),
+                    export_options,
+                    estimate
+                } )
+            } catch ( error ) {
+                log.error( `Settings load failed`, error )
                 const export_options = get_runtime_export_options()
 
                 set_storage_error( `Local browser storage is unavailable, so settings cannot be saved here.` )
@@ -237,6 +253,8 @@ export function SettingsPage() {
         }
         const normalized_settings = normalize_export_settings( next_settings )
 
+        log.debug( `Setting update requested`, patch )
+
         // Keep controls responsive while the IndexedDB save settles.
         replace_settings( normalized_settings )
 
@@ -245,7 +263,12 @@ export function SettingsPage() {
             if( settings_ref.current === normalized_settings ) {
                 replace_settings( normalize_export_settings( saved_settings ) )
             }
-        } catch {
+            log.info( `Settings saved`, {
+                changed_keys: Object.keys( patch )
+            } )
+            log.insane( `Saved settings payload`, saved_settings )
+        } catch ( error ) {
+            log.error( `Setting could not be saved`, error )
             toast.error( `Setting could not be saved` )
             if( settings_ref.current === normalized_settings ) replace_settings( previous_settings )
         }
@@ -253,14 +276,19 @@ export function SettingsPage() {
 
     const delete_everything = async () => {
         const confirmed = window.confirm( `Delete every project, clip, and export stored in this browser?` )
-        if( !confirmed ) return
+        if( !confirmed ) {
+            log.debug( `Delete all local data cancelled` )
+            return
+        }
 
         try {
             await delete_all_data()
             set_active_project_id( null )
+            log.info( `All local journal data deleted by user action` )
             toast( `Local data deleted` )
             navigate( `/projects`, { replace: true } )
-        } catch {
+        } catch ( error ) {
+            log.error( `Local data could not be deleted`, error )
             toast.error( `Local data could not be deleted` )
         }
     }

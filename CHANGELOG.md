@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.15] - 2026-05-18
+
+### Added
+- add mentie browser diagnostics for core user flows
+- add browser console log-level smoke coverage
+
 ## [0.3.14] - 2026-05-18
 
 ### Added

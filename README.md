@@ -42,5 +42,6 @@ npm run test:e2e
 - Export controls and saved export preferences are limited to options this browser supports.
 - Project rows show when a cached export is ready for the current clips and settings.
 - Cached export metadata stays current after project renames and export setting changes.
+- Browser diagnostics use Mentie logging; add `?loglevel=info`, `?loglevel=debug`, or `?loglevel=insane` to inspect runtime flow in the console.
 - Clearing or deleting the active project keeps the app on project history until another project is opened or created.
 - The PWA service worker caches the app shell for offline startup after first load.

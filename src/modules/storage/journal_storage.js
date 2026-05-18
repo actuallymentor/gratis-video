@@ -334,6 +334,7 @@ const enqueue_settings_save = ( save_settings_work ) => {
  * @returns {Promise<Array>} Project records.
  */
 export async function list_projects() {
+    log.debug( `Storage list_projects started` )
     const [ projects, settings ] = await Promise.all( [
         get_all_records( `projects` ),
         load_settings()
@@ -343,7 +344,14 @@ export async function list_projects() {
         projects.map( ( project ) => with_project_export_status( project, normalized_settings ) )
     )
 
-    return sort_projects( projects_with_export_status )
+    const sorted_projects = sort_projects( projects_with_export_status )
+
+    log.debug( `Storage list_projects finished`, {
+        project_count: sorted_projects.length
+    } )
+    log.insane( `Storage list_projects payload`, sorted_projects )
+
+    return sorted_projects
 }
 
 /**
@@ -428,6 +436,8 @@ export async function create_project() {
     const timestamp = now_iso()
     const created_date = new Date( timestamp )
 
+    log.debug( `Storage create_project started` )
+
     const project = await write_transaction_result( [ `projects`, `settings` ], ( stores, { complete, fail } ) => {
         const projects_request = stores.projects.getAll()
 
@@ -452,6 +462,10 @@ export async function create_project() {
 
     safe_local_storage.set( ACTIVE_PROJECT_KEY, project.id )
     request_persistent_storage_soon()
+    log.info( `Storage project created`, {
+        project_id: project.id,
+        title: project.title
+    } )
 
     return project
 }
@@ -516,6 +530,9 @@ export async function rename_project( project_id, title ) {
  * @returns {Promise<void>}
  */
 export async function delete_project( project_id ) {
+    log.info( `Storage project deletion started`, {
+        project_id
+    } )
     const store_names = [
         `projects`,
         `clips`,
@@ -645,6 +662,10 @@ export async function delete_project( project_id ) {
     if( delete_result?.cleared_active || safe_local_storage.get( ACTIVE_PROJECT_KEY ) === project_id ) {
         safe_local_storage.remove( ACTIVE_PROJECT_KEY )
     }
+    log.info( `Storage project deleted`, {
+        project_id,
+        cleared_active: Boolean( delete_result?.cleared_active )
+    } )
 }
 
 /**
@@ -668,6 +689,12 @@ export async function add_clip_to_project( {
     height = null,
     thumbnail_blob = null
 } ) {
+    log.debug( `Storage add_clip_to_project started`, {
+        project_id,
+        duration_ms,
+        size: blob.size,
+        mime_type
+    } )
     const clip = await write_transaction_result( [
         `projects`,
         `clips`,
@@ -737,6 +764,14 @@ export async function add_clip_to_project( {
 
     await prune_stale_project_exports( project_id ).catch( ( error ) => {
         log.warn( `Could not prune stale exports after clip save`, error )
+    } )
+
+    log.info( `Storage clip saved`, {
+        project_id,
+        clip_id: clip.id,
+        duration_ms: clip.duration_ms,
+        size: blob.size,
+        mime_type
     } )
 
     return clip
@@ -1046,6 +1081,10 @@ export async function load_settings() {
  * @returns {Promise<Object>} Saved settings.
  */
 export async function save_settings( settings ) {
+    log.debug( `Storage save_settings queued`, {
+        settings_keys: Object.keys( settings )
+    } )
+
     return enqueue_settings_save( async () => {
         const {
             previous_settings,
@@ -1082,6 +1121,11 @@ export async function save_settings( settings ) {
             await prune_stale_exports_for_all_projects()
         }
 
+        log.info( `Storage settings saved`, {
+            settings_keys: Object.keys( settings )
+        } )
+        log.insane( `Storage settings payload`, settings_without_key )
+
         return settings_without_key
     } )
 }
@@ -1103,7 +1147,14 @@ export async function save_export_record( {
         throw new Error( `Export did not produce a valid video file.` )
     }
 
-    return write_transaction_result( [
+    log.debug( `Storage save_export_record started`, {
+        project_id,
+        size: blob.size,
+        mime_type,
+        duration_ms
+    } )
+
+    const export_record = await write_transaction_result( [
         `projects`,
         `clips`,
         `settings`,
@@ -1179,6 +1230,15 @@ export async function save_export_record( {
             save_when_ready()
         }
     } )
+
+    log.info( `Storage export saved`, {
+        project_id,
+        export_id: export_record.id,
+        size: blob.size,
+        mime_type
+    } )
+
+    return export_record
 }
 
 /**
@@ -1190,6 +1250,11 @@ export async function save_export_record( {
  * @returns {Promise<Object|null>} Matching export metadata.
  */
 export async function get_valid_cached_export( { project_id, settings_hash, clip_manifest_hash } ) {
+    log.debug( `Storage cached export lookup started`, {
+        project_id,
+        settings_hash,
+        clip_manifest_hash
+    } )
     const exports = await get_index_records( `exports`, `project_id`, project_id )
     const matching_exports = exports
         .filter( ( export_record ) => {
@@ -1199,7 +1264,16 @@ export async function get_valid_cached_export( { project_id, settings_hash, clip
         .sort( ( first, second ) => new Date( second.created_at ).getTime() - new Date( first.created_at ).getTime() )
     const valid_exports = await filter_exports_with_valid_blobs( matching_exports )
 
-    return valid_exports.at( 0 ) ?? null
+    const cached_export = valid_exports.at( 0 ) ?? null
+
+    log.debug( `Storage cached export lookup finished`, {
+        project_id,
+        matching_count: matching_exports.length,
+        valid_count: valid_exports.length,
+        export_id: cached_export?.id ?? null
+    } )
+
+    return cached_export
 }
 
 /**
@@ -1217,11 +1291,13 @@ export async function get_export_blob( export_id ) {
  * @returns {Promise<void>}
  */
 export async function delete_all_data() {
+    log.info( `Storage delete_all_data started` )
     await settings_save_queue.catch( () => null )
     await clear_all_records()
     safe_local_storage.remove( ACTIVE_PROJECT_KEY )
     first_clip_persistence_requested = false
     settings_save_queue = Promise.resolve()
+    log.info( `Storage delete_all_data finished` )
 }
 
 /**

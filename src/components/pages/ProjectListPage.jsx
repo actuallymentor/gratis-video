@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router'
+import { log } from 'mentie/modules/logging.js'
 import { Plus, Settings } from 'lucide-react'
 import styled from 'styled-components'
 import { BottomAppBar } from '../atoms/BottomAppBar.jsx'
@@ -40,11 +41,21 @@ export function ProjectListPage() {
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
 
     const refresh_projects = useCallback( async () => {
+        log.debug( `Project list load started` )
+
         try {
-            set_projects( await list_projects() )
+            const loaded_projects = await list_projects()
+
+            log.info( `Project list loaded`, {
+                project_count: loaded_projects.length
+            } )
+            log.insane( `Project list payload`, loaded_projects )
+
+            set_projects( loaded_projects )
             set_load_state( `ready` )
             set_storage_error( null )
-        } catch {
+        } catch ( error ) {
+            log.error( `Project list load failed`, error )
             set_load_state( `error` )
             set_projects( [] )
             set_storage_error( `Local browser storage is unavailable, so projects cannot be loaded.` )
@@ -58,45 +69,80 @@ export function ProjectListPage() {
     const create_next_project = async () => {
         if( load_state === `error` ) return
 
+        log.debug( `Create project requested` )
+
         try {
             const project = await create_project()
+
+            log.info( `Project created`, {
+                project_id: project.id,
+                title: project.title
+            } )
             set_active_project_id( project.id )
             navigate( `/projects/${ project.id }` )
-        } catch {
+        } catch ( error ) {
+            log.error( `Project could not be created`, error )
             toast.error( `Project could not be created` )
             set_storage_error( `Local browser storage is unavailable, so clips cannot be saved here.` )
         }
     }
 
     const open_project = async ( project ) => {
+        log.debug( `Open project requested`, {
+            project_id: project.id
+        } )
+
         try {
             await set_active_project( project.id )
             set_active_project_id( project.id )
+            log.info( `Project opened`, {
+                project_id: project.id
+            } )
             navigate( `/projects/${ project.id }` )
-        } catch {
+        } catch ( error ) {
+            log.error( `Project could not be opened`, error )
             toast.error( `Project could not be opened` )
         }
     }
 
     const rename_existing_project = async ( project, title ) => {
+        log.debug( `Rename project requested`, {
+            project_id: project.id
+        } )
+
         try {
-            await rename_project( project.id, title )
+            const renamed_project = await rename_project( project.id, title )
+
+            log.info( `Project renamed`, {
+                project_id: renamed_project.id,
+                title: renamed_project.title
+            } )
             await refresh_projects()
-        } catch {
+        } catch ( error ) {
+            log.error( `Project could not be renamed`, error )
             toast.error( `Project could not be renamed` )
         }
     }
 
     const delete_existing_project = async ( project ) => {
         const confirmed = window.confirm( `Delete "${ project.title }" and all clips stored for it?` )
-        if( !confirmed ) return
+        if( !confirmed ) {
+            log.debug( `Project deletion cancelled`, {
+                project_id: project.id
+            } )
+            return
+        }
 
         try {
             await delete_project( project.id )
             if( active_project_id === project.id ) set_active_project_id( null )
             await refresh_projects()
+            log.info( `Project deleted`, {
+                project_id: project.id
+            } )
             toast( `Project deleted` )
-        } catch {
+        } catch ( error ) {
+            log.error( `Project could not be deleted`, error )
             toast.error( `Project could not be deleted` )
         }
     }

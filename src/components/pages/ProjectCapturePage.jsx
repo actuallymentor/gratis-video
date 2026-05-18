@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, useNavigate, useParams } from 'react-router'
 import { StringParam, useQueryParam } from 'use-query-params'
+import { log } from 'mentie/modules/logging.js'
 import styled from 'styled-components'
 import { ArrowLeft, Download, Home, Share2 } from 'lucide-react'
 import { BottomAppBar } from '../atoms/BottomAppBar.jsx'
@@ -146,6 +147,10 @@ export function ProjectCapturePage() {
 
         if( project_id_ref.current !== missing_project_id ) return
 
+        log.warn( `Project route was missing; redirecting`, {
+            missing_project_id,
+            active_project_id: active_project?.id ?? null
+        } )
         set_active_project_id( active_project?.id ?? null )
         navigate( active_project ? `/projects/${ active_project.id }` : `/projects`, { replace: true } )
     }, [ navigate, set_active_project_id ] )
@@ -161,8 +166,16 @@ export function ProjectCapturePage() {
         if(
             cached_export_record?.id === export_record.id
             && cached_export_blob_ref.current
-        ) return cached_export_blob_ref.current
+        ) {
+            log.debug( `Using already loaded cached export blob`, {
+                export_id: export_record.id
+            } )
+            return cached_export_blob_ref.current
+        }
 
+        log.debug( `Loading cached export blob`, {
+            export_id: export_record.id
+        } )
         return get_export_blob( export_record.id )
     }, [ cached_export_record ] )
 
@@ -173,10 +186,20 @@ export function ProjectCapturePage() {
         set_cached_export_record( export_record )
         set_cached_export_key( make_export_cache_key( hashes ) )
         set_cached_export_ready( true )
+        log.info( `Export cached for current project`, {
+            project_id: export_record.project_id,
+            export_id: export_record.id,
+            size: blob.size,
+            mime_type: blob.type || export_record.mime_type
+        } )
     }, [ clips, settings ] )
 
     const refresh_project = useCallback( async () => {
         const requested_project_id = project_id
+
+        log.debug( `Project refresh started`, {
+            project_id: requested_project_id
+        } )
 
         try {
             const [ loaded_project, loaded_clips, loaded_settings ] = await Promise.all( [
@@ -192,11 +215,21 @@ export function ProjectCapturePage() {
                 return
             }
 
+            log.info( `Project loaded`, {
+                project_id: loaded_project.id,
+                clip_count: loaded_clips.length
+            } )
+            log.insane( `Project capture payload`, {
+                project: loaded_project,
+                clips: loaded_clips,
+                settings: normalize_export_settings( loaded_settings )
+            } )
             set_project( loaded_project )
             set_clips( loaded_clips )
             set_settings( normalize_export_settings( loaded_settings ) )
             set_storage_error( null )
-        } catch {
+        } catch ( error ) {
+            log.error( `Project refresh failed`, error )
             set_storage_error( `Local browser storage is unavailable, so clips cannot be loaded or saved.` )
         }
     }, [ project_id, redirect_missing_project ] )
@@ -212,6 +245,10 @@ export function ProjectCapturePage() {
         const requested_project_id = project_id
 
         const activate_project = async () => {
+            log.debug( `Project activation started`, {
+                project_id: requested_project_id
+            } )
+
             try {
                 const loaded_project = await get_project( requested_project_id )
 
@@ -227,8 +264,12 @@ export function ProjectCapturePage() {
 
                 set_active_project_id( requested_project_id )
                 await refresh_project()
-            } catch {
+                log.info( `Project activated`, {
+                    project_id: requested_project_id
+                } )
+            } catch ( error ) {
                 if( cancelled || project_id_ref.current !== requested_project_id ) return
+                log.error( `Project activation failed`, error )
                 set_storage_error( `Local browser storage is unavailable, so this project cannot be opened.` )
             }
         }
@@ -276,6 +317,12 @@ export function ProjectCapturePage() {
         const load_cached_export = async () => {
             const hashes = create_export_hashes( { clips, settings } )
             const cache_key = make_export_cache_key( hashes )
+
+            log.debug( `Cached export lookup started`, {
+                project_id,
+                clip_count: clips.length,
+                cache_key
+            } )
             const cached_export = await get_valid_cached_export( {
                 project_id,
                 ...hashes
@@ -283,6 +330,10 @@ export function ProjectCapturePage() {
 
             if( cancelled ) return
             if( !cached_export ) {
+                log.debug( `No reusable cached export found`, {
+                    project_id,
+                    cache_key
+                } )
                 return
             }
 
@@ -293,16 +344,29 @@ export function ProjectCapturePage() {
 
             if( cancelled ) return
             if( !is_valid_export_blob( cached_export, blob ) ) {
+                log.warn( `Cached export metadata had no valid blob`, {
+                    project_id,
+                    export_id: cached_export.id
+                } )
                 clear_cached_export()
                 return
             }
 
             cached_export_blob_ref.current = blob
             set_cached_export_ready( true )
+            log.info( `Cached export ready`, {
+                project_id,
+                export_id: cached_export.id,
+                size: blob.size,
+                mime_type: blob.type || cached_export.mime_type
+            } )
         }
 
-        load_cached_export().catch( () => {
-            if( !cancelled ) clear_cached_export()
+        load_cached_export().catch( ( error ) => {
+            if( !cancelled ) {
+                log.warn( `Cached export lookup failed`, error )
+                clear_cached_export()
+            }
         } )
 
         return () => {
@@ -312,16 +376,30 @@ export function ProjectCapturePage() {
 
     const remove_clip = async ( clip ) => {
         const confirmed = window.confirm( `Delete this clip from the project?` )
-        if( !confirmed ) return
+        if( !confirmed ) {
+            log.debug( `Clip deletion cancelled`, {
+                clip_id: clip.id
+            } )
+            return
+        }
 
+        log.info( `Clip deletion requested`, {
+            project_id,
+            clip_id: clip.id
+        } )
         set_queue_mutation_pending( true )
         clear_cached_export()
 
         try {
             await delete_clip( clip.id )
             await refresh_project()
+            log.info( `Clip deleted`, {
+                project_id,
+                clip_id: clip.id
+            } )
             toast( `Clip deleted` )
-        } catch {
+        } catch ( error ) {
+            log.error( `Clip could not be deleted`, error )
             toast.error( `Clip could not be deleted` )
         } finally {
             set_queue_mutation_pending( false )
@@ -329,13 +407,24 @@ export function ProjectCapturePage() {
     }
 
     const move_existing_clip = async ( clip, direction ) => {
+        log.debug( `Clip move requested`, {
+            project_id,
+            clip_id: clip.id,
+            direction
+        } )
         set_queue_mutation_pending( true )
         clear_cached_export()
 
         try {
             await move_clip( clip.id, direction )
             await refresh_project()
-        } catch {
+            log.info( `Clip moved`, {
+                project_id,
+                clip_id: clip.id,
+                direction
+            } )
+        } catch ( error ) {
+            log.error( `Clip could not be moved`, error )
             toast.error( `Clip could not be moved` )
         } finally {
             set_queue_mutation_pending( false )
@@ -347,27 +436,46 @@ export function ProjectCapturePage() {
     const export_flow_open = export_requested && ( panel === `export` || export_progress_active )
 
     const share_or_export = async () => {
+        log.info( `Share or export requested`, {
+            project_id,
+            clip_count: clips.length,
+            recording_state: recording.recording_state,
+            queue_mutation_pending
+        } )
+
         if( recording_busy ) {
             const message = recording.recording_state === `saving`
                 ? `Clip is still saving. Try again in a moment.`
                 : `Finish recording before exporting.`
 
+            log.debug( `Share or export blocked by recording state`, {
+                recording_state: recording.recording_state
+            } )
             toast( message )
             return
         }
 
         if( queue_mutation_pending ) {
+            log.debug( `Share or export blocked by queue mutation` )
             toast( `Clip queue is updating. Try again in a moment.` )
             return
         }
 
         if( !clips.length ) {
+            log.debug( `Share or export blocked because project has no clips` )
             toast( `Record at least one clip first.` )
             return
         }
 
         const hashes = create_export_hashes( { clips, settings } )
         const cache_key = make_export_cache_key( hashes )
+
+        log.debug( `Share or export cache state`, {
+            cache_key,
+            cached_export_id: cached_export_record?.id ?? null,
+            cached_export_ready,
+            has_loaded_blob: Boolean( cached_export_blob_ref.current )
+        } )
 
         if(
             cached_export_record
@@ -385,8 +493,13 @@ export function ProjectCapturePage() {
                         blob: cached_export_blob_ref.current
                     } )
 
+                    log.info( `Cached export share finished`, {
+                        export_id: cached_export_record.id,
+                        result: share_result
+                    } )
                     if( share_result === `shared` || share_result === `cancelled` ) return
-                } catch {
+                } catch ( error ) {
+                    log.warn( `Cached export sharing failed`, error )
                     toast( `Sharing failed. Download is available.` )
                 }
 
@@ -413,16 +526,24 @@ export function ProjectCapturePage() {
             try {
                 const blob = await load_initial_export_blob( cached_export_record )
                 if( !is_valid_export_blob( cached_export_record, blob ) ) {
+                    log.warn( `Cached export became invalid before opening panel`, {
+                        export_id: cached_export_record.id
+                    } )
                     clear_cached_export()
                 } else {
                     cached_export_blob_ref.current = blob
                     set_cached_export_ready( true )
+                    log.info( `Cached export loaded before opening panel`, {
+                        export_id: cached_export_record.id,
+                        size: blob.size
+                    } )
                     set_export_panel_record( cached_export_record )
                     set_export_requested( true )
                     set_panel( `export` )
                     return
                 }
-            } catch {
+            } catch ( error ) {
+                log.warn( `Cached export blob could not be loaded before opening panel`, error )
                 clear_cached_export()
             }
         }
@@ -430,12 +551,19 @@ export function ProjectCapturePage() {
         const cached_export = await get_valid_cached_export( {
             project_id,
             ...hashes
-        } ).catch( () => null )
+        } ).catch( ( error ) => {
+            log.warn( `Fresh cached export lookup failed`, error )
+            return null
+        } )
 
         if( !cached_export ) {
             clear_cached_export()
             set_export_panel_record( null )
             set_export_requested( true )
+            log.info( `Opening export panel for fresh compilation`, {
+                project_id,
+                clip_count: clips.length
+            } )
             set_panel( `export` )
             return
         }
@@ -450,13 +578,25 @@ export function ProjectCapturePage() {
 
             set_export_panel_record( cached_export )
             set_export_requested( true )
+            log.info( `Opening export panel with cached export`, {
+                project_id,
+                export_id: cached_export.id
+            } )
             set_panel( `export` )
             return
         }
 
+        log.warn( `Fresh cached export record had no valid blob`, {
+            project_id,
+            export_id: cached_export.id
+        } )
         clear_cached_export()
         set_export_panel_record( null )
         set_export_requested( true )
+        log.info( `Opening export panel after cache invalidation`, {
+            project_id,
+            clip_count: clips.length
+        } )
         set_panel( `export` )
     }
 
@@ -581,6 +721,9 @@ export function ProjectCapturePage() {
             load_initial_export_blob={ load_initial_export_blob }
             on_export_ready={ promote_ready_export }
             on_close={ () => {
+                log.debug( `Export panel closed`, {
+                    project_id
+                } )
                 set_export_panel_record( null )
                 set_export_requested( false )
                 set_panel( undefined )

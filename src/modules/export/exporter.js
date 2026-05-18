@@ -1,3 +1,4 @@
+import { log } from 'mentie/modules/logging.js'
 import { get_clip_blob } from '../storage/journal_storage.js'
 import { stop_media_stream } from '../media/recorder.js'
 import {
@@ -281,6 +282,7 @@ const start_video_playback = async ( video, signal ) => {
 
         // Browser and extension autoplay blockers do not agree on error names.
         // A muted retry keeps detached export playback moving when audible playback is blocked.
+        log.warn( `Export playback was blocked; retrying muted playback`, error )
         throw_if_aborted( signal )
         video.muted = true
         await wait_for_abortable( video.play(), signal )
@@ -297,6 +299,7 @@ const retry_stalled_playback_muted = async ( { playback_state, signal, video } )
         // Some media elements throw on pause during decode stalls; playback retry can continue.
     }
 
+    log.warn( `Export playback stalled; retrying muted playback` )
     throw_if_aborted( signal )
     video.muted = true
     await wait_for_abortable( video.play(), signal )
@@ -317,8 +320,21 @@ const recover_playback = async ( {
     }
 
     playback_progress.recovery_attempts += 1
+    log.debug( `Export playback recovery attempt`, {
+        clip_index,
+        attempt: playback_progress.recovery_attempts,
+        current_time: video.currentTime,
+        ready_state: video.readyState,
+        paused: video.paused,
+        ended: video.ended
+    } )
 
     if( playback_progress.recovery_attempts > PLAYBACK_RECOVERY_ATTEMPTS ) {
+        log.error( `Export playback recovery exhausted`, {
+            clip_index,
+            current_time: video.currentTime,
+            ready_state: video.readyState
+        } )
         throw new Error( `Clip ${ clip_index + 1 } stalled during export.` )
     }
 
@@ -415,6 +431,10 @@ const start_export_recorder = ( { stream, settings, signal } ) => {
     const attempts = create_mime_attempts( settings )
     const errors = []
 
+    log.debug( `Export recorder MIME attempts prepared`, {
+        attempts: attempts.map( ( mime_type ) => mime_type ?? `browser-default` )
+    } )
+
     const start_next_attempt = ( mime_type ) => {
         const chunks = []
         let recorder = null
@@ -422,11 +442,19 @@ const start_export_recorder = ( { stream, settings, signal } ) => {
 
         try {
             throw_if_aborted( signal )
+            log.debug( `Export recorder start attempt`, {
+                mime_type: mime_type ?? `browser-default`
+            } )
             recorder = create_export_recorder( { stream, mime_type, settings } )
             stop_wait = wait_for_recorder_stop( recorder, chunks, signal )
             stop_wait.stopped.catch( () => null )
             throw_if_aborted( signal )
             recorder.start( 250 )
+
+            log.info( `Export recorder started`, {
+                requested_mime_type: mime_type ?? null,
+                recorder_mime_type: recorder.mimeType || null
+            } )
 
             return {
                 recorder,
@@ -453,6 +481,10 @@ const start_export_recorder = ( { stream, settings, signal } ) => {
         try {
             return start_next_attempt( mime_type )
         } catch ( error ) {
+            log.warn( `Export recorder start attempt failed`, {
+                mime_type: mime_type ?? `browser-default`,
+                error
+            } )
             errors.push( error )
             return null
         }
@@ -460,6 +492,7 @@ const start_export_recorder = ( { stream, settings, signal } ) => {
 
     if( started_attempt ) return started_attempt
     if( signal?.aborted ) throw make_abort_error()
+    log.error( `Export recorder failed all MIME attempts`, errors )
     throw errors.at( -1 ) ?? new Error( `Export recorder failed.` )
 }
 
@@ -556,7 +589,26 @@ const play_clip_to_canvas = async ( {
 } ) => {
     throw_if_aborted( signal )
 
+    log.info( `Export clip started`, {
+        clip_index: clip_index + 1,
+        clip_count: clips.length,
+        clip_id: clip.id,
+        duration_ms: clip.duration_ms
+    } )
     const blob = await get_clip_blob_or_fail( clip, clip_index )
+    log.debug( `Export clip blob loaded`, {
+        clip_index: clip_index + 1,
+        clip_id: clip.id,
+        size: blob.size,
+        mime_type: blob.type || clip.mime_type
+    } )
+    log.insane( `Export clip payload`, {
+        clip,
+        blob: {
+            size: blob.size,
+            type: blob.type
+        }
+    } )
     throw_if_aborted( signal )
 
     const object_url = URL.createObjectURL( blob )
@@ -578,6 +630,15 @@ const play_clip_to_canvas = async ( {
         const previous_duration_ms = clips.slice( 0, clip_index ).reduce( ( total, next_clip ) => {
             return total + ( next_clip.duration_ms || 0 )
         }, 0 )
+
+        log.debug( `Export clip metadata loaded`, {
+            clip_index: clip_index + 1,
+            measured_duration_ms,
+            duration_ms,
+            width: video.videoWidth || null,
+            height: video.videoHeight || null,
+            audio_routed: Boolean( audio_source )
+        } )
 
         const playback_state = await start_video_playback( video, signal )
 
@@ -615,6 +676,12 @@ const play_clip_to_canvas = async ( {
         }
 
         draw_video_frame( context, video, canvas )
+        log.info( `Export clip finished`, {
+            clip_index: clip_index + 1,
+            clip_id: clip.id,
+            muted_for_playback: playback_state.muted_for_playback,
+            audio_routed: Boolean( audio_source )
+        } )
         return {
             audio_routed: Boolean( audio_source ),
             muted_for_playback: playback_state.muted_for_playback
@@ -646,6 +713,17 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     if( export_support_message ) throw new Error( export_support_message )
     throw_if_aborted( signal )
 
+    log.info( `Project export compile started`, {
+        clip_count: clips.length,
+        export_quality: settings.export_quality,
+        export_resolution: settings.export_resolution,
+        preferred_mime_type: settings.preferred_mime_type ?? null
+    } )
+    log.insane( `Project export input payload`, {
+        clips,
+        settings
+    } )
+
     const export_clips = await with_first_clip_canvas_metadata( clips, signal )
     throw_if_aborted( signal )
 
@@ -656,11 +734,18 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     const context = canvas.getContext( `2d` )
     if( !context ) throw new Error( `This browser cannot draw video frames for export.` )
 
+    log.debug( `Project export canvas prepared`, {
+        width,
+        height,
+        fps: FPS
+    } )
+
     const video_stream = canvas.captureStream( FPS )
     let audio_graph = await resume_audio_graph( create_audio_graph() )
     const audio_warnings = audio_graph ? [] : [
         `This browser could not route clip audio into the export, so the export may be video-only.`
     ]
+    if( !audio_graph ) log.warn( `Export audio graph unavailable; export may be video-only` )
     const audio_tracks = audio_graph?.destination.stream.getAudioTracks() ?? []
     const mixed_stream = new MediaStream( [
         ...video_stream.getVideoTracks(),
@@ -718,6 +803,7 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         on_progress?.( { percent: 100, message: `Export ready` } )
 
         if( stop_result.timed_out ) {
+            log.warn( `Export recorder stop timed out after producing data` )
             audio_warnings.push( `This browser did not confirm export finalization. Check the exported video before deleting clips.` )
         }
 
@@ -728,6 +814,14 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         if( chunks.length === 0 || blob.size === 0 ) {
             throw new Error( `Export failed because this browser did not produce a video file.` )
         }
+
+        log.info( `Project export compile finished`, {
+            clip_count: export_clips.length,
+            duration_ms,
+            size: blob.size,
+            mime_type: output_type,
+            warning_count: audio_warnings.length
+        } )
 
         return {
             blob,

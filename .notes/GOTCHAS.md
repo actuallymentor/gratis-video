@@ -4,6 +4,7 @@
 - `use-query-params`' React Router 6 adapter imports `react-router-dom`, so the app includes `react-router-dom` even though most app imports use `react-router`.
 - Export uses canvas capture plus MediaRecorder and is expected to run close to realtime; test on real mobile browsers before treating it as production-grade.
 - Import `log` from `mentie/modules/logging.js` in browser code; the `mentie` barrel import can pull in a Node crypto helper and trigger Vite browser externalization warnings.
+- Keep `log.info()` out of fake-clock-sensitive recording internals in unit tests. Vitest/jsdom console output can perturb `Date.now()` spy sequences; use `log.debug()` there and leave user-visible milestones to page/storage/export layers.
 - Browser walkthroughs use Playwright Chromium. If the default Vite port is busy, Vite may move from 5173 to the next open port.
 - ExportPanel starts export work from a React effect. In development StrictMode, stale effect aborts must be ignored or the UI can show `Export cancelled` even while the current export run should continue.
 - IndexedDB version 2 moves thumbnail blobs from clip metadata into the `clip_thumbnails` store. Keep clip metadata lightweight so React state does not retain Blob objects.
