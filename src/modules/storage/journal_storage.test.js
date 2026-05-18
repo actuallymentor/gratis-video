@@ -353,7 +353,7 @@ describe( `journal storage`, () => {
 
         expect( updated_clip ).toMatchObject( {
             id: clip.id,
-            version: 2,
+            version: 1,
             duration_ms: 1250,
             width: 640,
             height: 360
@@ -361,6 +361,56 @@ describe( `journal storage`, () => {
         expect( stored_clip.duration_ms ).toBe( 1250 )
         expect( stored_project.total_duration_ms ).toBe( 1250 )
         expect( await thumbnail_blob.text() ).toBe( `thumb` )
+    } )
+
+    test( `late clip media detail updates do not restore a deleted project`, async () => {
+        const project = await create_project()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+
+        await Promise.all( [
+            update_clip_media_details( {
+                clip_id: clip.id,
+                duration_ms: 1250,
+                width: 640,
+                height: 360,
+                thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
+            } ),
+            delete_project( project.id )
+        ] )
+
+        expect( await get_project( project.id ) ).toBe( undefined )
+        expect( await get_project_clips( project.id ) ).toEqual( [] )
+        expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
+    } )
+
+    test( `late clip media detail updates do not restore deleted local data`, async () => {
+        const project = await create_project()
+        const clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `video` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+
+        await Promise.all( [
+            update_clip_media_details( {
+                clip_id: clip.id,
+                duration_ms: 1250,
+                width: 640,
+                height: 360,
+                thumbnail_blob: new Blob( [ `thumb` ], { type: `image/jpeg` } )
+            } ),
+            delete_all_data()
+        ] )
+
+        expect( await list_projects() ).toEqual( [] )
+        expect( await get_project_clips( project.id ) ).toEqual( [] )
+        expect( await get_clip_thumbnail_blob( clip.id ) ).toBe( null )
     } )
 
     test( `stores, finds, loads, and deletes cached exports`, async () => {

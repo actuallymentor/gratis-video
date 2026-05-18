@@ -26,7 +26,7 @@ import {
 
 const empty_recording_result = {
     chunks: [],
-    mime_type: `video/webm`,
+    mime_type: null,
     started_at: 0
 }
 
@@ -134,7 +134,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
         return {
             chunks: result.chunks ?? [],
-            mime_type: recorder?.mimeType || result.mime_type || result.chunks?.at( 0 )?.type || `video/webm`,
+            mime_type: recorder?.mimeType || result.chunks?.at( 0 )?.type || result.mime_type || `video/webm`,
             started_at: result.started_at ?? Date.now(),
             error: result.error ?? null
         }
@@ -337,7 +337,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             const started_at = Date.now()
             recording_result_ref.current = {
                 chunks,
-                mime_type: `video/webm`,
+                mime_type: null,
                 started_at,
                 error: null
             }
@@ -348,7 +348,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             let recorder_error = null
             const stopped = new Promise( ( resolve ) => {
                 recorder.ondataavailable = ( event ) => {
-                    if( event.data?.size > 0 ) chunks.push( event.data )
+                    if( event.data?.size <= 0 ) return
+
+                    chunks.push( event.data )
+                    if( event.data.type ) recording_result_ref.current.mime_type = event.data.type
                 }
                 recorder.onerror = () => {
                     recorder_error = recorder.error ?? new Error( `Recorder error` )
@@ -367,7 +370,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             } )
 
             recorder_ref.current = recorder
-            recording_result_ref.current.mime_type = recorder.mimeType || `video/webm`
+            recording_result_ref.current.mime_type = recorder.mimeType || null
             stop_promise_ref.current = stopped
             next_stream.getTracks().forEach( ( track ) => {
                 track.addEventListener?.( `ended`, stop_when_track_ends, { once: true } )

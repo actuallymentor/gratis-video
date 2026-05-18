@@ -156,6 +156,13 @@ export function ExportPanel( {
     const [ ready_warnings, set_ready_warnings ] = useState( [] )
     const export_blob_ref = useRef( null )
     const abort_controller_ref = useRef( null )
+    const export_input_ref = useRef( {
+        clips,
+        project,
+        settings
+    } )
+    const load_initial_export_blob_ref = useRef( load_initial_export_blob )
+    const on_export_ready_ref = useRef( on_export_ready )
     const export_progress = useAppStore( ( state ) => state.export_progress )
     const set_export_progress = useAppStore( ( state ) => state.set_export_progress )
 
@@ -192,65 +199,27 @@ export function ExportPanel( {
     } )
 
     useEffect( () => {
-        if( initial_export_record ) {
-            set_export_progress( {
-                active: false,
-                percent: 0,
-                message: `Loading export`
-            } )
+        load_initial_export_blob_ref.current = load_initial_export_blob
+        on_export_ready_ref.current = on_export_ready
+    }, [ load_initial_export_blob, on_export_ready ] )
 
-            let active_effect = true
-
-            const load_ready_blob = async () => {
-                const blob = load_initial_export_blob
-                    ? await load_initial_export_blob( initial_export_record )
-                    : await get_export_blob( initial_export_record.id )
-
-                if( !active_effect ) return
-
-                if( !blob ) {
-                    set_status( `error` )
-                    set_error_message( `Export file is unavailable.` )
-                    set_export_progress( {
-                        active: false,
-                        percent: 0,
-                        message: `Export unavailable`
-                    } )
-                    return
-                }
-
-                export_blob_ref.current = blob
-                set_status( `ready` )
-                set_export_progress( {
-                    active: false,
-                    percent: 100,
-                    message: `Export ready`
-                } )
-            }
-
-            load_ready_blob().catch( ( error ) => {
-                if( !active_effect ) return
-
-                set_status( `error` )
-                set_error_message( error.message || `Export file is unavailable.` )
-                set_export_progress( {
-                    active: false,
-                    percent: 0,
-                    message: `Export unavailable`
-                } )
-            } )
-
-            return () => {
-                active_effect = false
-            }
-        }
-
+    useEffect( () => {
         const abort_controller = new AbortController()
         let active_effect = true
-        abort_controller_ref.current = abort_controller
         const is_current_export = () => active_effect && abort_controller_ref.current === abort_controller
+        const {
+            clips: export_clips,
+            project: export_project,
+            settings: export_settings
+        } = export_input_ref.current
 
         const run_export = async () => {
+            abort_controller_ref.current = abort_controller
+            export_blob_ref.current = null
+            set_export_record( null )
+            set_ready_warnings( [] )
+            set_error_message( null )
+            set_status( `compiling` )
             set_export_progress( {
                 active: true,
                 percent: 0,
@@ -258,10 +227,13 @@ export function ExportPanel( {
             } )
 
             try {
-                const { settings_hash, clip_manifest_hash } = create_export_hashes( { clips, settings } )
+                const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+                    clips: export_clips,
+                    settings: export_settings
+                } )
                 const compiled_export = await compile_project_export( {
-                    clips,
-                    settings,
+                    clips: export_clips,
+                    settings: export_settings,
                     signal: abort_controller.signal,
                     on_progress: update_active_export_progress
                 } )
@@ -269,7 +241,7 @@ export function ExportPanel( {
                 if( !is_current_export() || abort_controller.signal.aborted ) return
 
                 const [ current_clips, current_settings ] = await Promise.all( [
-                    get_project_clips( project.id ),
+                    get_project_clips( export_project.id ),
                     load_settings()
                 ] )
                 const current_hashes = create_export_hashes( {
@@ -290,7 +262,7 @@ export function ExportPanel( {
 
                 try {
                     saved_export = await save_export_record( {
-                        project_id: project.id,
+                        project_id: export_project.id,
                         settings_hash,
                         clip_manifest_hash,
                         ...compiled_export
@@ -302,7 +274,7 @@ export function ExportPanel( {
                         ? `Export is ready, but local browser storage is full. Share or download it now before closing.`
                         : `Export is ready, but it could not be cached in local browser storage. Share or download it now before closing.`
                     next_export_record = make_transient_export_record( {
-                        project,
+                        project: export_project,
                         compiled_export,
                         settings_hash,
                         clip_manifest_hash
@@ -324,7 +296,7 @@ export function ExportPanel( {
                 ].filter( Boolean ) )
                 set_status( `ready` )
                 if( saved_export ) {
-                    on_export_ready?.( {
+                    on_export_ready_ref.current?.( {
                         export_record: saved_export,
                         blob: compiled_export.blob
                     } )
@@ -360,20 +332,56 @@ export function ExportPanel( {
             }
         }
 
-        run_export()
+        const replace_stale_cached_export = async ( error ) => {
+            if( !active_effect ) return
+
+            log.warn( `Cached export was unavailable; compiling a fresh export`, error )
+            await delete_export( initial_export_record.id ).catch( ( delete_error ) => {
+                log.warn( `Stale cached export could not be deleted`, delete_error )
+            } )
+
+            if( !active_effect ) return
+
+            await run_export()
+        }
+
+        const load_ready_blob = async () => {
+            set_export_progress( {
+                active: false,
+                percent: 0,
+                message: `Loading export`
+            } )
+
+            const blob = load_initial_export_blob_ref.current
+                ? await load_initial_export_blob_ref.current( initial_export_record )
+                : await get_export_blob( initial_export_record.id )
+
+            if( !active_effect ) return
+
+            if( !blob ) {
+                await replace_stale_cached_export( new Error( `Cached export blob is missing.` ) )
+                return
+            }
+
+            export_blob_ref.current = blob
+            set_status( `ready` )
+            set_export_progress( {
+                active: false,
+                percent: 100,
+                message: `Export ready`
+            } )
+        }
+
+        if( initial_export_record ) load_ready_blob().catch( replace_stale_cached_export )
+        else run_export()
 
         return () => {
             active_effect = false
             abort_controller.abort()
         }
     }, [
-        clips,
         initial_export_record,
-        load_initial_export_blob,
-        on_export_ready,
-        project.id,
         set_export_progress,
-        settings,
         update_active_export_progress
     ] )
 

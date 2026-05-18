@@ -532,10 +532,11 @@ describe( `recording controller`, () => {
 
         try {
             vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+            recorder.mimeType = ``
             recorder.start = vi.fn( () => {
                 recorder.state = `recording`
                 recorder.ondataavailable?.( {
-                    data: new Blob( [ `video` ], { type: `video/webm` } )
+                    data: new Blob( [ `video` ], { type: `video/mp4` } )
                 } )
             } )
             recorder.stop = vi.fn( () => {
@@ -570,6 +571,7 @@ describe( `recording controller`, () => {
             await waitFor( () => {
                 expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
                     project_id: `project-1`,
+                    mime_type: `video/mp4`,
                     duration_ms: 1000
                 } ) )
             } )

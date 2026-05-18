@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.4] - 2026-05-18
+
+### Added
+- add destructive-enrichment, cached-export, MIME, and PWA regressions
+
+### Fixed
+- ignore background clip enrichment while export compilation is running
+- compile a fresh export when cached export blobs are missing
+- preserve recorder chunk MIME when stop finalization times out
+- keep late clip enrichment from restoring deleted local data
+
 ## [0.3.3] - 2026-05-18
 
 ### Added

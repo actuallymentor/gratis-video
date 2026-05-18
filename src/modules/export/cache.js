@@ -39,21 +39,13 @@ export function create_clip_manifest( clips ) {
         order_index,
         version,
         mime_type,
-        duration_ms,
-        width,
-        height,
-        created_at,
-        updated_at
+        created_at
     } ) => ( {
         id,
         order_index,
         version,
         mime_type,
-        duration_ms,
-        width,
-        height,
-        created_at,
-        updated_at
+        created_at
     } ) )
 }
 

@@ -563,40 +563,64 @@ export async function update_clip_media_details( {
     height = null,
     thumbnail_blob = null
 } ) {
-    const clip = await get_record( `clips`, clip_id )
-    if( !clip || clip.deleted_at ) return null
+    const updated_clip = await write_transaction_result( [
+        `projects`,
+        `clips`,
+        `clip_thumbnails`
+    ], ( stores, { complete, fail } ) => {
+        const clip_request = stores.clips.get( clip_id )
 
-    const project = await get_project( clip.project_id )
-    if( !project ) return null
+        clip_request.onerror = fail_request( fail, `Could not load clip before updating media details.` )
+        clip_request.onsuccess = () => {
+            const clip = clip_request.result
 
-    const next_duration_ms = duration_ms || clip.duration_ms
-    const duration_delta_ms = next_duration_ms - clip.duration_ms
-    const timestamp = now_iso()
-    const updated_clip = {
-        ...strip_clip_blob_fields( clip ),
-        version: ( clip.version ?? 1 ) + 1,
-        duration_ms: next_duration_ms,
-        width: width ?? clip.width,
-        height: height ?? clip.height,
-        updated_at: timestamp
-    }
-    const updated_project = {
-        ...project,
-        total_duration_ms: Math.max( 0, project.total_duration_ms + duration_delta_ms ),
-        updated_at: timestamp
-    }
+            if( !clip || clip.deleted_at ) {
+                complete( null )
+                return
+            }
 
-    await write_transaction( [ `projects`, `clips`, `clip_thumbnails` ], ( stores ) => {
-        stores.clips.put( updated_clip )
-        if( thumbnail_blob ) stores.clip_thumbnails.put( {
-            id: clip_id,
-            project_id: clip.project_id,
-            blob: thumbnail_blob
-        } )
-        stores.projects.put( updated_project )
+            const project_request = stores.projects.get( clip.project_id )
+
+            project_request.onerror = fail_request( fail, `Could not load project before updating clip media details.` )
+            project_request.onsuccess = () => {
+                const project = project_request.result
+
+                if( !project ) {
+                    complete( null )
+                    return
+                }
+
+                const next_duration_ms = duration_ms || clip.duration_ms
+                const duration_delta_ms = next_duration_ms - clip.duration_ms
+                const timestamp = now_iso()
+                const updated_clip = {
+                    ...strip_clip_blob_fields( clip ),
+                    duration_ms: next_duration_ms,
+                    width: width ?? clip.width,
+                    height: height ?? clip.height,
+                    updated_at: timestamp
+                }
+                const updated_project = {
+                    ...project,
+                    total_duration_ms: Math.max( 0, project.total_duration_ms + duration_delta_ms ),
+                    updated_at: timestamp
+                }
+
+                stores.clips.put( updated_clip )
+                if( thumbnail_blob ) stores.clip_thumbnails.put( {
+                    id: clip_id,
+                    project_id: clip.project_id,
+                    blob: thumbnail_blob
+                } )
+                stores.projects.put( updated_project )
+                complete( updated_clip )
+            }
+        }
     } )
 
-    await prune_stale_project_exports( clip.project_id ).catch( ( error ) => {
+    if( !updated_clip ) return null
+
+    await prune_stale_project_exports( updated_clip.project_id ).catch( ( error ) => {
         log.warn( `Could not prune stale exports after clip media update`, error )
     } )
 
@@ -643,6 +667,8 @@ export async function delete_clip( clip_id ) {
     if( !clip || clip.deleted_at ) return
 
     const project = await get_project( clip.project_id )
+    if( !project ) return
+
     const updated_clip = {
         ...strip_clip_blob_fields( clip ),
         deleted_at: now_iso()

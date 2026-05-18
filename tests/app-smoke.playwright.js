@@ -276,4 +276,37 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByRole( `button`, { name: `Delete all local data` } ) ).toBeVisible()
         await expect( page.getByRole( `heading`, { name: `Export`, exact: true } ) ).toBeVisible()
     } )
+
+    test( `starts from the cached app shell while offline`, async ( { context, page } ) => {
+        await page.goto( `/projects` )
+        await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+
+        const controlled = await page.evaluate( async () => {
+            if( !( `serviceWorker` in navigator ) ) throw new Error( `Service worker is unavailable.` )
+
+            await navigator.serviceWorker.ready
+
+            if( navigator.serviceWorker.controller ) return true
+
+            await Promise.race( [
+                new Promise( ( resolve ) => {
+                    navigator.serviceWorker.addEventListener( `controllerchange`, resolve, { once: true } )
+                } ),
+                new Promise( ( resolve ) => setTimeout( resolve, 1000 ) )
+            ] )
+
+            return Boolean( navigator.serviceWorker.controller )
+        } )
+
+        if( !controlled ) {
+            await page.reload()
+            await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+            await expect.poll( () => page.evaluate( () => Boolean( navigator.serviceWorker.controller ) ) ).toBe( true )
+        }
+
+        await context.setOffline( true )
+        await page.goto( `/projects/offline-startup-check` )
+
+        await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
+    } )
 } )

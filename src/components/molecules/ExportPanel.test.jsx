@@ -184,6 +184,30 @@ describe( `export panel`, () => {
         } )
     } )
 
+    test( `compiles a fresh export when cached export blob is missing`, async () => {
+        vi.mocked( get_export_blob ).mockResolvedValueOnce( null )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ saved_export }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Export is ready/ ) ).toBeTruthy()
+        expect( delete_export ).toHaveBeenCalledWith( saved_export.id )
+        expect( compile_project_export ).toHaveBeenCalledWith( expect.objectContaining( {
+            clips,
+            settings,
+            signal: expect.any( AbortSignal )
+        } ) )
+        expect( save_export_record ).toHaveBeenCalledWith( expect.objectContaining( {
+            project_id: project.id,
+            blob: compiled_export.blob
+        } ) )
+    } )
+
     test( `downloads from the ready share action when native file sharing is unavailable`, async () => {
         const user = userEvent.setup()
 
@@ -295,6 +319,46 @@ describe( `export panel`, () => {
         } )
 
         expect( await screen.findByText( /Export is ready/ ) ).toBeTruthy()
+    } )
+
+    test( `does not restart compilation when background clip metadata refreshes`, async () => {
+        const deferred_export = make_deferred()
+
+        vi.mocked( compile_project_export ).mockReturnValue( deferred_export.promise )
+
+        const { rerender } = render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        await waitFor( () => {
+            expect( compile_project_export ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        rerender( <ExportPanel
+            project={ project }
+            clips={ [ {
+                ...clips[ 0 ],
+                duration_ms: 1300,
+                width: 1280,
+                height: 720,
+                updated_at: `2026-05-17T10:00:03.000Z`
+            } ] }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( compile_project_export ).toHaveBeenCalledTimes( 1 )
+
+        await act( async () => {
+            deferred_export.resolve( compiled_export )
+            await deferred_export.promise
+        } )
+
+        expect( await screen.findByText( /Export is ready/ ) ).toBeTruthy()
+        expect( save_export_record ).toHaveBeenCalledTimes( 1 )
     } )
 
     test( `keeps a compiled export downloadable when caching fails`, async () => {
