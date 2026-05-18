@@ -123,6 +123,7 @@ export function ProjectListPage() {
                     <h2>No projects yet</h2>
                     <p>Create a project and start recording clips without a setup step.</p>
                 </div>
+                <PrimaryActionButton icon={ Plus } onClick={ create_next_project }>Create</PrimaryActionButton>
             </EmptyState> }
         </Content>
 

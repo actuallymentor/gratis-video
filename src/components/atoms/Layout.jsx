@@ -57,6 +57,7 @@ export const SectionTitle = styled.h2`
 export const EmptyState = styled.section`
     display: grid;
     place-items: center;
+    gap: 1rem;
     min-height: 42svh;
     padding: 2rem 1rem;
     color: var(--color-muted);

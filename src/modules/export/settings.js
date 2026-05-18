@@ -58,10 +58,13 @@ const can_record_canvas_stream = ( { width = 16, height = 16, mime_type = null }
         recorder = mime_type
             ? new MediaRecorder( stream, { mimeType: mime_type } )
             : new MediaRecorder( stream )
+        recorder.start()
+        if( recorder.state !== `inactive` ) recorder.stop()
         return Boolean( recorder )
     } catch {
         return false
     } finally {
+        if( recorder?.state && recorder.state !== `inactive` ) recorder.stop()
         stop_media_stream( stream )
     }
 }

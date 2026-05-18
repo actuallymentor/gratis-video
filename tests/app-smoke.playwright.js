@@ -63,6 +63,25 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByText( `Recorded clips will appear here.` ) ).toBeVisible()
     } )
 
+    test( `shows recovery guidance when camera permission is denied`, async ( { page } ) => {
+        await page.addInitScript( () => {
+            Object.defineProperty( navigator, `permissions`, {
+                configurable: true,
+                value: {
+                    query: ( { name } ) => Promise.resolve( {
+                        state: name === `camera` ? `denied` : `prompt`
+                    } )
+                }
+            } )
+        } )
+
+        await page.goto( `/projects` )
+        await page.getByRole( `button`, { name: `New` } ).click()
+
+        await expect( page.getByText( /Camera access is blocked/ ) ).toBeVisible()
+        await expect( page.getByRole( `link`, { name: `Open settings` } ) ).toHaveAttribute( `href`, `/settings` )
+    } )
+
     test( `opens settings with storage and export controls`, async ( { page } ) => {
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `Open settings` } ).first().click()

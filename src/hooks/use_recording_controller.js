@@ -36,6 +36,8 @@ const is_storage_quota_error = ( error ) => {
         || error?.code === 1014
 }
 
+const media_recorder_unavailable_message = `This browser cannot record video with MediaRecorder.`
+
 /**
  * Coordinates pointer/keyboard recording, clip validation, and local persistence.
  * @param {Object} options - Recording options.
@@ -47,6 +49,7 @@ const is_storage_quota_error = ( error ) => {
 export function useRecordingController( { project_id, settings, on_clip_saved } ) {
     const [ stream, set_stream ] = useState( null )
     const [ error_message, set_error_message ] = useState( null )
+    const [ permission_recovery_needed, set_permission_recovery_needed ] = useState( false )
     const [ recording_started_at, set_recording_started_at ] = useState( null )
     const [ recording_mode, set_recording_mode ] = useState( null )
     const [ timer_tick, set_timer_tick ] = useState( 0 )
@@ -235,6 +238,15 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         if( phase_ref.current !== `idle` || !project_id ) return
 
         set_error_message( null )
+        set_permission_recovery_needed( false )
+
+        if( !globalThis.MediaRecorder ) {
+            set_error_message( media_recorder_unavailable_message )
+            toast.error( `Recording unavailable` )
+            refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
+            return
+        }
+
         pending_forced_stop_ref.current = false
         pending_release_duration_ref.current = null
         recording_mode_ref.current = null
@@ -317,6 +329,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         } catch ( error ) {
             if( mounted_ref.current ) {
                 set_error_message( get_capture_error_message( error ) )
+                set_permission_recovery_needed(
+                    error?.name === `NotAllowedError`
+                    || error?.name === `PermissionDeniedError`
+                )
                 toast.error( `Recording unavailable` )
             }
             recorder_ref.current = null
@@ -441,6 +457,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     return {
         stream,
         error_message,
+        permission_recovery_needed,
         recording_state,
         recording_mode,
         elapsed_ms,

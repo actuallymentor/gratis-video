@@ -28,6 +28,7 @@ import {
     get_project_clips,
     get_valid_cached_export,
     load_settings,
+    move_clip,
     set_active_project
 } from '../../modules/storage/journal_storage.js'
 import { useAppStore } from '../../stores/app_store.js'
@@ -292,6 +293,15 @@ export function ProjectCapturePage() {
         }
     }
 
+    const move_existing_clip = async ( clip, direction ) => {
+        try {
+            await move_clip( clip.id, direction )
+            await refresh_project()
+        } catch {
+            toast.error( `Clip could not be moved` )
+        }
+    }
+
     const share_or_export = async () => {
         if( !clips.length ) {
             toast( `Record at least one clip first.` )
@@ -392,6 +402,7 @@ export function ProjectCapturePage() {
         : null
     const permission_status_message = media_status_message( permission_status )
     const permission_denied = has_denied_media_permission( permission_status )
+    const permission_recovery_needed = permission_denied || recording.permission_recovery_needed
     const status_message = permission_denied
         ? permission_status_message || recording.error_message || storage_warning
         : recording.error_message || permission_status_message || storage_warning
@@ -423,14 +434,14 @@ export function ProjectCapturePage() {
                     </Preview>
                     <PermissionNotice
                         message={ preview_status_message }
-                        action_to={ permission_denied ? `/settings` : null }
-                        action_label={ permission_denied ? `Open settings` : null }
+                        action_to={ permission_recovery_needed ? `/settings` : null }
+                        action_label={ permission_recovery_needed ? `Open settings` : null }
                     />
                 </PreviewPanel>
 
                 <QueuePanel>
                     <SectionTitle>Clip queue</SectionTitle>
-                    <ClipQueue clips={ clips } on_delete={ remove_clip } />
+                    <ClipQueue clips={ clips } on_delete={ remove_clip } on_move={ move_existing_clip } />
                 </QueuePanel>
             </CaptureGrid>
         </Content>
@@ -453,8 +464,8 @@ export function ProjectCapturePage() {
         { bottom_status_message ? <BottomNotice>
             <PermissionNotice
                 message={ bottom_status_message }
-                action_to={ permission_denied ? `/settings` : null }
-                action_label={ permission_denied ? `Open settings` : null }
+                action_to={ permission_recovery_needed ? `/settings` : null }
+                action_label={ permission_recovery_needed ? `Open settings` : null }
             />
         </BottomNotice> : null }
 

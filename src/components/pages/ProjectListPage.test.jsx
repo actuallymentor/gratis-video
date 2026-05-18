@@ -76,6 +76,7 @@ describe( `project list page`, () => {
         render_project_list()
 
         expect( await screen.findByText( `No projects yet` ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Create` } ) ).toBeTruthy()
         await user.click( screen.getByRole( `button`, { name: `New` } ) )
 
         expect( create_project ).toHaveBeenCalledTimes( 1 )

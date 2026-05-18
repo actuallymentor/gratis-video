@@ -31,3 +31,5 @@
 - In the service worker, match cached build assets by both the browser `Request` and URL pathname. Chromium offline subresource requests can miss the direct `Request` match even when the pathname is cached.
 - Playwright smoke tests use `*.playwright.js` with an explicit `testMatch` so Vitest does not try to execute `@playwright/test` suites.
 - Playwright config uses fake media device/UI flags so browser smoke tests can record clips in Chromium without a real camera permission prompt.
+- Recording startup must check `MediaRecorder` before calling `getUserMedia()`; otherwise unsupported browsers can open camera/mic even though no clip can be recorded.
+- Export playback needs event and playback-stall timeouts because damaged or unsupported clip blobs can otherwise leave bounded progress stuck forever.

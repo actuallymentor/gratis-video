@@ -18,6 +18,7 @@ import {
     get_project_clips,
     list_projects,
     load_settings,
+    move_clip,
     persisted_storage,
     rename_project,
     request_persistent_storage,
@@ -250,6 +251,53 @@ describe( `journal storage`, () => {
 
         expect( clips.map( ( { id } ) => id ) ).toEqual( [ second_clip.id, third_clip.id ] )
         expect( clips.map( ( { order_index } ) => order_index ) ).toEqual( [ 1, 2 ] )
+    } )
+
+    test( `moves clips in queue order and prunes stale exports`, async () => {
+        const project = await create_project()
+        const settings = await load_settings()
+        const first_clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `first` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+        const second_clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `second` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+        const third_clip = await add_clip_to_project( {
+            project_id: project.id,
+            blob: new Blob( [ `third` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            duration_ms: 1000
+        } )
+        const { settings_hash, clip_manifest_hash } = create_export_hashes( {
+            clips: [ first_clip, second_clip, third_clip ],
+            settings
+        } )
+        const export_record = await save_export_record( {
+            project_id: project.id,
+            blob: new Blob( [ `export` ], { type: `video/webm` } ),
+            mime_type: `video/webm`,
+            settings_hash,
+            clip_manifest_hash,
+            duration_ms: 3000
+        } )
+
+        await move_clip( third_clip.id, `earlier` )
+
+        const moved_clips = await get_project_clips( project.id )
+
+        expect( moved_clips.map( ( { id } ) => id ) ).toEqual( [
+            first_clip.id,
+            third_clip.id,
+            second_clip.id
+        ] )
+        expect( moved_clips.find( ( { id } ) => id === third_clip.id ).version ).toBe( 2 )
+        expect( await get_export_blob( export_record.id ) ).toBe( null )
     } )
 
     test( `updates clip media details after immediate queue persistence`, async () => {

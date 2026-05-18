@@ -142,6 +142,7 @@ describe( `recording controller`, () => {
         vi.mocked( persisted_storage ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
         vi.mocked( update_clip_media_details ).mockReset()
+        vi.stubGlobal( `MediaRecorder`, () => {} )
         clip_saved.mockReset()
         vi.mocked( add_clip_to_project ).mockResolvedValue( { id: `clip-1` } )
         vi.mocked( check_media_permissions ).mockResolvedValue( {
@@ -166,6 +167,7 @@ describe( `recording controller`, () => {
     afterEach( () => {
         cleanup()
         vi.restoreAllMocks()
+        vi.unstubAllGlobals()
         vi.clearAllMocks()
         Object.defineProperty( document, `hidden`, {
             configurable: true,
@@ -199,6 +201,42 @@ describe( `recording controller`, () => {
         expect( create_media_recorder ).not.toHaveBeenCalled()
         expect( add_clip_to_project ).not.toHaveBeenCalled()
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `does not open media devices when MediaRecorder is unavailable`, async () => {
+        vi.stubGlobal( `MediaRecorder`, undefined )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        expect( request_capture_stream ).not.toHaveBeenCalled()
+        expect( create_media_recorder ).not.toHaveBeenCalled()
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( controller.error_message ).toMatch( /cannot record video with MediaRecorder/ )
+    } )
+
+    test( `marks permission recovery after a capture denial`, async () => {
+        const denied_error = new Error( `Permission denied` )
+        denied_error.name = `NotAllowedError`
+
+        vi.mocked( request_capture_stream ).mockRejectedValue( denied_error )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( controller.permission_recovery_needed ).toBe( true )
+        } )
+        expect( controller.error_message ).toBe( `Permission denied` )
+        expect( create_media_recorder ).not.toHaveBeenCalled()
     } )
 
     test( `stops keyboard-started pending capture on page lifecycle cancellation`, async () => {

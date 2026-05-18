@@ -17,6 +17,8 @@ export {
 } from './settings.js'
 
 const FPS = 30
+const MEDIA_EVENT_TIMEOUT_MS = 8_000
+const PLAYBACK_STALL_TIMEOUT_MS = 8_000
 
 const make_abort_error = () => new DOMException( `Export cancelled`, `AbortError` )
 
@@ -28,7 +30,9 @@ const wait_for_event = ( target, event_name, signal ) => new Promise( ( resolve,
     let complete = null
     let fail = null
     let abort = null
+    let timeout_id = null
     const cleanup = () => {
+        clearTimeout( timeout_id )
         target.removeEventListener( event_name, complete )
         target.removeEventListener( `error`, fail )
         signal?.removeEventListener( `abort`, abort )
@@ -45,6 +49,10 @@ const wait_for_event = ( target, event_name, signal ) => new Promise( ( resolve,
         cleanup()
         reject( make_abort_error() )
     }
+    timeout_id = setTimeout( () => {
+        cleanup()
+        reject( new Error( `Media playback stalled while preparing export.` ) )
+    }, MEDIA_EVENT_TIMEOUT_MS )
 
     if( signal?.aborted ) {
         abort()
@@ -55,6 +63,25 @@ const wait_for_event = ( target, event_name, signal ) => new Promise( ( resolve,
     target.addEventListener( `error`, fail, { once: true } )
     signal?.addEventListener( `abort`, abort, { once: true } )
 } )
+
+const assert_playback_is_moving = ( {
+    clip_index,
+    video,
+    playback_progress,
+    timestamp
+} ) => {
+    const advanced = video.currentTime > playback_progress.last_time + 0.04
+
+    if( advanced ) {
+        playback_progress.last_time = video.currentTime
+        playback_progress.last_progress_at = timestamp
+        return
+    }
+
+    if( timestamp - playback_progress.last_progress_at <= PLAYBACK_STALL_TIMEOUT_MS ) return
+
+    throw new Error( `Clip ${ clip_index + 1 } stopped playing during export.` )
+}
 
 const wait_for_abortable = ( promise, signal ) => new Promise( ( resolve, reject ) => {
     const abort = () => reject( make_abort_error() )
@@ -245,10 +272,22 @@ const play_clip_to_canvas = async ( {
 
         await start_video_playback( video, signal )
 
+        const playback_progress = {
+            last_time: -1,
+            last_progress_at: performance.now()
+        }
+
         while( !video.ended ) {
             throw_if_aborted( signal )
+            const timestamp = performance.now()
 
             draw_video_frame( context, video, canvas )
+            assert_playback_is_moving( {
+                clip_index,
+                video,
+                playback_progress,
+                timestamp
+            } )
 
             const current_clip_ms = Math.min( duration_ms, Math.round( video.currentTime * 1000 ) )
             const completed_ms = previous_duration_ms + current_clip_ms
@@ -257,6 +296,12 @@ const play_clip_to_canvas = async ( {
                 percent,
                 message: `Exporting clip ${ clip_index + 1 } of ${ clips.length }`
             } )
+
+            if(
+                Number.isFinite( video.duration )
+                && video.duration > 0
+                && video.currentTime >= video.duration - 0.04
+            ) break
 
             await next_animation_frame()
         }

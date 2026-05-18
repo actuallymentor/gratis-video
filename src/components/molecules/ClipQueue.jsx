@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
-import { Trash2, VideoOff, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Trash2, VideoOff, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
 import { useModalFocus } from '../../hooks/use_modal_focus.js'
 import {
@@ -72,6 +72,11 @@ const EmptyQueue = styled.div`
     text-align: center;
 `
 
+const RowActions = styled.div`
+    display: grid;
+    gap: 0.4rem;
+`
+
 const Dialog = styled.div`
     position: fixed;
     inset: 0;
@@ -138,7 +143,7 @@ function ClipThumbnail( { clip, label, on_preview } ) {
  * @param {Object} props - Queue props.
  * @returns {JSX.Element} Clip queue.
  */
-export function ClipQueue( { clips, on_delete } ) {
+export function ClipQueue( { clips, on_delete, on_move = null } ) {
     const [ preview_clip, set_preview_clip ] = useState( null )
     const [ preview_url, set_preview_url ] = useState( null )
     const [ preview_error, set_preview_error ] = useState( null )
@@ -219,11 +224,25 @@ export function ClipQueue( { clips, on_delete } ) {
                     <strong>Clip { index + 1 }</strong>
                     <span>{ format_duration( clip.duration_ms ) } at { format_time( clip.created_at ) }</span>
                 </Details>
-                <IconButton
-                    icon={ Trash2 }
-                    label={ `Delete clip ${ index + 1 }` }
-                    onClick={ () => on_delete( clip ) }
-                />
+                <RowActions>
+                    <IconButton
+                        icon={ ArrowUp }
+                        label={ `Move clip ${ index + 1 } earlier` }
+                        onClick={ () => on_move?.( clip, `earlier` ) }
+                        disabled={ !on_move || index === 0 }
+                    />
+                    <IconButton
+                        icon={ ArrowDown }
+                        label={ `Move clip ${ index + 1 } later` }
+                        onClick={ () => on_move?.( clip, `later` ) }
+                        disabled={ !on_move || index === clips.length - 1 }
+                    />
+                    <IconButton
+                        icon={ Trash2 }
+                        label={ `Delete clip ${ index + 1 }` }
+                        onClick={ () => on_delete( clip ) }
+                    />
+                </RowActions>
             </Row> ) }
         </Queue>
 

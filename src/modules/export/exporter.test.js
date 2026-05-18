@@ -223,6 +223,51 @@ describe( `export compiler`, () => {
         expect( stopped_tracks ).toContain( `video` )
     } )
 
+    test( `fails clearly when a clip never becomes readable`, async () => {
+        const create_element = document.createElement.bind( document )
+
+        class StalledVideoElement extends FakeVideoElement {
+
+            set src( value ) {
+                this.src_value = value
+            }
+
+        }
+
+        try {
+            vi.useFakeTimers()
+            vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+            vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+            vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+            vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+                if( tag_name === `video` ) return new StalledVideoElement()
+                return create_element( tag_name, options )
+            } )
+
+            const export_promise = compile_project_export( {
+                clips: [
+                    {
+                        id: `clip-1`,
+                        duration_ms: 1000,
+                        width: 640,
+                        height: 360
+                    }
+                ],
+                settings: default_settings,
+                signal: new AbortController().signal
+            } )
+            const stalled_export = expect( export_promise ).rejects.toThrow( /stalled/ )
+
+            await Promise.resolve()
+            await vi.advanceTimersByTimeAsync( 8_000 )
+
+            await stalled_export
+            expect( stopped_tracks ).toContain( `video` )
+        } finally {
+            vi.useRealTimers()
+        }
+    } )
+
     test( `stops before allocating export streams when already cancelled`, async () => {
         const abort_controller = new AbortController()
         abort_controller.abort()
@@ -492,6 +537,24 @@ describe( `export compiler`, () => {
         vi.stubGlobal( `MediaRecorder`, SelectiveMediaRecorder )
 
         expect( get_supported_export_mime_types() ).toEqual( [ `video/webm` ] )
+    } )
+
+    test( `hides MIME types when the canvas recorder cannot start`, () => {
+        class StartBlockedMediaRecorder extends FakeMediaRecorder {
+
+            static isTypeSupported( mime_type ) {
+                return mime_type === `video/webm`
+            }
+
+            start() {
+                throw new Error( `Canvas recording blocked` )
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, StartBlockedMediaRecorder )
+
+        expect( get_supported_export_mime_types() ).toEqual( [] )
     } )
 
     test( `normalizes persisted export settings to runtime-supported choices`, () => {

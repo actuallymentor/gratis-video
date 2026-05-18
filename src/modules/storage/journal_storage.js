@@ -98,6 +98,12 @@ const sort_clips = ( clips ) => [ ...clips ]
     .sort( ( first, second ) => first.order_index - second.order_index )
     .map( strip_clip_blob_fields )
 
+const increment_clip_version = ( clip, timestamp ) => ( {
+    ...strip_clip_blob_fields( clip ),
+    version: ( clip.version ?? 1 ) + 1,
+    updated_at: timestamp
+} )
+
 const delete_export_records = async ( export_records ) => {
     if( !export_records.length ) return
 
@@ -595,6 +601,56 @@ export async function delete_clip( clip_id ) {
     await prune_stale_project_exports( clip.project_id ).catch( ( error ) => {
         log.warn( `Could not prune stale exports after clip deletion`, error )
     } )
+}
+
+/**
+ * Moves one clip earlier or later in its project queue.
+ * @param {string} clip_id - Clip id to move.
+ * @param {string} direction - `earlier` or `later`.
+ * @returns {Promise<Array>} Updated project clip queue.
+ */
+export async function move_clip( clip_id, direction ) {
+    const clip = await get_record( `clips`, clip_id )
+    if( !clip || clip.deleted_at ) return []
+
+    const project = await get_project( clip.project_id )
+    if( !project ) return []
+
+    const project_clips = await get_index_records( `clips`, `project_id`, clip.project_id )
+    const active_clips = [ ...project_clips ]
+        .filter( ( { deleted_at } ) => !deleted_at )
+        .sort( ( first, second ) => first.order_index - second.order_index )
+    const clip_index = active_clips.findIndex( ( { id } ) => id === clip_id )
+    const offset = direction === `earlier` ? -1 : 1
+    const target_index = clip_index + offset
+    const target_clip = active_clips[ target_index ]
+
+    if( clip_index === -1 || !target_clip ) return sort_clips( project_clips )
+
+    const timestamp = now_iso()
+    const moved_clip = {
+        ...increment_clip_version( active_clips[ clip_index ], timestamp ),
+        order_index: target_clip.order_index
+    }
+    const swapped_clip = {
+        ...increment_clip_version( target_clip, timestamp ),
+        order_index: active_clips[ clip_index ].order_index
+    }
+    const updated_project = {
+        ...project,
+        updated_at: timestamp
+    }
+
+    await write_transaction( [ `projects`, `clips` ], ( stores ) => {
+        stores.clips.put( moved_clip )
+        stores.clips.put( swapped_clip )
+        stores.projects.put( updated_project )
+    } )
+    await prune_stale_project_exports( clip.project_id ).catch( ( error ) => {
+        log.warn( `Could not prune stale exports after clip reorder`, error )
+    } )
+
+    return get_project_clips( clip.project_id )
 }
 
 /**

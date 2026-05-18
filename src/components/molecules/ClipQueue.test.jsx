@@ -142,4 +142,25 @@ describe( `clip queue`, () => {
         } )
         expect( get_clip_thumbnail_blob ).toHaveBeenCalledTimes( 2 )
     } )
+
+    test( `moves clips with boundary controls disabled`, async () => {
+        const user = userEvent.setup()
+        const on_move = vi.fn()
+        const second_clip = {
+            ...clip,
+            id: `clip-2`,
+            created_at: `2026-05-17T10:00:02.000Z`
+        }
+
+        render( <ClipQueue clips={ [ clip, second_clip ] } on_delete={ vi.fn() } on_move={ on_move } /> )
+
+        expect( screen.getByRole( `button`, { name: `Move clip 1 earlier` } ).disabled ).toBe( true )
+        expect( screen.getByRole( `button`, { name: `Move clip 2 later` } ).disabled ).toBe( true )
+
+        await user.click( screen.getByRole( `button`, { name: `Move clip 2 earlier` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Move clip 1 later` } ) )
+
+        expect( on_move ).toHaveBeenCalledWith( second_clip, `earlier` )
+        expect( on_move ).toHaveBeenCalledWith( clip, `later` )
+    } )
 } )

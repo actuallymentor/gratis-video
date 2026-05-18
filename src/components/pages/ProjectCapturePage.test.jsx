@@ -24,18 +24,21 @@ import {
     get_project_clips,
     get_valid_cached_export,
     load_settings,
+    move_clip,
     set_active_project
 } from '../../modules/storage/journal_storage.js'
 import { share_export_file } from '../../modules/sharing/share.js'
 
 const recording_state = vi.hoisted( () => ( {
-    error_message: null
+    error_message: null,
+    permission_recovery_needed: false
 } ) )
 
 vi.mock( '../../hooks/use_recording_controller.js', () => ( {
     useRecordingController: () => ( {
         stream: null,
         error_message: recording_state.error_message,
+        permission_recovery_needed: recording_state.permission_recovery_needed,
         recording_state: `idle`,
         elapsed_ms: 0,
         press_record: vi.fn(),
@@ -94,6 +97,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     get_project_clips: vi.fn(),
     get_valid_cached_export: vi.fn(),
     load_settings: vi.fn(),
+    move_clip: vi.fn(),
     set_active_project: vi.fn()
 } ) )
 
@@ -174,9 +178,11 @@ describe( `project capture page`, () => {
         vi.mocked( get_project_clips ).mockResolvedValue( [ clip ] )
         vi.mocked( get_valid_cached_export ).mockResolvedValue( null )
         vi.mocked( load_settings ).mockResolvedValue( settings )
+        vi.mocked( move_clip ).mockResolvedValue( [ clip ] )
         vi.mocked( set_active_project ).mockResolvedValue()
         vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
         recording_state.error_message = null
+        recording_state.permission_recovery_needed = false
         query_state.initial_panel = undefined
         query_state.set_panel = null
         useAppStore.setState( {
@@ -443,6 +449,25 @@ describe( `project capture page`, () => {
         expect( screen.queryByText( /Camera or microphone access is blocked/ ) ).toBe( null )
     } )
 
+    test( `keeps settings recovery available after a capture denial with stale permission status`, async () => {
+        recording_state.error_message = `Camera or microphone access is blocked for this site.`
+        recording_state.permission_recovery_needed = true
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `unsupported`,
+                microphone: `unsupported`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /Camera or microphone access is blocked/ ) ).toBeTruthy()
+        expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings` )
+    } )
+
     test( `keeps video-only recording available when microphone permission is denied`, async () => {
         useAppStore.setState( {
             permission_status: {
@@ -471,6 +496,25 @@ describe( `project capture page`, () => {
         await user.click( screen.getByRole( `button`, { name: `Delete clip 1` } ) )
 
         expect( delete_clip ).toHaveBeenCalledWith( clip.id )
+    } )
+
+    test( `moves a clip from the capture queue`, async () => {
+        const user = userEvent.setup()
+        const second_clip = {
+            ...clip,
+            id: `clip-2`,
+            order_index: 1,
+            created_at: `2026-05-17T10:00:02.000Z`
+        }
+
+        vi.mocked( get_project_clips ).mockResolvedValue( [ clip, second_clip ] )
+
+        render_capture()
+
+        expect( await screen.findByText( `Clip 2` ) ).toBeTruthy()
+        await user.click( screen.getByRole( `button`, { name: `Move clip 2 earlier` } ) )
+
+        expect( move_clip ).toHaveBeenCalledWith( second_clip.id, `earlier` )
     } )
 
     test( `redirects to another active project when the requested project cannot be loaded`, async () => {

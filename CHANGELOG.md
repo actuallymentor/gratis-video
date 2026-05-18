@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0] - 2026-05-18
+
+### Added
+- add clip queue move controls and reorder regression coverage
+- add media denial, recorder support, and stalled export regressions
+
+### Fixed
+- block recording before camera access when MediaRecorder is unavailable
+- fail stalled export playback instead of leaving progress stuck
+- require canvas export recorders to start before showing options
+- keep permission recovery links after stale capture-denial status
+
 ## [0.2.14] - 2026-05-18
 
 ### Added
