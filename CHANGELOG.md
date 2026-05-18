@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.11] - 2026-05-18
+
+### Added
+- add cached asset fallback regression for offline startup
+
+### Fixed
+- serve cached PWA build assets when browser request matching misses
+
 ## [0.2.10] - 2026-05-18
 
 ### Added

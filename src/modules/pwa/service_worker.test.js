@@ -141,4 +141,25 @@ describe( `service worker`, () => {
         expect( cache.addAll ).not.toHaveBeenCalled()
         expect( cache.put ).not.toHaveBeenCalled()
     } )
+
+    test( `serves build assets from a cached path when request matching misses`, async () => {
+        const cached_asset = new Response( `asset` )
+        const { caches, listeners } = await load_service_worker()
+        let response_promise = null
+
+        caches.match
+            .mockResolvedValueOnce( null )
+            .mockResolvedValueOnce( cached_asset )
+
+        listeners.fetch( {
+            request: new Request( `https://journal.test/assets/index.js` ),
+            respondWith: ( promise ) => {
+                response_promise = promise
+            }
+        } )
+
+        await expect( response_promise ).resolves.toBe( cached_asset )
+        expect( caches.match ).toHaveBeenNthCalledWith( 1, expect.any( Request ) )
+        expect( caches.match ).toHaveBeenNthCalledWith( 2, `/assets/index.js` )
+    } )
 } )

@@ -49,6 +49,13 @@ const cache_index_with_build_assets = async ( cache, index_response ) => {
     await prune_stale_build_assets( cache, build_asset_urls )
 }
 
+const match_cached_request = async ( request ) => {
+    const url = new URL( request.url )
+    const cached_response = await caches.match( request )
+
+    return cached_response || caches.match( url.pathname )
+}
+
 const cache_app_shell = async () => {
     const cache = await caches.open( CACHE_NAME )
 
@@ -87,7 +94,7 @@ self.addEventListener( `fetch`, ( event ) => {
     }
 
     event.respondWith(
-        caches.match( request ).then( ( cached_response ) => {
+        match_cached_request( request ).then( ( cached_response ) => {
             if( cached_response ) return cached_response
 
             return fetch( request ).then( ( response ) => {
@@ -96,7 +103,7 @@ self.addEventListener( `fetch`, ( event ) => {
                 const cloned_response = response.clone()
                 caches.open( CACHE_NAME ).then( ( cache ) => cache.put( request, cloned_response ) )
                 return response
-            } )
+            } ).catch( () => match_cached_request( request ) )
         } )
     )
 } )
