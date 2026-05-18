@@ -14,13 +14,14 @@ import {
     select_supported_mime_type
 } from './recorder.js'
 
-const expect_uncropped_video_constraints = ( constraints ) => {
-    expect( constraints.video ).toMatchObject( {
+const expect_unsized_video_constraints = ( constraints ) => {
+    expect( constraints.video ).toEqual( {
         facingMode: { ideal: `environment` },
-        width: { ideal: 4096 },
-        height: { ideal: 4096 },
         resizeMode: { ideal: `none` }
     } )
+    expect( constraints.video ).not.toHaveProperty( `width` )
+    expect( constraints.video ).not.toHaveProperty( `height` )
+    expect( constraints.video ).not.toHaveProperty( `aspectRatio` )
 }
 
 describe( `recorder helpers`, () => {
@@ -125,11 +126,11 @@ describe( `recorder helpers`, () => {
                 noiseSuppression: true
             }
         } )
-        expect_uncropped_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
         expect( getUserMedia.mock.calls[ 1 ][ 0 ] ).toMatchObject( {
             audio: false
         } )
-        expect_uncropped_video_constraints( getUserMedia.mock.calls[ 1 ][ 0 ] )
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 1 ][ 0 ] )
     } )
 
     test( `requests video-only capture immediately when microphone is known denied`, async () => {
@@ -146,10 +147,10 @@ describe( `recorder helpers`, () => {
         expect( getUserMedia ).toHaveBeenCalledWith( expect.objectContaining( {
             audio: false
         } ) )
-        expect_uncropped_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
     } )
 
-    test( `refines opened streams toward the largest native camera frame`, async () => {
+    test( `does not apply size constraints after opening the camera`, async () => {
         const applyConstraints = vi.fn().mockResolvedValue()
         const track = {
             applyConstraints,
@@ -171,12 +172,7 @@ describe( `recorder helpers`, () => {
         } )
 
         await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
-        expect( applyConstraints ).toHaveBeenCalledWith( {
-            width: { ideal: 4032 },
-            height: { ideal: 3024 },
-            resizeMode: { ideal: `none` },
-            zoom: { ideal: 1 }
-        } )
+        expect( applyConstraints ).not.toHaveBeenCalled()
     } )
 
     test( `marks microphone denial when video-only retry succeeds`, async () => {

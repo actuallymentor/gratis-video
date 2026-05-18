@@ -1,6 +1,7 @@
 # Timeline
 
 - 2026-05-18T20:43:27Z - Fixed recording capture crop by removing the 1280x720 16:9 preference, requesting native non-cropped camera output, refining opened tracks toward maximum reported dimensions, showing the live preview with `object-fit: contain`, and preparing the 0.3.18 patch notes/version bump.
+- 2026-05-18T21:17:57Z - Corrected recording capture again by removing all width/height requests and the post-open max-dimension refinement. Capture now asks only for the preferred camera and `resizeMode: none`, leaving the recorded dimensions to the browser-provided camera frame.
 - 2026-05-17: Created `specification.md` from `RAMBLE.md`, incorporating local design/tooling preferences and current browser API research.
 - 2026-05-17: Refined export/share specification to require an explicit post-compile share action for native share compatibility.
 - 2026-05-17: Implemented the Vite React local-first daily video journal app with IndexedDB storage, MediaRecorder capture, explicit export/share flow, PWA shell, and focused unit tests.

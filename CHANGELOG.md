@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.19] - 2026-05-18
+
+### Fixed
+- remove all recording width and height capture constraints
+
 ## [0.3.18] - 2026-05-18
 
 ### Fixed

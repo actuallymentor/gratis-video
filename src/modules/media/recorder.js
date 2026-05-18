@@ -10,15 +10,12 @@ export const HOLD_THRESHOLD_MS = 250
 export const MINIMUM_CLIP_MS = 400
 export const CAPTURE_WARNING_KEY = `daily_video_journal_capture_warning`
 const VIDEO_EVENT_TIMEOUT_MS = 3_000
-const MAX_INITIAL_CAPTURE_DIMENSION = 4096
 
-// Prefer the largest native frame without pushing the browser toward a cropped
-// 16:9 mode. Some mobile browsers satisfy 1280x720 by cropping the camera
-// sensor, which makes recordings look zoomed compared with the native camera.
+// Do not request a pixel size or aspect ratio. Phones can switch into cropped
+// sensor modes when width/height are requested, so we record the frame the
+// browser gives us and only ask it not to derive one by cropping/scaling.
 const capture_video_constraints = {
     facingMode: { ideal: `environment` },
-    width: { ideal: MAX_INITIAL_CAPTURE_DIMENSION },
-    height: { ideal: MAX_INITIAL_CAPTURE_DIMENSION },
     resizeMode: { ideal: `none` }
 }
 
@@ -61,54 +58,6 @@ const camera_denied_error = () => new DOMException(
     `Camera access is blocked for this site.`,
     `NotAllowedError`
 )
-
-const numeric_capability_max = ( capability ) => {
-    return Number.isFinite( capability?.max ) && capability.max > 0 ? capability.max : null
-}
-
-const numeric_capability_min = ( capability ) => {
-    return Number.isFinite( capability?.min ) && capability.min > 0 ? capability.min : null
-}
-
-const largest_native_video_constraints = ( track ) => {
-    const capabilities = track?.getCapabilities?.()
-    const width = numeric_capability_max( capabilities?.width )
-    const height = numeric_capability_max( capabilities?.height )
-
-    if( !width || !height ) return null
-
-    const zoom = numeric_capability_min( capabilities?.zoom )
-    const constraints = {
-        width: { ideal: width },
-        height: { ideal: height },
-        resizeMode: { ideal: `none` }
-    }
-
-    if( zoom ) constraints.zoom = { ideal: zoom }
-
-    return constraints
-}
-
-const prefer_largest_native_video_frame = async ( stream ) => {
-    const [ video_track = null ] = stream.getVideoTracks?.() ?? []
-    const constraints = largest_native_video_constraints( video_track )
-
-    if( !constraints || !video_track?.applyConstraints ) return stream
-
-    try {
-        await video_track.applyConstraints( constraints )
-    } catch {
-        // The initial stream is still valid if a browser cannot refine it.
-    }
-
-    return stream
-}
-
-const request_media_stream = async ( constraints ) => {
-    const stream = await navigator.mediaDevices.getUserMedia( constraints )
-
-    return prefer_largest_native_video_frame( stream )
-}
 
 /**
  * Selects the first MediaRecorder MIME type supported by this browser.
@@ -170,15 +119,15 @@ export async function request_capture_stream( { audio_enabled = true } = {} ) {
         audio: audio_enabled ? capture_audio_constraints : false
     }
 
-    if( !audio_enabled ) return request_media_stream( capture_constraints )
+    if( !audio_enabled ) return navigator.mediaDevices.getUserMedia( capture_constraints )
 
     try {
-        return await request_media_stream( capture_constraints )
+        return await navigator.mediaDevices.getUserMedia( capture_constraints )
     } catch ( error ) {
         if( !should_retry_video_only( error ) ) throw error
 
         try {
-            const video_only_stream = await request_media_stream( {
+            const video_only_stream = await navigator.mediaDevices.getUserMedia( {
                 video: capture_video_constraints,
                 audio: false
             } )
