@@ -21,6 +21,10 @@ npm test
 npm run test:e2e
 ```
 
+## Deploy
+
+GitHub Actions deploys version bumps to the `gratis-video-log` Cloudflare Worker with Workers Static Assets. Configure repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
 ## Behavior
 
 - Projects, clips, thumbnails, settings, and cached exports are stored in IndexedDB.

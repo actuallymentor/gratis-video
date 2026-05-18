@@ -1,0 +1,15 @@
+# Cloudflare Workers Static Assets - serves the built web app.
+# Deployed by the "Deploy Web" GitHub Action on version bumps.
+#
+# The project name here must match the application name in the
+# Cloudflare dashboard (Workers & Pages / Applications).
+
+name = "gratis-video-log"
+compatibility_date = "2026-05-18"
+
+[assets]
+directory = "./dist"
+
+# SPA routing - serve index.html for any path that doesn't match a static file.
+# Without this, direct navigation to routes like /projects/:id will 404.
+not_found_handling = "single-page-application"

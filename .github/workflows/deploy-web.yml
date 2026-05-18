@@ -1,0 +1,69 @@
+# Deploy web app to Cloudflare Workers (Static Assets) when a version
+# bump lands on the default branch. Project name is defined in wrangler.toml.
+#
+# Requires:
+#   Secrets - CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+name: Deploy Web
+
+on:
+    push:
+        branches: [ main, master ]
+        paths: [ package.json ]
+
+concurrency:
+    group: deploy-web
+    cancel-in-progress: true
+
+jobs:
+    # Gate deployment on a package.json version that differs from the latest
+    # GitHub release, matching the gratis-reader deploy pattern.
+    check-version:
+        runs-on: ubuntu-latest
+        outputs:
+            changed: ${{ steps.diff.outputs.changed }}
+            version: ${{ steps.diff.outputs.version }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Compare version with latest release
+              id: diff
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  CURR=$(node -p "require('./package.json').version")
+                  PREV=$(gh release view --json tagName -q .tagName 2>/dev/null | sed 's/^v//' || echo "")
+                  echo "latest-release=$PREV curr=$CURR"
+                  if [ "$PREV" != "$CURR" ]; then
+                    echo "changed=true"  >> "$GITHUB_OUTPUT"
+                    echo "version=$CURR" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "changed=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+    deploy:
+        needs: check-version
+        if: needs.check-version.outputs.changed == 'true'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+
+            - name: Install dependencies
+              run: npm ci || npm i
+
+            - name: Build
+              run: npm run build
+
+            - name: Deploy to Cloudflare Workers
+              uses: cloudflare/wrangler-action@v3
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  command: deploy

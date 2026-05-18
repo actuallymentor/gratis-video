@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.16] - 2026-05-18
+
+### Added
+- add Cloudflare Workers Static Assets deploy workflow
+
 ## [0.3.15] - 2026-05-18
 
 ### Added
