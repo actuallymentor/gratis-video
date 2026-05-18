@@ -36,3 +36,4 @@
 - Recording shutdown needs a bounded `MediaRecorder.onstop` fallback. Some browser failure paths may stop tracks or encoders without firing `onstop`; keep available chunks saveable and always release tracks.
 - When microphone permission is already known denied, request video-only capture immediately instead of first requesting audio and relying on a failed combined `getUserMedia()` call.
 - Cached exports should only invoke native file share directly when the blob was preloaded before the user tap. If metadata/blob is discovered during the tap, route through the explicit ready panel so Share has a fresh user action.
+- Do not let a pending cached-export preload force compilation. On Share/Export, re-check the cache and only compile after invalid/missing export metadata and blobs are ruled out.

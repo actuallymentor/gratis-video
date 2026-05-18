@@ -288,6 +288,32 @@ describe( `project capture page`, () => {
         expect( share_export_file ).not.toHaveBeenCalled()
     } )
 
+    test( `waits for an in-flight cache lookup before compiling`, async () => {
+        const user = userEvent.setup()
+        const pending_lookup = make_deferred()
+
+        vi.mocked( get_valid_cached_export )
+            .mockReturnValueOnce( pending_lookup.promise )
+            .mockResolvedValueOnce( export_record )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_valid_cached_export ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
+        expect( share_export_file ).not.toHaveBeenCalled()
+
+        await act( async () => {
+            pending_lookup.resolve( null )
+            await pending_lookup.promise
+        } )
+    } )
+
     test( `requires a fresh share action for a cached export discovered during the export tap`, async () => {
         const user = userEvent.setup()
         let allow_cache = false
@@ -307,6 +333,25 @@ describe( `project capture page`, () => {
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
         expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
+        expect( share_export_file ).not.toHaveBeenCalled()
+    } )
+
+    test( `compiles when a preloaded cached export blob is missing`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( get_valid_cached_export ).mockResolvedValue( export_record )
+        vi.mocked( get_export_blob ).mockResolvedValue( null )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_export_blob ).toHaveBeenCalledWith( export_record.id )
+        } )
+
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for compile/ ) ).toBeTruthy()
         expect( share_export_file ).not.toHaveBeenCalled()
     } )
 
@@ -383,6 +428,51 @@ describe( `project capture page`, () => {
 
         expect( await screen.findByText( project.title ) ).toBeTruthy()
         expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
+    } )
+
+    test( `blocks recording when the browser origin is not secure`, async () => {
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                secure_context: false,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /Recording requires HTTPS/ ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
+    } )
+
+    test( `blocks recording when media devices are unavailable`, async () => {
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                media_devices: `unsupported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /cannot open the camera or microphone/ ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( true )
+    } )
+
+    test( `shows low storage guidance near capture when recording is otherwise available`, async () => {
+        useAppStore.setState( {
+            storage_estimate: {
+                usage: 900,
+                quota: 1000
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /Local browser storage is almost full/ ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Record clip` } ).disabled ).toBe( false )
     } )
 
     test( `shows blocking media guidance before storage warnings`, async () => {

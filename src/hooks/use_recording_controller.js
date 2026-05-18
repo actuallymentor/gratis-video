@@ -307,7 +307,6 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_recording_mode( null )
         set_phase( `starting` )
         set_media_stream_state( `opening` )
-        pulse_haptic( settings.haptics_enabled )
 
         let next_stream = null
 
@@ -376,8 +375,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             set_stream( next_stream )
             set_recording_started_at( started_at )
 
-            play_sound_feedback( settings.sounds_enabled, `start` )
             recorder.start( 250 )
+            pulse_haptic( settings.haptics_enabled )
+            play_sound_feedback( settings.sounds_enabled, `start` )
             set_phase( `recording` )
             refresh_environment_state().catch( ( error ) => log.warn( `Environment refresh failed`, error ) )
 

@@ -61,6 +61,27 @@ describe( `clip queue`, () => {
         expect( URL.revokeObjectURL ).toHaveBeenCalledWith( `blob:preview` )
     } )
 
+    test( `closes preview with Escape and restores focus to the preview trigger`, async () => {
+        const user = userEvent.setup()
+
+        render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
+
+        const preview_button = screen.getByRole( `button`, { name: `Preview clip 1` } )
+        preview_button.focus()
+
+        await user.click( preview_button )
+
+        expect( await screen.findByRole( `dialog`, { name: `Clip preview` } ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( document.activeElement ).toBe( screen.getByRole( `button`, { name: `Close preview` } ) )
+        } )
+
+        await user.keyboard( `{Escape}` )
+
+        expect( screen.queryByRole( `dialog`, { name: `Clip preview` } ) ).toBe( null )
+        expect( document.activeElement ).toBe( preview_button )
+    } )
+
     test( `shows a local missing-file message when preview blob is gone`, async () => {
         const user = userEvent.setup()
 

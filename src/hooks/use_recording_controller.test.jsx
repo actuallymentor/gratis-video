@@ -18,6 +18,8 @@ import {
     create_media_recorder,
     generate_video_thumbnail,
     get_video_metadata,
+    play_sound_feedback,
+    pulse_haptic,
     request_capture_stream
 } from '../modules/media/recorder.js'
 
@@ -116,15 +118,13 @@ const make_recorder = () => {
 }
 
 let controller
+let recording_settings
 const clip_saved = vi.fn()
 
 function Harness() {
     controller = useRecordingController( {
         project_id: `project-1`,
-        settings: {
-            haptics_enabled: false,
-            sounds_enabled: false
-        },
+        settings: recording_settings,
         on_clip_saved: clip_saved
     } )
 
@@ -145,10 +145,16 @@ describe( `recording controller`, () => {
         vi.mocked( generate_video_thumbnail ).mockReset()
         vi.mocked( get_video_metadata ).mockReset()
         vi.mocked( persisted_storage ).mockReset()
+        vi.mocked( play_sound_feedback ).mockReset()
+        vi.mocked( pulse_haptic ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
         vi.mocked( update_clip_media_details ).mockReset()
         vi.stubGlobal( `MediaRecorder`, () => {} )
         clip_saved.mockReset()
+        recording_settings = {
+            haptics_enabled: false,
+            sounds_enabled: false
+        }
         vi.mocked( add_clip_to_project ).mockResolvedValue( { id: `clip-1` } )
         vi.mocked( check_media_permissions ).mockResolvedValue( {
             camera: `granted`,
@@ -362,6 +368,61 @@ describe( `recording controller`, () => {
         await waitFor( () => {
             expect( recovered_recorder.start ).toHaveBeenCalledTimes( 1 )
         } )
+        expect( useAppStore.getState().recording_state ).toBe( `recording` )
+    } )
+
+    test( `does not play start feedback when recorder start fails`, async () => {
+        const { stream, track } = make_stream()
+        const recorder = make_recorder()
+
+        recording_settings = {
+            haptics_enabled: true,
+            sounds_enabled: true
+        }
+        recorder.start = vi.fn( () => {
+            throw new Error( `Recorder start failed` )
+        } )
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( track.stop ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( pulse_haptic ).not.toHaveBeenCalled()
+        expect( play_sound_feedback ).not.toHaveBeenCalled()
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+    } )
+
+    test( `plays start feedback after recorder start succeeds`, async () => {
+        const { stream } = make_stream()
+        const recorder = make_recorder()
+
+        recording_settings = {
+            haptics_enabled: true,
+            sounds_enabled: true
+        }
+        vi.mocked( request_capture_stream ).mockResolvedValue( stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( pulse_haptic ).toHaveBeenCalledWith( true )
+        expect( play_sound_feedback ).toHaveBeenCalledWith( true, `start` )
         expect( useAppStore.getState().recording_state ).toBe( `recording` )
     } )
 

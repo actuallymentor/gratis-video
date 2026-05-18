@@ -128,6 +128,26 @@ describe( `journal storage`, () => {
         expect( second_project.title ).toBe( `${ first_project.title } - 2` )
     } )
 
+    test( `lists projects by most recently updated first`, async () => {
+        const first_project = await create_project()
+
+        await new Promise( ( resolve ) => setTimeout( resolve, 5 ) )
+        const second_project = await create_project()
+
+        expect( ( await list_projects() ).map( ( { id } ) => id ) ).toEqual( [
+            second_project.id,
+            first_project.id
+        ] )
+
+        await new Promise( ( resolve ) => setTimeout( resolve, 5 ) )
+        await rename_project( first_project.id, `Updated project` )
+
+        expect( ( await list_projects() ).map( ( { id } ) => id ) ).toEqual( [
+            first_project.id,
+            second_project.id
+        ] )
+    } )
+
     test( `marks active projects without changing project history order`, async () => {
         const project = await create_project()
         const original_project = await get_project( project.id )

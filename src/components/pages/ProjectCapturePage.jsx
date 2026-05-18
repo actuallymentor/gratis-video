@@ -128,7 +128,6 @@ export function ProjectCapturePage() {
     const [ cached_export_record, set_cached_export_record ] = useState( null )
     const [ cached_export_key, set_cached_export_key ] = useState( null )
     const [ cached_export_ready, set_cached_export_ready ] = useState( false )
-    const [ cached_export_loading, set_cached_export_loading ] = useState( false )
     const [ export_panel_record, set_export_panel_record ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
     const cached_export_blob_ref = useRef( null )
@@ -153,7 +152,6 @@ export function ProjectCapturePage() {
         set_cached_export_record( null )
         set_cached_export_key( null )
         set_cached_export_ready( false )
-        set_cached_export_loading( false )
     }, [] )
 
     const load_initial_export_blob = useCallback( async ( export_record ) => {
@@ -260,7 +258,6 @@ export function ProjectCapturePage() {
         clear_cached_export()
 
         if( !project || !settings || !clips.length ) return undefined
-        set_cached_export_loading( true )
 
         const load_cached_export = async () => {
             const hashes = create_export_hashes( { clips, settings } )
@@ -272,7 +269,6 @@ export function ProjectCapturePage() {
 
             if( cancelled ) return
             if( !cached_export ) {
-                set_cached_export_loading( false )
                 return
             }
 
@@ -282,15 +278,17 @@ export function ProjectCapturePage() {
             const blob = await get_export_blob( cached_export.id )
 
             if( cancelled ) return
-            set_cached_export_loading( false )
-            if( !blob ) return
+            if( !blob ) {
+                clear_cached_export()
+                return
+            }
 
             cached_export_blob_ref.current = blob
             set_cached_export_ready( true )
         }
 
         load_cached_export().catch( () => {
-            if( !cancelled ) set_cached_export_loading( false )
+            if( !cancelled ) clear_cached_export()
         } )
 
         return () => {
@@ -359,13 +357,6 @@ export function ProjectCapturePage() {
             && cached_export_key === cache_key
         ) {
             set_export_panel_record( cached_export_record )
-            set_export_requested( true )
-            set_panel( `export` )
-            return
-        }
-
-        if( cached_export_loading ) {
-            set_export_panel_record( null )
             set_export_requested( true )
             set_panel( `export` )
             return

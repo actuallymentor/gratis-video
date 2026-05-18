@@ -202,6 +202,24 @@ describe( `export panel`, () => {
         expect( download_export_file ).toHaveBeenCalledWith( saved_export, compiled_export.blob )
     } )
 
+    test( `downloads from the ready share action when native sharing fails`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( share_export_file ).mockRejectedValue( new Error( `Share target failed` ) )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ saved_export }
+            on_close={ vi.fn() }
+        /> )
+
+        await user.click( await screen.findByRole( `button`, { name: `Share` } ) )
+
+        expect( download_export_file ).toHaveBeenCalledWith( saved_export, compiled_export.blob )
+    } )
+
     test( `downloads directly from a ready export`, async () => {
         const user = userEvent.setup()
 

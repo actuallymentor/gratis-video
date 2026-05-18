@@ -139,6 +139,18 @@ describe( `settings page`, () => {
         expect( screen.getByText( `Microphone: prompt` ) ).toBeTruthy()
     } )
 
+    test( `shows low storage guidance from the browser estimate`, async () => {
+        vi.mocked( estimate_storage ).mockResolvedValue( {
+            usage: 900,
+            quota: 1000
+        } )
+
+        render_settings()
+
+        expect( await screen.findByText( /Local browser storage is almost full/ ) ).toBeTruthy()
+        expect( screen.getByText( /900 B used of 1000 B/ ) ).toBeTruthy()
+    } )
+
     test( `hides the format selector until specific supported formats are proven`, async () => {
         vi.mocked( get_supported_export_mime_types ).mockReturnValue( [] )
 

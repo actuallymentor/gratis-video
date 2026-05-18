@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.2] - 2026-05-18
+
+### Added
+- add export-cache, storage, blocker, sharing, and modal regressions
+
+### Fixed
+- reuse valid cached exports while preload checks are still settling
+- compile missing cached export blobs instead of opening a dead-end panel
+- play recording start feedback only after recording actually starts
+
 ## [0.3.1] - 2026-05-18
 
 ### Added
