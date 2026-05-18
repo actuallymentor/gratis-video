@@ -5,10 +5,15 @@ import { Download, Share2, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
 import { useModalFocus } from '../../hooks/use_modal_focus.js'
 import { create_export_hashes } from '../../modules/export/cache.js'
-import { compile_project_export } from '../../modules/export/exporter.js'
+import {
+    compile_project_export,
+    normalize_export_settings
+} from '../../modules/export/exporter.js'
 import {
     delete_export,
     get_export_blob,
+    get_project_clips,
+    load_settings,
     save_export_record
 } from '../../modules/storage/journal_storage.js'
 import {
@@ -233,6 +238,22 @@ export function ExportPanel( {
                 } )
 
                 if( !is_current_export() || abort_controller.signal.aborted ) return
+
+                const [ current_clips, current_settings ] = await Promise.all( [
+                    get_project_clips( project.id ),
+                    load_settings()
+                ] )
+                const current_hashes = create_export_hashes( {
+                    clips: current_clips,
+                    settings: normalize_export_settings( current_settings )
+                } )
+
+                if(
+                    current_hashes.settings_hash !== settings_hash
+                    || current_hashes.clip_manifest_hash !== clip_manifest_hash
+                ) {
+                    throw new Error( `Project changed while the export was compiling. Start the export again.` )
+                }
 
                 const saved_export = await save_export_record( {
                     project_id: project.id,

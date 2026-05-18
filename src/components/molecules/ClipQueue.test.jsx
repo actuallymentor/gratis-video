@@ -22,6 +22,7 @@ const clip = {
 
 describe( `clip queue`, () => {
     beforeEach( () => {
+        vi.clearAllMocks()
         vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `video` ], { type: `video/webm` } ) )
         vi.mocked( get_clip_thumbnail_blob ).mockResolvedValue( null )
         vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:preview` )
@@ -61,5 +62,42 @@ describe( `clip queue`, () => {
         await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
 
         expect( await screen.findByText( /clip file is missing/ ) ).toBeTruthy()
+    } )
+
+    test( `shows a local read-failure message when preview storage rejects`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( get_clip_blob ).mockRejectedValue( new Error( `IndexedDB failed` ) )
+
+        render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
+
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
+
+        expect( await screen.findByText( /could not be read from local browser storage/ ) ).toBeTruthy()
+    } )
+
+    test( `reloads thumbnails when async media details update the clip`, async () => {
+        const thumbnail_blob = new Blob( [ `thumb` ], { type: `image/jpeg` } )
+
+        vi.mocked( get_clip_thumbnail_blob )
+            .mockResolvedValueOnce( null )
+            .mockResolvedValueOnce( thumbnail_blob )
+
+        const { container, rerender } = render(
+            <ClipQueue clips={ [ { ...clip, updated_at: `2026-05-17T10:00:00.000Z` } ] } on_delete={ vi.fn() } />
+        )
+
+        await waitFor( () => {
+            expect( get_clip_thumbnail_blob ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        rerender(
+            <ClipQueue clips={ [ { ...clip, updated_at: `2026-05-17T10:00:03.000Z` } ] } on_delete={ vi.fn() } />
+        )
+
+        await waitFor( () => {
+            expect( container.querySelector( `img` )?.getAttribute( `src` ) ).toBe( `blob:preview` )
+        } )
+        expect( get_clip_thumbnail_blob ).toHaveBeenCalledTimes( 2 )
     } )
 } )

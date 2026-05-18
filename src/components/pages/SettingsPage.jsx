@@ -10,6 +10,7 @@ import { SegmentedControl } from '../atoms/SegmentedControl.jsx'
 import { Toggle } from '../atoms/Toggle.jsx'
 import {
     get_export_support_message,
+    normalize_export_settings,
     get_supported_export_mime_types,
     get_supported_export_resolutions
 } from '../../modules/export/exporter.js'
@@ -175,7 +176,7 @@ export function SettingsPage() {
 
                 const export_options = get_runtime_export_options()
 
-                replace_settings( loaded_settings )
+                replace_settings( normalize_export_settings( loaded_settings ) )
                 set_supported_mime_types( export_options.mime_types )
                 set_supported_resolution_options( export_options.resolutions )
                 set_export_support_message( export_options.support_message )
@@ -205,16 +206,19 @@ export function SettingsPage() {
             ...previous_settings,
             ...patch
         }
+        const normalized_settings = normalize_export_settings( next_settings )
 
         // Keep controls responsive while the IndexedDB save settles.
-        replace_settings( next_settings )
+        replace_settings( normalized_settings )
 
         try {
-            const saved_settings = await save_settings( next_settings )
-            if( settings_ref.current === next_settings ) replace_settings( saved_settings )
+            const saved_settings = await save_settings( normalized_settings )
+            if( settings_ref.current === normalized_settings ) {
+                replace_settings( normalize_export_settings( saved_settings ) )
+            }
         } catch {
             toast.error( `Setting could not be saved` )
-            if( settings_ref.current === next_settings ) replace_settings( previous_settings )
+            if( settings_ref.current === normalized_settings ) replace_settings( previous_settings )
         }
     }
 

@@ -4,10 +4,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ExportPanel } from './ExportPanel.jsx'
-import { compile_project_export } from '../../modules/export/exporter.js'
+import {
+    compile_project_export,
+    normalize_export_settings
+} from '../../modules/export/exporter.js'
 import {
     delete_export,
     get_export_blob,
+    get_project_clips,
+    load_settings,
     save_export_record
 } from '../../modules/storage/journal_storage.js'
 import {
@@ -25,12 +30,15 @@ vi.mock( 'react-hot-toast', () => {
 } )
 
 vi.mock( '../../modules/export/exporter.js', () => ( {
-    compile_project_export: vi.fn()
+    compile_project_export: vi.fn(),
+    normalize_export_settings: vi.fn( ( settings ) => settings )
 } ) )
 
 vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     delete_export: vi.fn(),
     get_export_blob: vi.fn(),
+    get_project_clips: vi.fn(),
+    load_settings: vi.fn(),
     save_export_record: vi.fn()
 } ) )
 
@@ -93,6 +101,9 @@ describe( `export panel`, () => {
         vi.mocked( compile_project_export ).mockResolvedValue( compiled_export )
         vi.mocked( delete_export ).mockResolvedValue()
         vi.mocked( get_export_blob ).mockResolvedValue( compiled_export.blob )
+        vi.mocked( get_project_clips ).mockResolvedValue( clips )
+        vi.mocked( load_settings ).mockResolvedValue( settings )
+        vi.mocked( normalize_export_settings ).mockImplementation( ( settings ) => settings )
         vi.mocked( save_export_record ).mockResolvedValue( saved_export )
         vi.mocked( share_export_file ).mockResolvedValue( `shared` )
         useAppStore.setState( {
@@ -256,6 +267,26 @@ describe( `export panel`, () => {
         /> )
 
         expect( await screen.findByText( /Export is ready/ ) ).toBeTruthy()
+    } )
+
+    test( `does not cache an export when project inputs change during compilation`, async () => {
+        vi.mocked( get_project_clips ).mockResolvedValue( [
+            {
+                ...clips[ 0 ],
+                version: 2,
+                updated_at: `2026-05-17T10:00:03.000Z`
+            }
+        ] )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            on_close={ vi.fn() }
+        /> )
+
+        expect( await screen.findByText( /Project changed while the export was compiling/ ) ).toBeTruthy()
+        expect( save_export_record ).not.toHaveBeenCalled()
     } )
 
     test( `does not save an obsolete export after the panel unmounts`, async () => {

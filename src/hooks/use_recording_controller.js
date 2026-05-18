@@ -284,6 +284,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         } catch ( error ) {
             set_error_message( get_capture_error_message( error ) )
             toast.error( `Recording unavailable` )
+            recorder_ref.current = null
+            stop_promise_ref.current = null
+            stopping_ref.current = null
             if( next_stream && stream_ref.current !== next_stream ) stop_media_stream( next_stream )
             pending_release_duration_ref.current = null
             recording_mode_ref.current = null

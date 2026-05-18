@@ -15,11 +15,13 @@ describe( `export cache helpers`, () => {
             {
                 id: `clip-a`,
                 order_index: 1,
+                version: 2,
                 mime_type: `video/webm`,
                 duration_ms: 1000,
                 width: 1280,
                 height: 720,
                 created_at: `2026-05-17T10:00:00.000Z`,
+                updated_at: `2026-05-17T10:00:03.000Z`,
                 thumbnail_blob: new Blob()
             }
         ]
@@ -28,13 +30,48 @@ describe( `export cache helpers`, () => {
             {
                 id: `clip-a`,
                 order_index: 1,
+                version: 2,
                 mime_type: `video/webm`,
                 duration_ms: 1000,
                 width: 1280,
                 height: 720,
-                created_at: `2026-05-17T10:00:00.000Z`
+                created_at: `2026-05-17T10:00:00.000Z`,
+                updated_at: `2026-05-17T10:00:03.000Z`
             }
         ] )
+    } )
+
+    test( `clip hash changes when media enrichment updates a clip version`, () => {
+        const base_clip = {
+            id: `clip-a`,
+            order_index: 1,
+            version: 1,
+            mime_type: `video/webm`,
+            duration_ms: 1000,
+            width: null,
+            height: null,
+            created_at: `2026-05-17T10:00:00.000Z`,
+            updated_at: `2026-05-17T10:00:00.000Z`
+        }
+        const settings = {
+            export_quality: `standard`,
+            export_resolution: `source`,
+            preferred_mime_type: null
+        }
+        const first_hashes = create_export_hashes( {
+            clips: [ base_clip ],
+            settings
+        } )
+        const enriched_hashes = create_export_hashes( {
+            clips: [ {
+                ...base_clip,
+                version: 2,
+                updated_at: `2026-05-17T10:00:03.000Z`
+            } ],
+            settings
+        } )
+
+        expect( first_hashes.clip_manifest_hash ).not.toBe( enriched_hashes.clip_manifest_hash )
     } )
 
     test( `settings hash changes when export settings change`, () => {

@@ -18,6 +18,7 @@ import {
 } from '../../modules/storage/journal_storage.js'
 import {
     get_export_support_message,
+    normalize_export_settings,
     get_supported_export_mime_types,
     get_supported_export_resolutions
 } from '../../modules/export/exporter.js'
@@ -47,6 +48,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
 
 vi.mock( '../../modules/export/exporter.js', () => ( {
     get_export_support_message: vi.fn(),
+    normalize_export_settings: vi.fn( ( loaded_settings ) => loaded_settings ),
     get_supported_export_mime_types: vi.fn(),
     get_supported_export_resolutions: vi.fn()
 } ) )
@@ -78,6 +80,15 @@ describe( `settings page`, () => {
             { value: `720p`, label: `720p` }
         ] )
         vi.mocked( get_supported_export_mime_types ).mockReturnValue( [ `video/webm` ] )
+        vi.mocked( normalize_export_settings ).mockImplementation( ( loaded_settings ) => ( {
+            ...loaded_settings,
+            export_resolution: [ `source`, `720p` ].includes( loaded_settings.export_resolution )
+                ? loaded_settings.export_resolution
+                : `source`,
+            preferred_mime_type: [ `video/webm` ].includes( loaded_settings.preferred_mime_type )
+                ? loaded_settings.preferred_mime_type
+                : null
+        } ) )
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( persisted_storage ).mockResolvedValue( true )
         vi.mocked( save_settings ).mockImplementation( async ( next_settings ) => next_settings )
@@ -159,6 +170,29 @@ describe( `settings page`, () => {
             export_resolution: `720p`
         } ) )
         expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
+            haptics_enabled: false
+        } ) )
+    } )
+
+    test( `normalizes unsupported persisted export settings before displaying and saving`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( load_settings ).mockResolvedValue( {
+            ...settings,
+            export_resolution: `1080p`,
+            preferred_mime_type: `video/mp4`
+        } )
+
+        render_settings()
+
+        expect( ( await screen.findByRole( `button`, { name: `Source` } ) ).getAttribute( `aria-pressed` ) ).toBe( `true` )
+        expect( screen.getByLabelText( /Format/ ).value ).toBe( `` )
+
+        await user.click( screen.getByLabelText( `Haptics` ) )
+
+        expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
+            export_resolution: `source`,
+            preferred_mime_type: null,
             haptics_enabled: false
         } ) )
     } )

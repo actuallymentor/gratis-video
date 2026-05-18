@@ -29,9 +29,11 @@ npm test
 - Settings include media access status, haptics, and optional sound feedback for recording state changes.
 - Export compiles clips on demand in queue order, preserves orientation when scaling, then offers native sharing when available or a download fallback.
 - Cached exports are reused only while their clips, settings, and stored file remain valid.
+- Cached exports are rejected if clips or settings change while compilation is running.
 - Export compilation starts only from an explicit Share/Export action.
 - Known hard capture blockers disable recording and show recovery guidance near capture.
-- Export controls appear only when this browser supports the export pipeline.
+- Export controls and saved export preferences are limited to options this browser supports.
 - Project rows show when a cached export is ready for the current clips and settings.
 - Cached export metadata stays current after project renames and export setting changes.
+- Clearing or deleting the active project keeps the app on project history until another project is opened or created.
 - The PWA service worker caches the app shell for offline startup after first load.

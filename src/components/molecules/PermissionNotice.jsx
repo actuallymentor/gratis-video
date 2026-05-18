@@ -26,9 +26,10 @@ const NoticeContent = styled.span`
 
 const NoticeAction = styled( Link )`
     width: fit-content;
-    min-height: 2.75rem;
     display: inline-flex;
     align-items: center;
+    min-height: 3rem;
+    padding-inline: 0.25rem;
     color: var(--color-ink);
     font-weight: 900;
 `

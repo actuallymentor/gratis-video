@@ -232,6 +232,46 @@ describe( `recording controller`, () => {
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 
+    test( `clears recorder startup state when recorder start fails`, async () => {
+        const failed_stream = make_stream()
+        const recovered_stream = make_stream()
+        const failed_recorder = make_recorder()
+        const recovered_recorder = make_recorder()
+
+        failed_recorder.start = vi.fn( () => {
+            throw new Error( `Recorder start failed` )
+        } )
+
+        vi.mocked( request_capture_stream )
+            .mockResolvedValueOnce( failed_stream.stream )
+            .mockResolvedValueOnce( recovered_stream.stream )
+        vi.mocked( create_media_recorder )
+            .mockReturnValueOnce( failed_recorder )
+            .mockReturnValueOnce( recovered_recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( failed_stream.track.stop ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recovered_recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `recording` )
+    } )
+
     test( `stops and saves a valid clip when the tab is hidden`, async () => {
         const { stream } = make_stream()
         const recorder = make_recorder()

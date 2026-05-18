@@ -5,6 +5,7 @@ import {
     calculate_export_canvas_size,
     compile_project_export,
     get_export_support_message,
+    normalize_export_settings,
     get_supported_export_mime_types,
     get_supported_export_resolutions
 } from './exporter.js'
@@ -331,6 +332,114 @@ describe( `export compiler`, () => {
         expect( video_element.muted ).toBe( true )
     } )
 
+    test( `continues video export when Web Audio resume is blocked`, async () => {
+        const create_element = document.createElement.bind( document )
+        const close = vi.fn().mockResolvedValue()
+
+        class BlockedAudioContext {
+
+            constructor() {
+                this.state = `suspended`
+            }
+
+            createMediaStreamDestination() {
+                return {
+                    stream: new FakeMediaStream( [ make_track( `audio` ) ] )
+                }
+            }
+
+            resume() {
+                return Promise.reject( new Error( `Audio blocked` ) )
+            }
+
+            close() {
+                return close()
+            }
+
+        }
+
+        vi.stubGlobal( `AudioContext`, BlockedAudioContext )
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).resolves.toMatchObject( {
+            duration_ms: 1000
+        } )
+        expect( close ).toHaveBeenCalledTimes( 1 )
+    } )
+
+    test( `disconnects clip audio sources after each clip`, async () => {
+        const create_element = document.createElement.bind( document )
+        const disconnect = vi.fn()
+
+        class ConnectedAudioContext {
+
+            constructor() {
+                this.state = `running`
+            }
+
+            createMediaStreamDestination() {
+                return {
+                    stream: new FakeMediaStream( [ make_track( `audio` ) ] )
+                }
+            }
+
+            createMediaElementSource() {
+                return {
+                    connect: vi.fn(),
+                    disconnect
+                }
+            }
+
+            close() {
+                return Promise.resolve()
+            }
+
+        }
+
+        vi.stubGlobal( `AudioContext`, ConnectedAudioContext )
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        await compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } )
+
+        expect( disconnect ).toHaveBeenCalledTimes( 1 )
+    } )
+
     test( `keeps landscape export resolution within the selected size`, () => {
         expect( calculate_export_canvas_size( [
             {
@@ -383,6 +492,40 @@ describe( `export compiler`, () => {
         vi.stubGlobal( `MediaRecorder`, SelectiveMediaRecorder )
 
         expect( get_supported_export_mime_types() ).toEqual( [ `video/webm` ] )
+    } )
+
+    test( `normalizes persisted export settings to runtime-supported choices`, () => {
+        HTMLCanvasElement.prototype.captureStream = vi.fn( function captureStream() {
+            if( this.width >= 1920 ) throw new Error( `Resolution unsupported` )
+            return new FakeMediaStream( [ make_track() ] )
+        } )
+
+        class SelectiveMediaRecorder extends FakeMediaRecorder {
+
+            static isTypeSupported( mime_type ) {
+                return mime_type === `video/mp4` || mime_type === `video/webm`
+            }
+
+            constructor( stream, options = {} ) {
+                if( options.mimeType === `video/mp4` ) throw new Error( `MP4 export unsupported` )
+                super( stream, options )
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, SelectiveMediaRecorder )
+
+        expect( normalize_export_settings( {
+            export_quality: `oversized`,
+            export_resolution: `1080p`,
+            preferred_mime_type: `video/mp4`,
+            haptics_enabled: true
+        } ) ).toMatchObject( {
+            export_quality: `standard`,
+            export_resolution: `source`,
+            preferred_mime_type: null,
+            haptics_enabled: true
+        } )
     } )
 
     test( `fails clearly before export when canvas capture is unsupported`, async () => {

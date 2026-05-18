@@ -61,6 +61,8 @@ describe( `journal storage`, () => {
         expect( clips ).toHaveLength( 1 )
         expect( clips[ 0 ].blob ).toBeUndefined()
         expect( clips[ 0 ].thumbnail_blob ).toBeUndefined()
+        expect( clips[ 0 ].version ).toBe( 1 )
+        expect( clips[ 0 ].updated_at ).toBeTruthy()
         expect( blob.type ).toBe( `video/webm` )
         expect( await stored_thumbnail_blob.text() ).toBe( `thumb` )
     } )
@@ -130,6 +132,24 @@ describe( `journal storage`, () => {
         expect( new Date( updated_project.active_at ).getTime() ).toBeGreaterThanOrEqual(
             new Date( original_project.active_at ).getTime()
         )
+    } )
+
+    test( `keeps an explicitly cleared active project cleared after reload lookup`, async () => {
+        await create_project()
+        await create_project()
+
+        await set_active_project( null )
+
+        expect( await get_active_project() ).toBe( null )
+    } )
+
+    test( `does not resurrect an older project after deleting the active project`, async () => {
+        await create_project()
+        const active_project = await create_project()
+
+        await delete_project( active_project.id )
+
+        expect( await get_active_project() ).toBe( null )
     } )
 
     test( `renames projects with trimmed titles and keeps defaults for blank titles`, async () => {
@@ -244,6 +264,7 @@ describe( `journal storage`, () => {
 
         expect( updated_clip ).toMatchObject( {
             id: clip.id,
+            version: 2,
             duration_ms: 1250,
             width: 640,
             height: 360

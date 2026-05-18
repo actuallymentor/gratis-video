@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.9] - 2026-05-18
+
+### Added
+- add active-state, cache-version, export-race, and preview regressions
+
+### Fixed
+- keep cleared or deleted active projects from reactivating on reload
+- invalidate exports when clip media details update asynchronously
+- reject stale exports if clips or settings change during compilation
+- normalize saved export settings to runtime-supported browser options
+- reload thumbnails after media enrichment finishes
+- show preview storage failures without unhandled rejections
+- recover cleanly when recorder startup or Web Audio export setup fails
+- keep permission action links at the required touch target size
+
 ## [0.2.8] - 2026-05-18
 
 ### Added

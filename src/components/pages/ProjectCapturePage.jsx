@@ -13,6 +13,7 @@ import { PermissionNotice } from '../molecules/PermissionNotice.jsx'
 import { RecordButton } from '../molecules/RecordButton.jsx'
 import { useRecordingController } from '../../hooks/use_recording_controller.js'
 import { create_export_hashes } from '../../modules/export/cache.js'
+import { normalize_export_settings } from '../../modules/export/exporter.js'
 import {
     can_attempt_recording,
     has_denied_media_permission,
@@ -149,7 +150,7 @@ export function ProjectCapturePage() {
 
             set_project( loaded_project )
             set_clips( loaded_clips )
-            set_settings( loaded_settings )
+            set_settings( normalize_export_settings( loaded_settings ) )
             set_storage_error( null )
         } catch {
             set_storage_error( `Local browser storage is unavailable, so clips cannot be loaded or saved.` )
@@ -326,8 +327,11 @@ export function ProjectCapturePage() {
     const storage_warning = storage_ratio >= 0.85
         ? `Local browser storage is almost full. Export or delete old clips before recording more.`
         : null
-    const status_message = recording.error_message || media_status_message( permission_status ) || storage_warning
+    const permission_status_message = media_status_message( permission_status )
     const permission_denied = has_denied_media_permission( permission_status )
+    const status_message = permission_denied
+        ? permission_status_message || recording.error_message || storage_warning
+        : recording.error_message || permission_status_message || storage_warning
     const recording_disabled = !can_attempt_recording( permission_status )
     const bottom_status_message = status_message && ( recording.error_message || permission_denied || recording_disabled )
         ? status_message

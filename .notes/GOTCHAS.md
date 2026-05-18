@@ -19,3 +19,7 @@
 - Canvas export playback may happen outside the original tap because React opens the export panel first. Detached videos with audio can hit autoplay policy, so keep a muted retry path instead of failing the export.
 - Service-worker navigation fetches should request `/index.html`, not the current route, so local project IDs in `/projects/:project_id` are not sent again during controlled app navigations.
 - Settings controls are backed by async IndexedDB writes. Keep their React state optimistic so checkbox/segmented interactions update immediately, then roll back only if saving fails.
+- Active project state has an IndexedDB pointer record with explicit `null` support. Do not reintroduce fallback-to-recent-project behavior after a user clears or deletes the active project.
+- Clip export cache hashes depend on clip `version` and `updated_at`. Increment them whenever clip media-affecting metadata, blobs, or ordering changes.
+- Normalize persisted export settings through runtime-proven export support before displaying, hashing, or compiling; stale unsupported settings should not silently drive export work.
+- Before saving a compiled export, re-read clips/settings and compare hashes again so async clip enrichment cannot leave a stale cached export behind.

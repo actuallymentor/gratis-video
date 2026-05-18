@@ -138,27 +138,46 @@ const create_audio_graph = () => {
     const AudioContextConstructor = globalThis.AudioContext || globalThis.webkitAudioContext
     if( !AudioContextConstructor ) return null
 
-    const audio_context = new AudioContextConstructor()
-    const destination = audio_context.createMediaStreamDestination()
+    try {
+        const audio_context = new AudioContextConstructor()
+        const destination = audio_context.createMediaStreamDestination()
 
-    return {
-        audio_context,
-        destination,
-        sources: []
+        return {
+            audio_context,
+            destination
+        }
+    } catch {
+        return null
+    }
+}
+
+const resume_audio_graph = async ( audio_graph ) => {
+    if( !audio_graph ) return null
+
+    try {
+        if( audio_graph.audio_context.state === `suspended` ) await audio_graph.audio_context.resume()
+        return audio_graph
+    } catch {
+        try {
+            await audio_graph.audio_context.close?.()
+        } catch {
+            // Export can continue silently when Web Audio is blocked.
+        }
+
+        return null
     }
 }
 
 const connect_video_audio = ( audio_graph, video ) => {
-    if( !audio_graph ) return false
+    if( !audio_graph ) return null
 
     try {
         const source = audio_graph.audio_context.createMediaElementSource( video )
         source.connect( audio_graph.destination )
-        audio_graph.sources.push( source )
-        return true
+        return source
     } catch {
         // Some browsers restrict media element routing. Export can still complete as silent video.
-        return false
+        return null
     }
 }
 
@@ -217,13 +236,14 @@ const play_clip_to_canvas = async ( {
 
     const object_url = URL.createObjectURL( blob )
     const video = document.createElement( `video` )
+    let audio_source = null
 
     try {
         video.src = object_url
         video.playsInline = true
         video.preload = `auto`
         await wait_for_event( video, `loadedmetadata`, signal )
-        connect_video_audio( audio_graph, video )
+        audio_source = connect_video_audio( audio_graph, video )
 
         const duration_ms = clip.duration_ms || Math.round( ( video.duration || 0 ) * 1000 )
         const project_duration_ms = clips.reduce( ( total, next_clip ) => total + ( next_clip.duration_ms || 0 ), 0 ) || 1
@@ -251,6 +271,12 @@ const play_clip_to_canvas = async ( {
 
         draw_video_frame( context, video, canvas )
     } finally {
+        try {
+            audio_source?.disconnect?.()
+        } catch {
+            // The video element and object URL still need cleanup if audio teardown fails.
+        }
+
         cleanup_video( video, object_url )
     }
 }
@@ -336,6 +362,30 @@ export function get_supported_export_mime_types() {
 }
 
 /**
+ * Removes persisted export settings that this browser cannot prove at runtime.
+ * @param {Object} settings - Stored export and feedback settings.
+ * @returns {Object} Settings safe for export UI, cache hashes, and compilation.
+ */
+export function normalize_export_settings( settings = {} ) {
+    const supported_resolution_values = get_supported_export_resolutions().map( ( { value } ) => value )
+    const supported_mime_types = get_supported_export_mime_types()
+    const export_quality = quality_bits[ settings.export_quality ] ? settings.export_quality : `standard`
+    const export_resolution = supported_resolution_values.includes( settings.export_resolution )
+        ? settings.export_resolution
+        : `source`
+    const preferred_mime_type = supported_mime_types.includes( settings.preferred_mime_type )
+        ? settings.preferred_mime_type
+        : null
+
+    return {
+        ...settings,
+        export_quality,
+        export_resolution,
+        preferred_mime_type
+    }
+}
+
+/**
  * Compiles project clips into a single video blob using browser-native media APIs.
  * @param {Object} options - Compile options.
  * @param {Array<Object>} options.clips - Clip metadata in queue order.
@@ -356,7 +406,7 @@ export async function compile_project_export( { clips, settings, signal, on_prog
     canvas.height = height
     const context = canvas.getContext( `2d` )
     const video_stream = canvas.captureStream( FPS )
-    const audio_graph = create_audio_graph()
+    let audio_graph = await resume_audio_graph( create_audio_graph() )
     const audio_tracks = audio_graph?.destination.stream.getAudioTracks() ?? []
     const mixed_stream = new MediaStream( [
         ...video_stream.getVideoTracks(),
@@ -370,7 +420,6 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         recorder = create_export_recorder( { stream: mixed_stream, mime_type, settings } )
         const stopped = wait_for_recorder_stop( recorder, chunks )
 
-        if( audio_graph?.audio_context.state === `suspended` ) await audio_graph.audio_context.resume()
         throw_if_aborted( signal )
 
         recorder.start( 250 )

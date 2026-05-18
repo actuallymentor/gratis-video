@@ -27,10 +27,14 @@ import {
 } from '../../modules/storage/journal_storage.js'
 import { share_export_file } from '../../modules/sharing/share.js'
 
+const recording_state = vi.hoisted( () => ( {
+    error_message: null
+} ) )
+
 vi.mock( '../../hooks/use_recording_controller.js', () => ( {
     useRecordingController: () => ( {
         stream: null,
-        error_message: null,
+        error_message: recording_state.error_message,
         recording_state: `idle`,
         elapsed_ms: 0,
         press_record: vi.fn(),
@@ -137,6 +141,7 @@ describe( `project capture page`, () => {
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( set_active_project ).mockResolvedValue()
         vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
+        recording_state.error_message = null
         query_state.initial_panel = undefined
         query_state.set_panel = null
         useAppStore.setState( {
@@ -299,6 +304,24 @@ describe( `project capture page`, () => {
 
         expect( await screen.findByText( /Camera access is blocked/ ) ).toBeTruthy()
         expect( screen.getByRole( `link`, { name: `Open settings` } ).getAttribute( `href` ) ).toBe( `/settings` )
+    } )
+
+    test( `prefers specific permission denial guidance after a blocked recording attempt`, async () => {
+        recording_state.error_message = `Camera or microphone access is blocked for this site.`
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `denied`,
+                microphone: `prompt`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+
+        render_capture()
+
+        expect( await screen.findByText( /Camera access is blocked/ ) ).toBeTruthy()
+        expect( screen.queryByText( /Camera or microphone access is blocked/ ) ).toBe( null )
     } )
 
     test( `keeps video-only recording available when microphone permission is denied`, async () => {

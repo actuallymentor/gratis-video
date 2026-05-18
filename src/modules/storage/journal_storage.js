@@ -12,6 +12,7 @@ import {
 } from './db.js'
 
 const ACTIVE_PROJECT_KEY = `daily_video_journal_active_project_id`
+const ACTIVE_PROJECT_STATE_KEY = `active_project`
 const SETTINGS_KEY = `global`
 const export_setting_keys = [
     `export_quality`,
@@ -179,6 +180,33 @@ const next_clip_order_index = ( clips ) => {
     return highest_order_index + 1
 }
 
+const load_active_project_pointer = async () => {
+    const state = await get_record( `settings`, ACTIVE_PROJECT_STATE_KEY )
+
+    if( state && Object.hasOwn( state, `project_id` ) ) {
+        return {
+            exists: true,
+            project_id: state.project_id
+        }
+    }
+
+    return {
+        exists: false,
+        project_id: safe_local_storage.get( ACTIVE_PROJECT_KEY )
+    }
+}
+
+const save_active_project_pointer = async ( project_id ) => {
+    await put_record( `settings`, {
+        key: ACTIVE_PROJECT_STATE_KEY,
+        project_id: project_id ?? null,
+        updated_at: now_iso()
+    } )
+
+    if( project_id ) safe_local_storage.set( ACTIVE_PROJECT_KEY, project_id )
+    else safe_local_storage.remove( ACTIVE_PROJECT_KEY )
+}
+
 const make_filename = ( title, mime_type ) => {
     const extension = mime_type.includes( `mp4` ) ? `mp4` : `webm`
     const slug = title
@@ -240,17 +268,25 @@ export async function get_project( project_id ) {
  * @returns {Promise<Object|null>} Active project.
  */
 export async function get_active_project() {
-    const hinted_project_id = safe_local_storage.get( ACTIVE_PROJECT_KEY )
-    const hinted_project = hinted_project_id ? await get_project( hinted_project_id ) : null
+    const active_pointer = await load_active_project_pointer()
+    const hinted_project = active_pointer.project_id ? await get_project( active_pointer.project_id ) : null
 
-    if( hinted_project ) return hinted_project
+    if( hinted_project ) {
+        if( !active_pointer.exists ) await save_active_project_pointer( hinted_project.id )
+        return hinted_project
+    }
+
+    if( active_pointer.exists ) {
+        if( active_pointer.project_id ) await save_active_project_pointer( null )
+        return null
+    }
 
     const projects = await list_projects()
     const [ active_project = null ] = [ ...projects ].sort( ( first, second ) => {
         return new Date( second.active_at ?? 0 ).getTime() - new Date( first.active_at ?? 0 ).getTime()
     } )
 
-    if( active_project ) safe_local_storage.set( ACTIVE_PROJECT_KEY, active_project.id )
+    await save_active_project_pointer( active_project?.id ?? null )
     return active_project
 }
 
@@ -261,12 +297,15 @@ export async function get_active_project() {
  */
 export async function set_active_project( project_id ) {
     if( !project_id ) {
-        safe_local_storage.remove( ACTIVE_PROJECT_KEY )
+        await save_active_project_pointer( null )
         return
     }
 
     const project = await get_project( project_id )
-    if( !project ) return
+    if( !project ) {
+        await save_active_project_pointer( null )
+        return
+    }
 
     const updated_project = {
         ...project,
@@ -274,7 +313,7 @@ export async function set_active_project( project_id ) {
     }
 
     await put_record( `projects`, updated_project )
-    safe_local_storage.set( ACTIVE_PROJECT_KEY, project_id )
+    await save_active_project_pointer( project_id )
 }
 
 /**
@@ -295,7 +334,7 @@ export async function create_project() {
     }
 
     await put_record( `projects`, project )
-    safe_local_storage.set( ACTIVE_PROJECT_KEY, project.id )
+    await save_active_project_pointer( project.id )
     await request_persistent_storage()
 
     return project
@@ -332,6 +371,7 @@ export async function rename_project( project_id, title ) {
 export async function delete_project( project_id ) {
     const clips = await get_index_records( `clips`, `project_id`, project_id )
     const exports = await get_index_records( `exports`, `project_id`, project_id )
+    const active_pointer = await load_active_project_pointer()
     const store_names = [ `projects`, `clips`, `clip_blobs`, `clip_thumbnails`, `exports`, `export_blobs` ]
 
     await write_transaction( store_names, ( stores ) => {
@@ -347,7 +387,12 @@ export async function delete_project( project_id ) {
         } )
     } )
 
-    if( safe_local_storage.get( ACTIVE_PROJECT_KEY ) === project_id ) safe_local_storage.remove( ACTIVE_PROJECT_KEY )
+    if(
+        active_pointer.project_id === project_id
+        || safe_local_storage.get( ACTIVE_PROJECT_KEY ) === project_id
+    ) {
+        await save_active_project_pointer( null )
+    }
 }
 
 /**
@@ -378,11 +423,13 @@ export async function add_clip_to_project( {
         id: new_id(),
         project_id,
         order_index: next_clip_order_index( existing_clips ),
+        version: 1,
         mime_type,
         duration_ms,
         width,
         height,
         created_at: timestamp,
+        updated_at: timestamp,
         deleted_at: null
     }
     const updated_project = {
@@ -435,9 +482,11 @@ export async function update_clip_media_details( {
     const timestamp = now_iso()
     const updated_clip = {
         ...strip_clip_blob_fields( clip ),
+        version: ( clip.version ?? 1 ) + 1,
         duration_ms: next_duration_ms,
         width: width ?? clip.width,
-        height: height ?? clip.height
+        height: height ?? clip.height,
+        updated_at: timestamp
     }
     const updated_project = {
         ...project,

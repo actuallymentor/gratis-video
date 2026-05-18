@@ -111,6 +111,8 @@ function ClipThumbnail( { clip, label, on_preview } ) {
         let object_url = null
 
         const load_thumbnail = async () => {
+            set_thumbnail_url( null )
+
             const blob = await get_clip_thumbnail_blob( clip.id ).catch( () => null )
             if( !blob || cancelled ) return
 
@@ -124,7 +126,7 @@ function ClipThumbnail( { clip, label, on_preview } ) {
             cancelled = true
             if( object_url ) URL.revokeObjectURL( object_url )
         }
-    }, [ clip.id ] )
+    }, [ clip.id, clip.updated_at ] )
 
     return <Thumb type="button" aria-label={ label } onClick={ on_preview }>
         { thumbnail_url ? <img src={ thumbnail_url } alt="" /> : <VideoOff size={ 22 } aria-hidden="true" /> }
@@ -150,9 +152,17 @@ export function ClipQueue( { clips, on_delete } ) {
     }, [] )
 
     const open_preview = async ( clip ) => {
-        const blob = await get_clip_blob( clip.id )
-
         set_preview_clip( clip )
+
+        let blob = null
+
+        try {
+            blob = await get_clip_blob( clip.id )
+        } catch {
+            replace_preview_url( null )
+            set_preview_error( `This clip could not be read from local browser storage.` )
+            return
+        }
 
         if( !blob ) {
             replace_preview_url( null )
