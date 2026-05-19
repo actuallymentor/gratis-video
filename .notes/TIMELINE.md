@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-19T11:57:46Z - Reworked camera capture to refine each opened video track toward its camera-reported maximum native dimensions with `resizeMode: none`, added a persistent live camera preview before recording, switched Playwright fake media to portrait, and prepared 0.3.23 notes.
 - 2026-05-19T11:23:00Z - Re-read the design preferences and restored filled action buttons to the preferred brand accent `#7ec0d0` while preserving white text/icons. Prepared the 0.3.22 patch notes/version bump.
 - 2026-05-19T11:15:58Z - Updated filled action buttons so accent and recording fills use a white foreground token for both labels and inherited-currentColor icons. Moved accent-filled buttons to the stronger accent token to keep white content readable, then prepared the 0.3.21 patch notes/version bump.
 - 2026-05-19T11:08:18Z - Diagnosed Chrome-only post-deploy failures as a stale service-worker app-shell risk. Hardened the worker with cache generation `v2`, non-failing install activation, cached shell build-asset validation, network-first JS/CSS refresh, and `updateViaCache: none` registration.

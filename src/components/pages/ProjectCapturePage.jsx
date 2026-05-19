@@ -61,8 +61,9 @@ const Preview = styled.div`
     color: rgba( 255, 255, 255, 0.78 );
 
     video {
+        display: block;
         width: 100%;
-        height: 100%;
+        height: auto;
         max-height: 66svh;
         object-fit: contain;
         background: #0d1718;
@@ -138,6 +139,7 @@ export function ProjectCapturePage() {
     const project_id_ref = useRef( project_id )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
+    const media_stream_state = useAppStore( ( state ) => state.media_stream_state )
     const export_progress_active = useAppStore( ( state ) => state.export_progress.active )
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
 
@@ -240,6 +242,22 @@ export function ProjectCapturePage() {
         settings: settings ?? { haptics_enabled: true },
         on_clip_saved: refresh_project
     } )
+    const open_camera_preview = recording.open_preview
+
+    useEffect( () => {
+        if( !project || !settings ) return
+        if( permission_status.camera === `unknown` ) return
+        if( !can_attempt_recording( permission_status ) ) return
+
+        open_camera_preview( {
+            force: permission_status.camera === `granted`
+        } )
+    }, [
+        open_camera_preview,
+        permission_status,
+        project,
+        settings
+    ] )
 
     useEffect( () => {
         let cancelled = false
@@ -284,7 +302,13 @@ export function ProjectCapturePage() {
 
     useEffect( () => {
         if( !preview_ref.current ) return
-        preview_ref.current.srcObject = recording.stream
+
+        const preview_video = preview_ref.current
+        preview_video.srcObject = recording.stream
+
+        return () => {
+            if( preview_video.srcObject === recording.stream ) preview_video.srcObject = null
+        }
     }, [ recording.stream ] )
 
     useEffect( () => {
@@ -666,8 +690,10 @@ export function ProjectCapturePage() {
             <CaptureGrid>
                 <PreviewPanel>
                     <Preview>
-                        { recording.stream ? <video ref={ preview_ref } muted playsInline autoPlay /> : <ReadyState>
-                            Press record to open the camera and save the next clip.
+                        { recording.stream ? <video ref={ preview_ref } aria-label="Live camera preview" muted playsInline autoPlay /> : <ReadyState>
+                            { media_stream_state === `opening`
+                                ? `Opening camera preview...`
+                                : `Press record to open the camera and save the next clip.` }
                         </ReadyState> }
                     </Preview>
                     <PermissionNotice

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.23] - 2026-05-19
+
+### Fixed
+- record maximum native camera track resolution
+- show a live camera preview before recording
+
 ## [0.3.22] - 2026-05-19
 
 ### Fixed

@@ -35,6 +35,7 @@ const recording_state = vi.hoisted( () => ( {
     error_message: null,
     permission_recovery_needed: false,
     recording_state: `idle`,
+    open_preview: vi.fn(),
     press_record: vi.fn(),
     release_record: vi.fn(),
     cancel_record: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock( '../../hooks/use_recording_controller.js', () => ( {
         permission_recovery_needed: recording_state.permission_recovery_needed,
         recording_state: recording_state.recording_state,
         elapsed_ms: 0,
+        open_preview: recording_state.open_preview,
         press_record: recording_state.press_record,
         release_record: recording_state.release_record,
         cancel_record: recording_state.cancel_record,
@@ -195,6 +197,7 @@ describe( `project capture page`, () => {
         recording_state.error_message = null
         recording_state.permission_recovery_needed = false
         recording_state.recording_state = `idle`
+        recording_state.open_preview.mockReset()
         recording_state.press_record.mockReset()
         recording_state.release_record.mockReset()
         recording_state.cancel_record.mockReset()

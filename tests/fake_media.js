@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const fake_video_capture_width = 320
-export const fake_video_capture_height = 240
+export const fake_video_capture_width = 240
+export const fake_video_capture_height = 320
 export const fake_video_capture_fps = 30
 export const fake_video_capture_frames = 90
 
@@ -56,8 +56,8 @@ export function ensure_fake_video_capture_file() {
     const y4m_buffer = build_y4m_buffer()
 
     if( fs.existsSync( fake_video_capture_file ) ) {
-        const { size } = fs.statSync( fake_video_capture_file )
-        if( size === y4m_buffer.length ) return fake_video_capture_file
+        const existing_buffer = fs.readFileSync( fake_video_capture_file )
+        if( existing_buffer.equals( y4m_buffer ) ) return fake_video_capture_file
     }
 
     fs.mkdirSync( fixture_directory, { recursive: true } )

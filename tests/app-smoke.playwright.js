@@ -199,6 +199,20 @@ const expect_fake_capture_video = ( metadata ) => {
     expect( duration_ms ).toBeGreaterThan( 400 )
 }
 
+const expect_live_camera_preview = async ( page ) => {
+    const preview = page.getByLabel( `Live camera preview` )
+
+    await expect( preview ).toBeVisible()
+    await expect.poll( () => preview.evaluate( ( video ) => ( {
+        height: video.videoHeight,
+        ready_state: video.readyState,
+        width: video.videoWidth
+    } ) ) ).toMatchObject( {
+        height: fake_video_capture_height,
+        width: fake_video_capture_width
+    } )
+}
+
 test.beforeEach( async ( { page } ) => {
     page.browser_issues = []
 
@@ -288,7 +302,8 @@ test.describe( `daily video journal app`, () => {
         await expect.poll( console_text ).toContain( `Project list payload` )
     } )
 
-    test( `creates a project, opens capture, and keeps the active route`, async ( { page } ) => {
+    test( `creates a project, opens capture, and keeps the active route`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
         await page.goto( `/` )
 
         await expect( page.getByRole( `heading`, { name: `Projects`, exact: true } ) ).toBeVisible()
@@ -297,7 +312,7 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
-        await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
+        await expect_live_camera_preview( page )
         await expect( page.getByRole( `heading`, { name: `Clip queue` } ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
 
@@ -307,7 +322,8 @@ test.describe( `daily video journal app`, () => {
         await expect( page ).toHaveURL( capture_url )
     } )
 
-    test( `does not open media devices before the user records`, async ( { page } ) => {
+    test( `opens a live camera preview before the user records`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
         await page.addInitScript( () => {
             const calls = []
             const media_devices = navigator.mediaDevices
@@ -348,15 +364,22 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
-        await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
-        await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBe( 0 )
+        await expect_live_camera_preview( page )
+        await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBeGreaterThanOrEqual( 1 )
+        expect( await page.evaluate( () => window.__get_user_media_calls[ 0 ] ) ).toMatchObject( {
+            audio: false,
+            video: {
+                facingMode: { ideal: `environment` },
+                resizeMode: { ideal: `none` }
+            }
+        } )
 
         const active_capture_url = page.url()
 
         await page.goto( `/` )
 
         await expect( page ).toHaveURL( active_capture_url )
-        await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBe( 0 )
+        await expect_live_camera_preview( page )
     } )
 
     test( `keeps bottom capture actions stable at the viewport edge`, async ( { page } ) => {
@@ -718,7 +741,7 @@ test.describe( `daily video journal app`, () => {
     test( `persists settings changes and deletes all local data`, async ( { page } ) => {
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `Create Project` } ).click()
-        await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
 
         await page.getByRole( `button`, { name: `Open projects` } ).click()
         await page.getByRole( `button`, { name: `Open settings` } ).first().click()
@@ -763,7 +786,7 @@ test.describe( `daily video journal app`, () => {
     test( `reopens the active project from the cached app shell while offline`, async ( { context, page } ) => {
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `Create Project` } ).click()
-        await expect( page.getByText( `Press record to open the camera and save the next clip.` ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
 
         const capture_path = new URL( page.url() ).pathname
 

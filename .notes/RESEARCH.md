@@ -1,5 +1,6 @@
 # Research
 
+- 2026-05-19: MDN MediaTrackConstraints documents `resizeMode: none` as using the resolution provided by the underlying camera/driver/OS, while `crop-and-scale` allows cropping/downscaling. MDN MediaStreamTrack docs say `getCapabilities()` exposes supported width/height ranges and `getSettings()` reports the active track configuration.
 - 2026-05-18: MDN Web media autoplay guidance says script-started media playback with audible tracks can be blocked outside user interaction, while muted media is generally allowed. Keep export playback resilient with muted fallback for detached video elements.
 - 2026-05-18: MDN Web Share guidance emphasizes that file sharing depends on `navigator.canShare()` and `navigator.share()` being called from transient user activation. Keep share blobs ready before the user taps Share.
 - 2026-05-18: MDN HTMLMediaElement `ended` docs say the event fires when playback reaches the end or no further data is available, but the export path must still tolerate browsers that leave `ended` false near the real end of MediaRecorder blobs.

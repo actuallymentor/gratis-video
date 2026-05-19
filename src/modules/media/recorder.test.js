@@ -150,13 +150,14 @@ describe( `recorder helpers`, () => {
         expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
     } )
 
-    test( `does not apply size constraints after opening the camera`, async () => {
+    test( `asks the opened camera track for its full native resolution`, async () => {
         const applyConstraints = vi.fn().mockResolvedValue()
         const track = {
             applyConstraints,
             getCapabilities: () => ( {
                 width: { max: 4032 },
                 height: { max: 3024 },
+                resizeMode: [ `none`, `crop-and-scale` ],
                 zoom: { min: 1 }
             } )
         }
@@ -172,7 +173,38 @@ describe( `recorder helpers`, () => {
         } )
 
         await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
-        expect( applyConstraints ).not.toHaveBeenCalled()
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
+        expect( applyConstraints ).toHaveBeenCalledWith( {
+            resizeMode: { exact: `none` },
+            width: { ideal: 4032 },
+            height: { ideal: 3024 }
+        } )
+        expect( applyConstraints.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty( `aspectRatio` )
+    } )
+
+    test( `keeps recording available when full resolution refinement is rejected`, async () => {
+        const applyConstraints = vi.fn().mockRejectedValue( new Error( `Unsupported mode` ) )
+        const track = {
+            applyConstraints,
+            getCapabilities: () => ( {
+                width: { max: 4032 },
+                height: { max: 3024 },
+                resizeMode: [ `none`, `crop-and-scale` ]
+            } )
+        }
+        const stream = {
+            getTracks: () => [ track ],
+            getVideoTracks: () => [ track ]
+        }
+        const getUserMedia = vi.fn().mockResolvedValue( stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
+        expect( applyConstraints ).toHaveBeenCalledTimes( 3 )
     } )
 
     test( `marks microphone denial when video-only retry succeeds`, async () => {

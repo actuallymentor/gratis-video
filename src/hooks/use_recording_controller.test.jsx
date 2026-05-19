@@ -314,7 +314,7 @@ describe( `recording controller`, () => {
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 
-    test( `stops opened media tracks when recorder setup fails`, async () => {
+    test( `stops failed recording tracks and reopens the live preview`, async () => {
         const { stream, track } = make_stream()
 
         vi.mocked( request_capture_stream ).mockResolvedValue( stream )
@@ -332,7 +332,7 @@ describe( `recording controller`, () => {
         await waitFor( () => {
             expect( track.stop ).toHaveBeenCalledTimes( 1 )
         } )
-        expect( useAppStore.getState().media_stream_state ).toBe( `idle` )
+        expect( useAppStore.getState().media_stream_state ).toBe( `active` )
         expect( useAppStore.getState().recording_state ).toBe( `idle` )
     } )
 

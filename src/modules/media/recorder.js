@@ -59,6 +59,53 @@ const camera_denied_error = () => new DOMException(
     `NotAllowedError`
 )
 
+const is_finite_number = ( value ) => Number.isFinite( value )
+
+const make_full_resolution_constraints = ( capabilities = {} ) => {
+    const constraints = {}
+
+    if( capabilities.resizeMode?.includes?.( `none` ) ) constraints.resizeMode = { exact: `none` }
+    if( is_finite_number( capabilities.width?.max ) ) constraints.width = { ideal: capabilities.width.max }
+    if( is_finite_number( capabilities.height?.max ) ) constraints.height = { ideal: capabilities.height.max }
+
+    return constraints
+}
+
+const apply_track_constraints = async ( track, constraints ) => {
+    if( !track.applyConstraints || !Object.keys( constraints ).length ) return
+
+    try {
+        await track.applyConstraints( constraints )
+    } catch {
+        const fallback_constraints = {
+            ...constraints,
+            resizeMode: { ideal: `none` }
+        }
+
+        try {
+            await track.applyConstraints( fallback_constraints )
+        } catch {
+            const sized_constraints = { ...constraints }
+            delete sized_constraints.resizeMode
+
+            if( Object.keys( sized_constraints ).length ) await track.applyConstraints( sized_constraints ).catch( () => null )
+        }
+    }
+}
+
+const prefer_full_resolution = async ( stream ) => {
+    const video_tracks = stream.getVideoTracks?.() ?? []
+
+    await Promise.all( video_tracks.map( async ( track ) => {
+        const capabilities = track.getCapabilities?.() ?? {}
+        const constraints = make_full_resolution_constraints( capabilities )
+
+        await apply_track_constraints( track, constraints )
+    } ) )
+
+    return stream
+}
+
 /**
  * Selects the first MediaRecorder MIME type supported by this browser.
  * @param {Array<string>} candidates - Candidate MIME types in priority order.
@@ -119,18 +166,24 @@ export async function request_capture_stream( { audio_enabled = true } = {} ) {
         audio: audio_enabled ? capture_audio_constraints : false
     }
 
-    if( !audio_enabled ) return navigator.mediaDevices.getUserMedia( capture_constraints )
+    if( !audio_enabled ) return prefer_full_resolution(
+        await navigator.mediaDevices.getUserMedia( capture_constraints )
+    )
 
     try {
-        return await navigator.mediaDevices.getUserMedia( capture_constraints )
+        return await prefer_full_resolution(
+            await navigator.mediaDevices.getUserMedia( capture_constraints )
+        )
     } catch ( error ) {
         if( !should_retry_video_only( error ) ) throw error
 
         try {
-            const video_only_stream = await navigator.mediaDevices.getUserMedia( {
-                video: capture_video_constraints,
-                audio: false
-            } )
+            const video_only_stream = await prefer_full_resolution(
+                await navigator.mediaDevices.getUserMedia( {
+                    video: capture_video_constraints,
+                    audio: false
+                } )
+            )
 
             const warning = error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError`
                 ? `microphone_denied`

@@ -84,6 +84,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const pending_release_duration_ref = useRef( null )
     const stopping_ref = useRef( null )
     const recording_mode_ref = useRef( null )
+    const preview_attempted_ref = useRef( false )
+    const preview_open_promise_ref = useRef( null )
 
     const set_phase = useCallback( ( phase ) => {
         log.debug( `Recording phase changed`, {
@@ -101,6 +103,64 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_media_stream_state( `idle` )
     }, [ set_media_stream_state ] )
 
+    const open_preview = useCallback( ( { force = false } = {} ) => {
+        if( !project_id ) return Promise.resolve( null )
+        if( stream_ref.current || phase_ref.current !== `idle` ) return Promise.resolve( stream_ref.current )
+        if( preview_open_promise_ref.current ) return preview_open_promise_ref.current
+        if( preview_attempted_ref.current && !force ) return Promise.resolve( null )
+
+        preview_attempted_ref.current = true
+        set_media_stream_state( `opening` )
+
+        const preview_work = Promise.resolve( request_capture_stream( { audio_enabled: false } ) )
+            .then( ( preview_stream ) => {
+                if( !preview_stream ) {
+                    if( mounted_ref.current ) set_media_stream_state( `idle` )
+                    return null
+                }
+
+                if(
+                    !mounted_ref.current
+                    || phase_ref.current !== `idle`
+                    || stream_ref.current
+                ) {
+                    stop_media_stream( preview_stream )
+                    return null
+                }
+
+                stream_ref.current = preview_stream
+                set_stream( preview_stream )
+                set_media_stream_state( `active` )
+                log.debug( `Camera preview opened`, {
+                    project_id,
+                    video_tracks: preview_stream.getVideoTracks?.().length ?? 0
+                } )
+                return preview_stream
+            } )
+            .catch( ( error ) => {
+                if( mounted_ref.current ) {
+                    log.warn( `Camera preview could not open`, error )
+                    set_media_stream_state( `idle` )
+                    set_error_message( get_capture_error_message( error ) )
+                    set_permission_recovery_needed(
+                        error?.name === `NotAllowedError`
+                        || error?.name === `PermissionDeniedError`
+                    )
+                }
+
+                return null
+            } )
+            .finally( () => {
+                preview_open_promise_ref.current = null
+            } )
+
+        preview_open_promise_ref.current = preview_work
+        return preview_work
+    }, [
+        project_id,
+        set_media_stream_state
+    ] )
+
     const reset_startup_after_forced_stop = useCallback( ( next_stream ) => {
         stop_media_stream( next_stream )
         pending_forced_stop_ref.current = false
@@ -117,7 +177,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_stream( null )
         set_recording_mode( null )
         set_recording_started_at( null )
+        if( !document.hidden ) open_preview( { force: true } )
     }, [
+        open_preview,
         set_media_stream_state,
         set_phase
     ] )
@@ -340,6 +402,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 }
                 clear_current_stream()
                 set_phase( `idle` )
+                if( mounted_ref.current && !document.hidden ) open_preview( { force: true } )
                 stopping_ref.current = null
             }
         }
@@ -348,6 +411,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         return stopping_ref.current
     }, [
         clear_current_stream,
+        open_preview,
         project_id,
         save_recorded_clip,
         set_phase,
@@ -379,6 +443,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         pending_release_duration_ref.current = null
         recording_mode_ref.current = null
         set_recording_mode( null )
+
+        if( preview_open_promise_ref.current ) await preview_open_promise_ref.current.catch( () => null )
+        if( stream_ref.current ) clear_current_stream()
+
         set_phase( `starting` )
         set_media_stream_state( `opening` )
 
@@ -579,10 +647,12 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             if( mounted_ref.current ) set_recording_mode( null )
             clear_current_stream()
             set_phase( `idle` )
+            if( mounted_ref.current && !document.hidden ) open_preview( { force: true } )
             refresh_environment_state().catch( ( refresh_error ) => log.warn( `Environment refresh failed`, refresh_error ) )
         }
     }, [
         clear_current_stream,
+        open_preview,
         project_id,
         refresh_environment_state,
         reset_startup_after_forced_stop,
@@ -701,6 +771,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         recording_state,
         recording_mode,
         elapsed_ms,
+        open_preview,
         press_record,
         release_record,
         cancel_record,
