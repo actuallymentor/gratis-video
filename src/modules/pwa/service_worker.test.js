@@ -55,6 +55,22 @@ const load_service_worker = async ( overrides = {} ) => {
 }
 
 describe( `service worker`, () => {
+    test( `activates even when shell precaching fails`, async () => {
+        const { cache, listeners, self } = await load_service_worker()
+        let install_promise = null
+
+        cache.addAll.mockRejectedValue( new Error( `Cache write failed` ) )
+
+        listeners.install( {
+            waitUntil: ( promise ) => {
+                install_promise = promise
+            }
+        } )
+
+        await expect( install_promise ).resolves.toBe( null )
+        expect( self.skipWaiting ).toHaveBeenCalled()
+    } )
+
     test( `serves navigations from the app shell URL without sending route metadata`, async () => {
         const { fetch, listeners } = await load_service_worker()
         let response_promise = null
@@ -91,7 +107,12 @@ describe( `service worker`, () => {
         const { cache, fetch, listeners } = await load_service_worker()
         let response_promise = null
 
-        fetch.mockResolvedValue( index_response )
+        fetch.mockImplementation( ( resource ) => {
+            if( resource === `/index.html` ) return Promise.resolve( index_response )
+            if( resource === `/assets/new.js` ) return Promise.resolve( new Response( `js` ) )
+            if( resource === `/assets/new.css` ) return Promise.resolve( new Response( `css` ) )
+            return Promise.reject( new Error( `Unexpected request` ) )
+        } )
         cache.keys.mockResolvedValue( [ stale_request ] )
 
         listeners.fetch( {
@@ -107,15 +128,60 @@ describe( `service worker`, () => {
 
         await response_promise
 
-        expect( cache.addAll ).toHaveBeenCalledWith( [
-            `/assets/new.js`,
-            `/assets/new.css`
-        ] )
-        expect( cache.addAll.mock.invocationCallOrder.at( -1 ) ).toBeLessThan(
-            cache.put.mock.invocationCallOrder.at( -1 )
-        )
+        const index_put_order = cache.put.mock.invocationCallOrder.at( -1 )
+        const build_asset_put_orders = cache.put.mock.calls
+            .map( ( [ key ], index ) => ( {
+                key,
+                order: cache.put.mock.invocationCallOrder[ index ]
+            } ) )
+            .filter( ( { key } ) => key !== `/index.html` )
+            .map( ( { order } ) => order )
+
+        expect( fetch ).toHaveBeenCalledWith( `/assets/new.js`, { cache: `reload` } )
+        expect( fetch ).toHaveBeenCalledWith( `/assets/new.css`, { cache: `reload` } )
+        expect( build_asset_put_orders.every( ( order ) => order < index_put_order ) ).toBe( true )
+        expect( cache.put ).toHaveBeenCalledWith( `/assets/new.js`, expect.any( Response ) )
+        expect( cache.put ).toHaveBeenCalledWith( `/assets/new.css`, expect.any( Response ) )
         expect( cache.put ).toHaveBeenCalledWith( `/index.html`, expect.any( Response ) )
         expect( cache.delete ).toHaveBeenCalledWith( stale_request )
+    } )
+
+    test( `does not serve a broken cached shell when a refresh cannot be cached`, async () => {
+        const fresh_index = new Response( `
+            <html>
+                <script type="module" src="/assets/fresh.js"></script>
+            </html>
+        ` )
+        const stale_index = new Response( `
+            <html>
+                <script type="module" src="/assets/missing-old.js"></script>
+            </html>
+        ` )
+        const { caches, fetch, listeners } = await load_service_worker()
+        let response_promise = null
+
+        fetch.mockImplementation( ( resource ) => {
+            if( resource === `/index.html` ) return Promise.resolve( fresh_index )
+            if( resource === `/assets/fresh.js` ) return Promise.reject( new Error( `Asset not ready` ) )
+            return Promise.reject( new Error( `Unexpected request` ) )
+        } )
+        caches.match
+            .mockResolvedValueOnce( stale_index )
+            .mockResolvedValueOnce( null )
+
+        listeners.fetch( {
+            request: {
+                method: `GET`,
+                mode: `navigate`,
+                url: `https://journal.test/projects/project-1`
+            },
+            respondWith: ( promise ) => {
+                response_promise = promise
+            }
+        } )
+
+        await expect( response_promise ).resolves.toBe( fresh_index )
+        expect( caches.match ).toHaveBeenCalledWith( `/assets/missing-old.js` )
     } )
 
     test( `falls back to the cached app shell when navigation refresh is not cacheable`, async () => {
@@ -166,11 +232,34 @@ describe( `service worker`, () => {
         expect( await response.text() ).toMatch( /Offline/ )
     } )
 
-    test( `serves build assets from a cached path when request matching misses`, async () => {
-        const cached_asset = new Response( `asset` )
-        const { caches, listeners } = await load_service_worker()
+    test( `refreshes build assets from the network before using cached copies`, async () => {
+        const network_asset = new Response( `network asset` )
+        const cached_asset = new Response( `cached asset` )
+        const { cache, caches, fetch, listeners } = await load_service_worker()
         let response_promise = null
 
+        fetch.mockResolvedValue( network_asset )
+        caches.match.mockResolvedValue( cached_asset )
+
+        listeners.fetch( {
+            request: new Request( `https://journal.test/assets/index.js` ),
+            respondWith: ( promise ) => {
+                response_promise = promise
+            }
+        } )
+
+        await expect( response_promise ).resolves.toBe( network_asset )
+        expect( fetch ).toHaveBeenCalledWith( expect.any( Request ), { cache: `reload` } )
+        expect( cache.put ).toHaveBeenCalledWith( expect.any( Request ), expect.any( Response ) )
+        expect( caches.match ).not.toHaveBeenCalled()
+    } )
+
+    test( `serves build assets from a cached path when network refresh misses`, async () => {
+        const cached_asset = new Response( `asset` )
+        const { caches, fetch, listeners } = await load_service_worker()
+        let response_promise = null
+
+        fetch.mockRejectedValue( new Error( `Offline` ) )
         caches.match
             .mockResolvedValueOnce( null )
             .mockResolvedValueOnce( cached_asset )

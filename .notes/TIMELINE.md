@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-19T11:08:18Z - Diagnosed Chrome-only post-deploy failures as a stale service-worker app-shell risk. Hardened the worker with cache generation `v2`, non-failing install activation, cached shell build-asset validation, network-first JS/CSS refresh, and `updateViaCache: none` registration.
 - 2026-05-18T20:43:27Z - Fixed recording capture crop by removing the 1280x720 16:9 preference, requesting native non-cropped camera output, refining opened tracks toward maximum reported dimensions, showing the live preview with `object-fit: contain`, and preparing the 0.3.18 patch notes/version bump.
 - 2026-05-18T21:17:57Z - Corrected recording capture again by removing all width/height requests and the post-open max-dimension refinement. Capture now asks only for the preferred camera and `resizeMode: none`, leaving the recorded dimensions to the browser-provided camera frame.
 - 2026-05-17: Created `specification.md` from `RAMBLE.md`, incorporating local design/tooling preferences and current browser API research.

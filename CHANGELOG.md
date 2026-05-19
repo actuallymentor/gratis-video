@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.20] - 2026-05-19
+
+### Fixed
+- recover Chrome clients from stale service-worker app shells
+
 ## [0.3.19] - 2026-05-18
 
 ### Fixed

@@ -28,10 +28,15 @@ log.info( `Daily Video Journal app rendered` )
 
 if( `serviceWorker` in navigator && import.meta.env.PROD ) {
     window.addEventListener( `load`, () => {
-        navigator.serviceWorker.register( `/sw.js` )
+        navigator.serviceWorker.register( `/sw.js`, {
+            updateViaCache: `none`
+        } )
             .then( ( registration ) => {
                 log.info( `Service worker registered`, {
                     scope: registration.scope
+                } )
+                registration.update().catch( ( error ) => {
+                    log.warn( `Service worker update check failed`, error )
                 } )
             } )
             .catch( ( error ) => {

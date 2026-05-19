@@ -31,6 +31,8 @@
 - Keep large media blobs out of React state. Use IndexedDB for persistence and refs for transient share/download blobs that must remain available to event handlers.
 - When updating the service-worker cached app shell, cache the build JS/CSS assets before replacing `/index.html`; otherwise offline startup can point at assets that were never cached.
 - In the service worker, match cached build assets by both the browser `Request` and URL pathname. Chromium offline subresource requests can miss the direct `Request` match even when the pathname is cached.
+- Cached service-worker app shells must be validated against their referenced build assets before reuse. A stale `/index.html` that points at missing JS/CSS can make normal Chrome loads fail while Incognito or hard refresh succeeds.
+- Register the service worker with `updateViaCache: "none"` and keep the cache name moving when update semantics change, so Chrome is not stranded on stale worker/cache generations.
 - Playwright smoke tests use `*.playwright.js` with an explicit `testMatch` so Vitest does not try to execute `@playwright/test` suites.
 - Playwright config uses fake media device/UI flags so browser smoke tests can record clips in Chromium without a real camera permission prompt.
 - Playwright E2E media tests also generate `tests/.generated/fake-media/fake-camera.y4m` and launch Chromium with `--use-file-for-fake-video-capture`. Keep the generated directory ignored; the checked-in generator is `tests/fake_media.js`.
