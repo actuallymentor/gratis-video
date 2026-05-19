@@ -150,16 +150,17 @@ describe( `recorder helpers`, () => {
         expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
     } )
 
-    test( `asks the opened camera track for its full native resolution`, async () => {
+    test( `asks the opened camera track for its full native resolution while keeping portrait shape`, async () => {
         const applyConstraints = vi.fn().mockResolvedValue()
         const track = {
             applyConstraints,
             getCapabilities: () => ( {
                 width: { max: 4032 },
-                height: { max: 3024 },
+                height: { max: 4032 },
                 resizeMode: [ `none`, `crop-and-scale` ],
                 zoom: { min: 1 }
-            } )
+            } ),
+            getSettings: () => ( { width: 720, height: 1280 } )
         }
         const stream = {
             getTracks: () => [ track ],
@@ -177,9 +178,99 @@ describe( `recorder helpers`, () => {
         expect( applyConstraints ).toHaveBeenCalledWith( {
             resizeMode: { exact: `none` },
             width: { ideal: 4032 },
-            height: { ideal: 3024 }
+            height: { ideal: 4032 }
         } )
         expect( applyConstraints.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty( `aspectRatio` )
+    } )
+
+    test( `keeps the portrait shape of the live track when capability maxes disagree`, async () => {
+        const applyConstraints = vi.fn().mockResolvedValue()
+        const track = {
+            applyConstraints,
+            getCapabilities: () => ( {
+                width: { max: 4032 },
+                height: { max: 3024 },
+                resizeMode: [ `none`, `crop-and-scale` ]
+            } ),
+            getSettings: () => ( { width: 720, height: 1280 } )
+        }
+        const stream = {
+            getTracks: () => [ track ],
+            getVideoTracks: () => [ track ]
+        }
+        const getUserMedia = vi.fn().mockResolvedValue( stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
+        expect( applyConstraints ).toHaveBeenCalledWith( {
+            resizeMode: { exact: `none` },
+            width: { ideal: 3024 },
+            height: { ideal: 4032 }
+        } )
+    } )
+
+    test( `keeps the landscape shape of the live track when capability maxes disagree`, async () => {
+        const applyConstraints = vi.fn().mockResolvedValue()
+        const track = {
+            applyConstraints,
+            getCapabilities: () => ( {
+                width: { max: 4032 },
+                height: { max: 3024 },
+                resizeMode: [ `none`, `crop-and-scale` ]
+            } ),
+            getSettings: () => ( { width: 1280, height: 720 } )
+        }
+        const stream = {
+            getTracks: () => [ track ],
+            getVideoTracks: () => [ track ]
+        }
+        const getUserMedia = vi.fn().mockResolvedValue( stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
+        expect( applyConstraints ).toHaveBeenCalledWith( {
+            resizeMode: { exact: `none` },
+            width: { ideal: 4032 },
+            height: { ideal: 3024 }
+        } )
+    } )
+
+    test( `falls back to capability maxes when the opened track does not report dimensions yet`, async () => {
+        const applyConstraints = vi.fn().mockResolvedValue()
+        const track = {
+            applyConstraints,
+            getCapabilities: () => ( {
+                width: { max: 4032 },
+                height: { max: 3024 },
+                resizeMode: [ `none`, `crop-and-scale` ]
+            } ),
+            getSettings: () => ( {} )
+        }
+        const stream = {
+            getTracks: () => [ track ],
+            getVideoTracks: () => [ track ]
+        }
+        const getUserMedia = vi.fn().mockResolvedValue( stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
+        expect( applyConstraints ).toHaveBeenCalledWith( {
+            resizeMode: { exact: `none` },
+            width: { ideal: 4032 },
+            height: { ideal: 3024 }
+        } )
     } )
 
     test( `keeps recording available when full resolution refinement is rejected`, async () => {
@@ -190,7 +281,8 @@ describe( `recorder helpers`, () => {
                 width: { max: 4032 },
                 height: { max: 3024 },
                 resizeMode: [ `none`, `crop-and-scale` ]
-            } )
+            } ),
+            getSettings: () => ( { width: 720, height: 1280 } )
         }
         const stream = {
             getTracks: () => [ track ],

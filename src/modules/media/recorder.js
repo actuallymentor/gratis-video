@@ -61,12 +61,39 @@ const camera_denied_error = () => new DOMException(
 
 const is_finite_number = ( value ) => Number.isFinite( value )
 
-const make_full_resolution_constraints = ( capabilities = {} ) => {
+// `MediaTrackCapabilities` reports the maximum value each dimension can take
+// across any sensor mode. Those independent maxes may not be simultaneously
+// achievable: a phone that supports 4032x3024 (landscape) and 3024x4032
+// (portrait) reports `width.max = height.max = 4032`. Asking for both maxes
+// makes the browser pick the sensor mode with the highest pixel count, which
+// can reorient the recording away from the active portrait/landscape frame.
+// Match the maxes to the active orientation so the recording keeps the same
+// shape the live preview is showing.
+const make_full_resolution_constraints = ( capabilities = {}, current_settings = {} ) => {
     const constraints = {}
 
     if( capabilities.resizeMode?.includes?.( `none` ) ) constraints.resizeMode = { exact: `none` }
-    if( is_finite_number( capabilities.width?.max ) ) constraints.width = { ideal: capabilities.width.max }
-    if( is_finite_number( capabilities.height?.max ) ) constraints.height = { ideal: capabilities.height.max }
+
+    const width_max = is_finite_number( capabilities.width?.max ) ? capabilities.width.max : null
+    const height_max = is_finite_number( capabilities.height?.max ) ? capabilities.height.max : null
+
+    if( width_max === null && height_max === null ) return constraints
+
+    const current_width = is_finite_number( current_settings.width ) ? current_settings.width : null
+    const current_height = is_finite_number( current_settings.height ) ? current_settings.height : null
+    const orientation_known = current_width !== null && current_height !== null && width_max !== null && height_max !== null
+
+    if( orientation_known ) {
+        const longer_max = Math.max( width_max, height_max )
+        const shorter_max = Math.min( width_max, height_max )
+        const current_is_portrait = current_height >= current_width
+
+        constraints.width = { ideal: current_is_portrait ? shorter_max : longer_max }
+        constraints.height = { ideal: current_is_portrait ? longer_max : shorter_max }
+    } else {
+        if( width_max !== null ) constraints.width = { ideal: width_max }
+        if( height_max !== null ) constraints.height = { ideal: height_max }
+    }
 
     return constraints
 }
@@ -98,7 +125,8 @@ const prefer_full_resolution = async ( stream ) => {
 
     await Promise.all( video_tracks.map( async ( track ) => {
         const capabilities = track.getCapabilities?.() ?? {}
-        const constraints = make_full_resolution_constraints( capabilities )
+        const current_settings = track.getSettings?.() ?? {}
+        const constraints = make_full_resolution_constraints( capabilities, current_settings )
 
         await apply_track_constraints( track, constraints )
     } ) )

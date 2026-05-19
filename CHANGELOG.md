@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.24] - 2026-05-19
+
+### Fixed
+- keep phone recordings in the live preview's portrait or landscape shape
+
 ## [0.3.23] - 2026-05-19
 
 ### Fixed
