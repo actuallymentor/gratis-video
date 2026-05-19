@@ -1,4 +1,6 @@
-const CACHE_NAME = `daily-video-journal-v2`
+const CACHE_NAME = `daily-video-journal-v3`
+const APP_SHELL_URL = `/`
+const APP_SHELL_CACHE_KEY = `/index.html`
 
 const STATIC_APP_ASSETS = [
     `/manifest.webmanifest`,
@@ -55,7 +57,7 @@ const cache_index_with_build_assets = async ( cache, index_response ) => {
     const build_asset_urls = get_build_asset_urls( html )
 
     if( build_asset_urls.length ) await cache_build_assets( cache, build_asset_urls )
-    await cache.put( `/index.html`, index_response.clone() )
+    await cache.put( APP_SHELL_CACHE_KEY, index_response.clone() )
     await prune_stale_build_assets( cache, build_asset_urls )
 }
 
@@ -72,7 +74,7 @@ const cached_index_has_build_assets = async ( index_response ) => {
 }
 
 const get_valid_cached_index = async () => {
-    const index_response = await caches.match( `/index.html` )
+    const index_response = await caches.match( APP_SHELL_CACHE_KEY )
 
     if( await cached_index_has_build_assets( index_response ) ) return index_response
     return null
@@ -98,7 +100,7 @@ const cache_app_shell = async () => {
 
     await cache.addAll( STATIC_APP_ASSETS )
 
-    const index_response = await fetch( `/index.html`, { cache: `reload` } )
+    const index_response = await fetch( APP_SHELL_URL, { cache: `reload` } )
     await cache_index_with_build_assets( cache, index_response )
 }
 
@@ -113,7 +115,7 @@ const fetch_and_cache_build_asset = async ( request ) => {
 
 const refresh_navigation = async () => {
     const cache = await caches.open( CACHE_NAME )
-    const response = await fetch( `/index.html`, { cache: `reload` } )
+    const response = await fetch( APP_SHELL_URL, { cache: `reload` } )
 
     try {
         await cache_index_with_build_assets( cache, response.clone() )

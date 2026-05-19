@@ -74,3 +74,4 @@
 - Keep export playback videos configured before `src` assignment and attached invisibly when possible; detached media can pause or stall in some mobile/browser paths.
 - Cloudflare deploys use `cloudflare/wrangler-action@v3`, but the action can default to Wrangler 3.90.0. Keep `wranglerVersion: "4"` pinned in the workflow so Workers Static Assets deploys use current Wrangler endpoints.
 - Cloudflare API tokens pasted into chats or logs should be treated as compromised. Rotate the token and replace the `CLOUDFLARE_API_TOKEN` GitHub secret before retrying deployment.
+- Cloudflare Workers Static Assets default HTML handling redirects `/index.html` to `/`. Keep the service worker fetching the app shell from `/` and keep `assets.html_handling = "none"` so older installed workers that still fetch `/index.html` do not return redirected navigation responses.

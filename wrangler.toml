@@ -13,3 +13,8 @@ directory = "./dist"
 # SPA routing - serve index.html for any path that doesn't match a static file.
 # Without this, direct navigation to routes like /projects/:id will 404.
 not_found_handling = "single-page-application"
+
+# Keep /index.html directly fetchable so older installed service workers that
+# still refresh the app shell from that path do not receive a navigation-breaking
+# redirect response.
+html_handling = "none"

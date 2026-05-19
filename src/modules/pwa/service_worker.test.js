@@ -71,7 +71,7 @@ describe( `service worker`, () => {
         expect( self.skipWaiting ).toHaveBeenCalled()
     } )
 
-    test( `serves navigations from the app shell URL without sending route metadata`, async () => {
+    test( `serves navigations from the non-redirecting app shell URL without sending route metadata`, async () => {
         const { fetch, listeners } = await load_service_worker()
         let response_promise = null
 
@@ -88,10 +88,11 @@ describe( `service worker`, () => {
 
         await response_promise
 
-        expect( fetch ).toHaveBeenCalledWith( `/index.html`, { cache: `reload` } )
+        expect( fetch ).toHaveBeenCalledWith( `/`, { cache: `reload` } )
         expect(
             fetch.mock.calls.flat().some( ( value ) => {
                 return String( value?.url ?? value ).includes( `local-project-id` )
+                    || String( value?.url ?? value ).includes( `/index.html` )
             } )
         ).toBe( false )
     } )
@@ -108,7 +109,7 @@ describe( `service worker`, () => {
         let response_promise = null
 
         fetch.mockImplementation( ( resource ) => {
-            if( resource === `/index.html` ) return Promise.resolve( index_response )
+            if( resource === `/` ) return Promise.resolve( index_response )
             if( resource === `/assets/new.js` ) return Promise.resolve( new Response( `js` ) )
             if( resource === `/assets/new.css` ) return Promise.resolve( new Response( `css` ) )
             return Promise.reject( new Error( `Unexpected request` ) )
@@ -161,7 +162,7 @@ describe( `service worker`, () => {
         let response_promise = null
 
         fetch.mockImplementation( ( resource ) => {
-            if( resource === `/index.html` ) return Promise.resolve( fresh_index )
+            if( resource === `/` ) return Promise.resolve( fresh_index )
             if( resource === `/assets/fresh.js` ) return Promise.reject( new Error( `Asset not ready` ) )
             return Promise.reject( new Error( `Unexpected request` ) )
         } )

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.25] - 2026-05-19
+
+### Fixed
+- prevent service-worker-controlled reloads from failing on Cloudflare redirects
+
 ## [0.3.24] - 2026-05-19
 
 ### Fixed
