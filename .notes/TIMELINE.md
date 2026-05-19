@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-19T11:15:58Z - Updated filled action buttons so accent and recording fills use a white foreground token for both labels and inherited-currentColor icons. Moved accent-filled buttons to the stronger accent token to keep white content readable, then prepared the 0.3.21 patch notes/version bump.
 - 2026-05-19T11:08:18Z - Diagnosed Chrome-only post-deploy failures as a stale service-worker app-shell risk. Hardened the worker with cache generation `v2`, non-failing install activation, cached shell build-asset validation, network-first JS/CSS refresh, and `updateViaCache: none` registration.
 - 2026-05-18T20:43:27Z - Fixed recording capture crop by removing the 1280x720 16:9 preference, requesting native non-cropped camera output, refining opened tracks toward maximum reported dimensions, showing the live preview with `object-fit: contain`, and preparing the 0.3.18 patch notes/version bump.
 - 2026-05-18T21:17:57Z - Corrected recording capture again by removing all width/height requests and the post-open max-dimension refinement. Capture now asks only for the preferred camera and `resizeMode: none`, leaving the recorded dimensions to the browser-provided camera frame.

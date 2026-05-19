@@ -17,8 +17,8 @@ const Button = styled.button`
     min-height: 5.25rem;
     border: 0.35rem solid ${ ( { $recording } ) => $recording ? `var(--color-recording)` : `var(--color-surface)` };
     border-radius: 999px;
-    color: ${ ( { $recording } ) => $recording ? `#ffffff` : `#0d1718` };
-    background: ${ ( { $recording } ) => $recording ? `var(--color-recording)` : `var(--color-accent)` };
+    color: var(--color-on-filled);
+    background: ${ ( { $recording } ) => $recording ? `var(--color-recording)` : `var(--color-filled)` };
     box-shadow: var(--shadow-soft);
     touch-action: none;
     user-select: none;

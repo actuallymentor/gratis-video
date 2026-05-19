@@ -105,8 +105,8 @@ const TextButton = styled.button`
     padding: 0.5rem 0.9rem;
     border: 1px solid ${ ( { $primary } ) => $primary ? `var(--color-accent-strong)` : `var(--color-border)` };
     border-radius: 0.5rem;
-    color: var(--color-ink);
-    background: ${ ( { $primary } ) => $primary ? `var(--color-accent)` : `var(--color-surface)` };
+    color: ${ ( { $primary } ) => $primary ? `var(--color-on-filled)` : `var(--color-ink)` };
+    background: ${ ( { $primary } ) => $primary ? `var(--color-filled)` : `var(--color-surface)` };
     font-weight: 900;
 `
 

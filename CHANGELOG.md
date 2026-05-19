@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.21] - 2026-05-19
+
+### Fixed
+- make color-filled button text and icons white
+
 ## [0.3.20] - 2026-05-19
 
 ### Fixed

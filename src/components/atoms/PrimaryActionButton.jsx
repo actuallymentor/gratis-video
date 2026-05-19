@@ -10,8 +10,8 @@ const Button = styled.button`
     padding: 0 1.2rem;
     border: 0;
     border-radius: 999px;
-    color: #0d1718;
-    background: var(--color-accent);
+    color: var(--color-on-filled);
+    background: var(--color-filled);
     box-shadow: var(--shadow-soft);
     font-weight: 800;
     transition: transform 140ms ease, filter 140ms ease;
