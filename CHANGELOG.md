@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.22] - 2026-05-19
+
+### Fixed
+- use the preferred accent color for filled buttons
+
 ## [0.3.21] - 2026-05-19
 
 ### Fixed

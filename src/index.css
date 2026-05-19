@@ -9,7 +9,7 @@
     --color-border: #d9e4e2;
     --color-accent: #7ec0d0;
     --color-accent-strong: #2c7888;
-    --color-filled: var(--color-accent-strong);
+    --color-filled: var(--color-accent);
     --color-on-filled: #ffffff;
     --color-recording: #d8392b;
     --color-danger: #b92f25;
