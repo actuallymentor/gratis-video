@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.26] - 2026-05-19
+
+### Fixed
+- harden service-worker reload fallback and cache cleanup races
+
 ## [0.3.25] - 2026-05-19
 
 ### Fixed

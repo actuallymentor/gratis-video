@@ -14,7 +14,8 @@ directory = "./dist"
 # Without this, direct navigation to routes like /projects/:id will 404.
 not_found_handling = "single-page-application"
 
-# Keep /index.html directly fetchable so older installed service workers that
-# still refresh the app shell from that path do not receive a navigation-breaking
-# redirect response.
+# Disable HTML canonical redirects so /index.html stays directly fetchable for
+# older installed service workers. With "none", extensionless HTML paths such as
+# /foo no longer resolve to /foo.html automatically; unmatched paths fall through
+# to the SPA handler above.
 html_handling = "none"

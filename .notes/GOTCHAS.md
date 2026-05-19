@@ -21,7 +21,7 @@
 - A compiled export can be valid even if IndexedDB caching fails due quota or storage errors. Keep the transient blob in a ref so Share/Download still work, but do not mark it as a reusable cached export.
 - Canvas export playback may happen outside the original tap because React opens the export panel first. Detached videos with audio can hit autoplay policy, so keep a muted retry path instead of failing the export.
 - Autoplay blockers can surface as generic `TypeError`s such as `Cannot read properties of undefined (reading 'disableAutoplay')`; treat those like autoplay rejections and keep the muted retry path covered.
-- Service-worker navigation fetches should request `/index.html`, not the current route, so local project IDs in `/projects/:project_id` are not sent again during controlled app navigations.
+- Service-worker navigation fetches should request `/`, not the current route or `/index.html`, so local project IDs are not sent during controlled navigations and Cloudflare's `/index.html` canonical redirect is avoided.
 - Settings controls are backed by async IndexedDB writes. Keep their React state optimistic so checkbox/segmented interactions update immediately, then roll back only if saving fails.
 - Active project state has an IndexedDB pointer record with explicit `null` support. Do not reintroduce fallback-to-recent-project behavior after a user clears or deletes the active project.
 - Clip export cache hashes depend on clip ids, queue order, clip `version`, MIME type, and creation time. Background metadata enrichment should not bump `version` or restart an in-flight export; only true media/blob/order changes should invalidate cached exports.
@@ -75,3 +75,5 @@
 - Cloudflare deploys use `cloudflare/wrangler-action@v3`, but the action can default to Wrangler 3.90.0. Keep `wranglerVersion: "4"` pinned in the workflow so Workers Static Assets deploys use current Wrangler endpoints.
 - Cloudflare API tokens pasted into chats or logs should be treated as compromised. Rotate the token and replace the `CLOUDFLARE_API_TOKEN` GitHub secret before retrying deployment.
 - Cloudflare Workers Static Assets default HTML handling redirects `/index.html` to `/`. Keep the service worker fetching the app shell from `/` and keep `assets.html_handling = "none"` so older installed workers that still fetch `/index.html` do not return redirected navigation responses.
+- Service-worker activate should only delete older caches after the current cache has a valid shell and build assets. Install failures are intentionally swallowed so a new worker can activate, but older caches must remain available for offline fallback.
+- Navigation app-shell refreshes should return a controlled offline response for non-ok shell responses when no valid cache exists. Do not hand raw Cloudflare 5xx HTML back through `respondWith()`.

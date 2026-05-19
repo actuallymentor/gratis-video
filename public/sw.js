@@ -1,5 +1,8 @@
-const CACHE_NAME = `daily-video-journal-v3`
+const CACHE_NAME = `daily-video-journal-v4`
 const APP_SHELL_URL = `/`
+
+// Fetch `/` to avoid Cloudflare's canonical `/index.html` redirect, but keep
+// the cached shell under `/index.html` so direct file-path lookups share it.
 const APP_SHELL_CACHE_KEY = `/index.html`
 
 const STATIC_APP_ASSETS = [
@@ -27,7 +30,25 @@ const is_build_asset_request = ( request ) => {
     return url.pathname.startsWith( `/assets/` ) && /\.(?:js|css)$/.test( url.pathname )
 }
 
+const same_build_asset_urls = ( first_urls, second_urls ) => {
+    if( first_urls.length !== second_urls.length ) return false
+
+    const second_url_set = new Set( second_urls )
+    return first_urls.every( ( asset_url ) => second_url_set.has( asset_url ) )
+}
+
+const cached_shell_matches_build_assets = async ( cache, build_asset_urls ) => {
+    const index_response = await cache.match( APP_SHELL_CACHE_KEY )
+
+    if( !index_response?.ok ) return false
+
+    const html = await index_response.clone().text()
+    return same_build_asset_urls( get_build_asset_urls( html ), build_asset_urls )
+}
+
 const prune_stale_build_assets = async ( cache, build_asset_urls ) => {
+    if( !( await cached_shell_matches_build_assets( cache, build_asset_urls ) ) ) return
+
     const cached_requests = await cache.keys()
     const current_assets = new Set( build_asset_urls )
     const stale_requests = cached_requests.filter( ( request ) => {
@@ -51,7 +72,7 @@ const cache_build_assets = async ( cache, build_asset_urls ) => {
 }
 
 const cache_index_with_build_assets = async ( cache, index_response ) => {
-    if( !index_response.ok ) throw new Error( `App shell response was not cacheable.` )
+    if( !index_response.ok || index_response.redirected ) throw new Error( `App shell response was not cacheable.` )
 
     const html = await index_response.clone().text()
     const build_asset_urls = get_build_asset_urls( html )
@@ -61,13 +82,13 @@ const cache_index_with_build_assets = async ( cache, index_response ) => {
     await prune_stale_build_assets( cache, build_asset_urls )
 }
 
-const cached_index_has_build_assets = async ( index_response ) => {
+const cached_index_has_build_assets = async ( index_response, match_asset = ( asset_url ) => caches.match( asset_url ) ) => {
     if( !index_response?.ok ) return false
 
     const html = await index_response.clone().text()
     const build_asset_urls = get_build_asset_urls( html )
     const cached_build_assets = await Promise.all(
-        build_asset_urls.map( ( asset_url ) => caches.match( asset_url ) )
+        build_asset_urls.map( match_asset )
     )
 
     return cached_build_assets.every( Boolean )
@@ -78,6 +99,13 @@ const get_valid_cached_index = async () => {
 
     if( await cached_index_has_build_assets( index_response ) ) return index_response
     return null
+}
+
+const current_cache_has_valid_index = async () => {
+    const cache = await caches.open( CACHE_NAME )
+    const index_response = await cache.match( APP_SHELL_CACHE_KEY )
+
+    return cached_index_has_build_assets( index_response, ( asset_url ) => cache.match( asset_url ) )
 }
 
 const match_cached_request = async ( request ) => {
@@ -94,6 +122,21 @@ const offline_response = () => new Response( `Offline and not cached.`, {
         'content-type': `text/plain; charset=utf-8`
     }
 } )
+
+const navigation_fallback_response = async ( response = null ) => {
+    const cached_index_response = await get_valid_cached_index()
+
+    if( cached_index_response ) return cached_index_response
+    if( response?.ok && !response.redirected ) return response
+    return offline_response()
+}
+
+const delete_outdated_caches = async () => {
+    const names = await caches.keys()
+    const outdated_names = names.filter( ( name ) => name !== CACHE_NAME )
+
+    await Promise.all( outdated_names.map( ( name ) => caches.delete( name ) ) )
+}
 
 const cache_app_shell = async () => {
     const cache = await caches.open( CACHE_NAME )
@@ -121,15 +164,16 @@ const refresh_navigation = async () => {
         await cache_index_with_build_assets( cache, response.clone() )
         return response
     } catch {
-        return await get_valid_cached_index() || response
+        return navigation_fallback_response( response )
     }
 }
 
 self.addEventListener( `activate`, ( event ) => {
     event.waitUntil(
-        caches.keys().then( ( names ) => Promise.all(
-            names.filter( ( name ) => name !== CACHE_NAME ).map( ( name ) => caches.delete( name ) )
-        ) )
+        current_cache_has_valid_index().then( ( is_current_cache_valid ) => {
+            if( is_current_cache_valid ) return delete_outdated_caches()
+            return null
+        } )
     )
     self.clients.claim()
 } )
@@ -144,7 +188,7 @@ self.addEventListener( `fetch`, ( event ) => {
         event.respondWith(
             refresh_navigation()
                 .catch( async () => {
-                    return await get_valid_cached_index() || offline_response()
+                    return navigation_fallback_response()
                 } )
         )
         return
