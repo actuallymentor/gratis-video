@@ -13,6 +13,7 @@ import {
     add_clip_to_project,
     estimate_storage,
     persisted_storage,
+    save_settings,
     update_clip_media_details
 } from '../modules/storage/journal_storage.js'
 import {
@@ -38,6 +39,7 @@ vi.mock( '../modules/storage/journal_storage.js', () => ( {
     add_clip_to_project: vi.fn(),
     estimate_storage: vi.fn(),
     persisted_storage: vi.fn(),
+    save_settings: vi.fn(),
     update_clip_media_details: vi.fn()
 } ) )
 
@@ -158,6 +160,7 @@ describe( `recording controller`, () => {
         vi.mocked( play_sound_feedback ).mockReset()
         vi.mocked( pulse_haptic ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
+        vi.mocked( save_settings ).mockReset()
         vi.mocked( select_supported_mime_type ).mockReset()
         vi.mocked( update_clip_media_details ).mockReset()
         vi.stubGlobal( `MediaRecorder`, () => {} )
@@ -184,6 +187,7 @@ describe( `recording controller`, () => {
         } )
         vi.mocked( list_video_input_devices ).mockResolvedValue( [] )
         vi.mocked( persisted_storage ).mockResolvedValue( true )
+        vi.mocked( save_settings ).mockResolvedValue( {} )
         vi.mocked( select_supported_mime_type ).mockReturnValue( `video/webm` )
         vi.mocked( update_clip_media_details ).mockResolvedValue( { id: `clip-1` } )
     } )
@@ -331,6 +335,27 @@ describe( `recording controller`, () => {
         expect( preview.track.stop ).toHaveBeenCalledTimes( 1 )
     } )
 
+    test( `opens preview with the remembered camera device`, async () => {
+        const preview = make_stream( { video_device_id: `rear-normal-camera` } )
+
+        recording_settings = {
+            ...recording_settings,
+            last_video_device_id: `rear-normal-camera`
+        }
+        vi.mocked( request_capture_stream ).mockResolvedValue( preview.stream )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            await controller.open_preview( { force: true } )
+        } )
+
+        expect( request_capture_stream ).toHaveBeenCalledWith( {
+            audio_enabled: false,
+            video_device_id: `rear-normal-camera`
+        } )
+    } )
+
     test( `reopens preview with a selected camera device`, async () => {
         const first_preview = make_stream( { video_device_id: `rear-wide-camera` } )
         const second_preview = make_stream( { video_device_id: `rear-normal-camera` } )
@@ -372,7 +397,40 @@ describe( `recording controller`, () => {
             audio_enabled: false,
             video_device_id: `rear-normal-camera`
         } )
+        expect( save_settings ).toHaveBeenLastCalledWith( {
+            last_video_device_id: `rear-normal-camera`
+        } )
         expect( first_preview.track.stop ).toHaveBeenCalledTimes( 1 )
+    } )
+
+    test( `falls back when the remembered camera device is stale`, async () => {
+        const stale_camera_error = new DOMException( `Camera missing`, `OverconstrainedError` )
+        const preview = make_stream()
+
+        recording_settings = {
+            ...recording_settings,
+            last_video_device_id: `removed-camera`
+        }
+        vi.mocked( request_capture_stream )
+            .mockRejectedValueOnce( stale_camera_error )
+            .mockResolvedValueOnce( preview.stream )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            await controller.open_preview( { force: true } )
+        } )
+
+        expect( request_capture_stream ).toHaveBeenNthCalledWith( 1, {
+            audio_enabled: false,
+            video_device_id: `removed-camera`
+        } )
+        expect( request_capture_stream ).toHaveBeenNthCalledWith( 2, {
+            audio_enabled: false
+        } )
+        expect( save_settings ).toHaveBeenCalledWith( {
+            last_video_device_id: null
+        } )
     } )
 
     test( `stops keyboard-started pending capture on page lifecycle cancellation`, async () => {

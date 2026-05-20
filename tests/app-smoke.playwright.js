@@ -404,6 +404,94 @@ test.describe( `daily video journal app`, () => {
         await expect_live_camera_preview( page )
     } )
 
+    test( `remembers the selected camera after reload`, async ( { context, page } ) => {
+        await context.grantPermissions( [ `camera`, `microphone` ] )
+        await page.addInitScript( () => {
+            const calls = []
+            const media_devices = navigator.mediaDevices
+            const original_get_user_media = media_devices.getUserMedia.bind( media_devices )
+
+            Object.defineProperty( window, `__get_user_media_calls`, {
+                configurable: true,
+                value: calls
+            } )
+            Object.defineProperty( media_devices, `enumerateDevices`, {
+                configurable: true,
+                value: () => Promise.resolve( [
+                    {
+                        deviceId: `rear-wide-camera`,
+                        groupId: `rear`,
+                        kind: `videoinput`,
+                        label: `Back Wide Camera`
+                    },
+                    {
+                        deviceId: `rear-normal-camera`,
+                        groupId: `rear`,
+                        kind: `videoinput`,
+                        label: `Back Camera`
+                    },
+                    {
+                        deviceId: `microphone`,
+                        groupId: `audio`,
+                        kind: `audioinput`,
+                        label: `Microphone`
+                    }
+                ] )
+            } )
+            Object.defineProperty( media_devices, `getUserMedia`, {
+                configurable: true,
+                value: async ( constraints ) => {
+                    const recorded_constraints = JSON.parse( JSON.stringify( constraints ) )
+                    const forwarded_constraints = JSON.parse( JSON.stringify( constraints ) )
+                    const requested_device_id = recorded_constraints.video?.deviceId?.exact
+                        ?? `rear-wide-camera`
+
+                    calls.push( recorded_constraints )
+                    if( forwarded_constraints.video && typeof forwarded_constraints.video === `object` ) {
+                        delete forwarded_constraints.video.deviceId
+                    }
+
+                    const stream = await original_get_user_media( forwarded_constraints )
+
+                    stream.getVideoTracks().forEach( ( track ) => {
+                        const get_settings = track.getSettings?.bind( track )
+
+                        Object.defineProperty( track, `getSettings`, {
+                            configurable: true,
+                            value: () => ( {
+                                ...get_settings?.(),
+                                deviceId: requested_device_id
+                            } )
+                        } )
+                    } )
+
+                    return stream
+                }
+            } )
+        } )
+
+        await page.goto( `/` )
+        await page.getByRole( `button`, { name: `Create Project` } ).click()
+
+        await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
+        await expect_live_camera_preview( page )
+        const camera_select = page.getByLabel( `Camera`, { exact: true } )
+
+        await expect( camera_select ).toBeEnabled()
+
+        await camera_select.selectOption( `rear-normal-camera` )
+        await expect.poll( () => page.evaluate( () => {
+            return window.__get_user_media_calls.at( -1 )?.video?.deviceId?.exact ?? null
+        } ) ).toBe( `rear-normal-camera` )
+
+        await page.reload()
+
+        await expect_live_camera_preview( page )
+        await expect.poll( () => page.evaluate( () => {
+            return window.__get_user_media_calls.at( 0 )?.video?.deviceId?.exact ?? null
+        } ) ).toBe( `rear-normal-camera` )
+    } )
+
     test( `keeps bottom capture actions stable at the viewport edge`, async ( { page } ) => {
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `Create Project` } ).click()

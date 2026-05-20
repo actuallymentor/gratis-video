@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-20: Prepared `0.3.28` to persist the selected camera in settings, restore it before preview opens, and fall back safely if the remembered camera id is stale.
 - 2026-05-20: Prepared `0.3.27` to keep recording on the same camera source as the live preview, add a camera picker for multi-camera devices, and cover the behavior in unit/component/Playwright media tests.
 - 2026-05-19: Reviewed follow-up service-worker bug analysis after the 0.3.25 reload fix. Prepared 0.3.26 to return controlled offline responses for non-ok navigation shell refreshes, preserve older caches until the current cache is validated, guard build-asset pruning against concurrent navigation refreshes, and document the `/` fetch versus `/index.html` cache-key split.
 - 2026-05-19: Reproduced the live `https://video.gratis.sh/projects` reload failure as `net::ERR_FAILED` under service-worker control. Patched the worker to refresh navigations from `/`, disabled Cloudflare HTML canonical redirects with `html_handling = "none"` for old-worker recovery, and bumped the app to `0.3.25`.

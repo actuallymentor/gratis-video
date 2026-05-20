@@ -28,7 +28,8 @@ export const default_settings = {
     export_resolution: `source`,
     preferred_mime_type: null,
     haptics_enabled: true,
-    sounds_enabled: false
+    sounds_enabled: false,
+    last_video_device_id: null
 }
 
 const new_id = () => {

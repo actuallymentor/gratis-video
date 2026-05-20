@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.28] - 2026-05-20
+
+### Fixed
+- remember the selected camera across reloads
+
 ## [0.3.27] - 2026-05-20
 
 ### Fixed

@@ -722,6 +722,7 @@ export function ProjectCapturePage() {
                     { show_camera_chooser ? <CameraChooser>
                         Camera
                         <select
+                            aria-label="Camera"
                             value={ recording.selected_video_device_id ?? `` }
                             onChange={ ( event ) => recording.select_camera_device( event.target.value ) }
                             disabled={ recording_in_progress || media_stream_state === `opening` }

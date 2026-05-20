@@ -40,7 +40,7 @@ Treat API tokens as single-use secrets. If a token is pasted into chat, logs, or
 - No backend, account, sync, analytics, or upload path is included.
 - Recording supports tap-to-start/tap-to-stop and press-and-hold.
 - Recording opens the camera preview, preserves that camera source for the saved clip, and asks the active track for its maximum native resolution while keeping the same portrait or landscape shape.
-- Multi-camera devices show a camera picker after the browser reports available inputs.
+- Multi-camera devices show a camera picker after the browser reports available inputs and remember the last selected camera across reloads.
 - Clip queues support preview, move earlier/later, and delete actions.
 - If microphone capture fails or is blocked, recording can continue as video-only with a local notice.
 - Settings include media access status, haptics, and optional sound feedback for recording state changes.
