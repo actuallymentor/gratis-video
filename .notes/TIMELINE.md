@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-20T12:56:00Z: Reworked the project capture screen into a full-screen camera preview with floating back/share/settings controls, a transparent centered record button, and a bottom-right clip-list sheet that preserves existing preview/delete/reorder clip actions.
 - 2026-05-20T12:34:00Z: Hardened native export sharing: share files now use bare video MIME types, `navigator.share()` is guarded by transient user activation, expired-activation results keep the user in explicit share actions, and Playwright verifies the Share button reaches native share while user activation is active.
 - 2026-05-20T12:00:10Z: Hardened the Mediabunny remux export path after review: failed dynamic imports retry, malformed packet timing declines to canvas fallback, progress reaches the intended cap, output sources close on failures, and real Mediabunny packet remux coverage was added.
 - 2026-05-20T11:30:48Z: Added a client-side Mediabunny remux export path that copies encoded packets when clips are compatible, keeps the existing canvas exporter as fallback, lazy-loads the remuxer dependency, and invalidates prior cached exports with a pipeline-version hash bump.

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.0] - 2026-05-20
+
+### Added
+- add a full-screen capture preview with floating project controls
+- add a bottom clip-list sheet for preview, reorder, and delete actions
+
 ## [0.5.2] - 2026-05-20
 
 ### Fixed

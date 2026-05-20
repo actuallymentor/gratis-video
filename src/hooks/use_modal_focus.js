@@ -14,6 +14,9 @@ const get_focusable_elements = ( container ) => {
         .filter( ( element ) => !element.hasAttribute( `disabled` ) && !element.closest( `[hidden]` ) )
 }
 
+// Nested modals share document-level key handling; only the topmost surface owns Escape and Tab.
+const modal_stack = []
+
 /**
  * Moves focus into a modal dialog, traps Tab, closes on Escape, and restores focus.
  * @param {Object} options - Modal focus options.
@@ -35,6 +38,9 @@ export function useModalFocus( { active = true, on_close } = {} ) {
         const previously_focused = document.activeElement
         const modal = modal_ref.current
         const original_body_overflow = document.body.style.overflow
+        const stack_entry = { modal_ref }
+
+        modal_stack.push( stack_entry )
 
         document.body.style.overflow = `hidden`
 
@@ -45,6 +51,8 @@ export function useModalFocus( { active = true, on_close } = {} ) {
         }, 0 )
 
         const handle_keydown = ( event ) => {
+            if( modal_stack.at( -1 ) !== stack_entry ) return
+
             if( event.key === `Escape` ) {
                 event.preventDefault()
                 on_close_ref.current?.()
@@ -77,6 +85,8 @@ export function useModalFocus( { active = true, on_close } = {} ) {
         return () => {
             window.clearTimeout( focus_timeout )
             document.removeEventListener( `keydown`, handle_keydown )
+            const stack_index = modal_stack.indexOf( stack_entry )
+            if( stack_index >= 0 ) modal_stack.splice( stack_index, 1 )
             document.body.style.overflow = original_body_overflow
             previously_focused?.focus?.()
         }

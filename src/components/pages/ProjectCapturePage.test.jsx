@@ -20,6 +20,7 @@ import {
     delete_clip,
     get_active_project,
     get_export_blob,
+    get_clip_blob,
     get_clip_thumbnail_blob,
     get_project,
     get_project_clips,
@@ -110,6 +111,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     delete_clip: vi.fn(),
     get_active_project: vi.fn(),
     get_export_blob: vi.fn(),
+    get_clip_blob: vi.fn(),
     get_clip_thumbnail_blob: vi.fn(),
     get_project: vi.fn(),
     get_project_clips: vi.fn(),
@@ -180,6 +182,11 @@ const render_capture = () => render(
     </MemoryRouter>
 )
 
+const open_clip_list = async ( user ) => {
+    await user.click( await screen.findByRole( `button`, { name: `Open clip list` } ) )
+    return screen.findByRole( `dialog`, { name: `Clips` } )
+}
+
 function SwitchableCapture() {
     const navigate = useNavigate()
 
@@ -194,6 +201,7 @@ describe( `project capture page`, () => {
         vi.mocked( delete_clip ).mockResolvedValue()
         vi.mocked( get_active_project ).mockResolvedValue( null )
         vi.mocked( get_export_blob ).mockResolvedValue( new Blob( [ `export` ], { type: `video/webm` } ) )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
         vi.mocked( get_clip_thumbnail_blob ).mockResolvedValue( null )
         vi.mocked( get_project ).mockResolvedValue( project )
         vi.mocked( get_project_clips ).mockResolvedValue( [ clip ] )
@@ -294,6 +302,43 @@ describe( `project capture page`, () => {
         await waitFor( () => {
             expect( recording_state.refresh_preview ).toHaveBeenCalledTimes( 1 )
         } )
+    } )
+
+    test( `opens the clip list from the floating bottom action`, async () => {
+        const user = userEvent.setup()
+
+        render_capture()
+
+        await screen.findByText( project.title )
+        expect( screen.queryByRole( `dialog`, { name: `Clips` } ) ).toBe( null )
+
+        await user.click( screen.getByRole( `button`, { name: `Open clip list` } ) )
+
+        expect( await screen.findByRole( `dialog`, { name: `Clips` } ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Preview clip 1` } ) ).toBeTruthy()
+
+        await user.click( screen.getByRole( `button`, { name: `Close clip list` } ) )
+
+        expect( screen.queryByRole( `dialog`, { name: `Clips` } ) ).toBe( null )
+    } )
+
+    test( `keeps the clip list open when Escape closes a nested clip preview`, async () => {
+        const user = userEvent.setup()
+
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip-preview` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+
+        render_capture()
+
+        await open_clip_list( user )
+        await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
+
+        expect( await screen.findByRole( `dialog`, { name: `Clip preview` } ) ).toBeTruthy()
+
+        await user.keyboard( `{Escape}` )
+
+        expect( screen.queryByRole( `dialog`, { name: `Clip preview` } ) ).toBe( null )
+        expect( screen.getByRole( `dialog`, { name: `Clips` } ) ).toBeTruthy()
     } )
 
     test( `does not export while recording is active`, async () => {
@@ -631,6 +676,7 @@ describe( `project capture page`, () => {
         vi.mocked( share_export_file ).mockClear()
         vi.mocked( get_valid_cached_export ).mockClear()
 
+        await open_clip_list( user )
         await user.click( screen.getByRole( `button`, { name: `Move clip 2 earlier` } ) )
         await waitFor( () => {
             expect( move_clip ).toHaveBeenCalledWith( second_clip.id, `earlier` )
@@ -659,6 +705,7 @@ describe( `project capture page`, () => {
             expect( get_export_blob ).toHaveBeenCalledWith( export_record.id )
         } )
 
+        await open_clip_list( user )
         await user.click( screen.getByRole( `button`, { name: `Delete clip 1` } ) )
 
         await waitFor( () => {
@@ -886,7 +933,8 @@ describe( `project capture page`, () => {
 
         render_capture()
 
-        expect( await screen.findByText( `Clip 1` ) ).toBeTruthy()
+        await open_clip_list( user )
+        expect( screen.getByText( `Clip 1` ) ).toBeTruthy()
         await user.click( screen.getByRole( `button`, { name: `Delete clip 1` } ) )
 
         expect( delete_clip ).toHaveBeenCalledWith( clip.id )
@@ -905,7 +953,8 @@ describe( `project capture page`, () => {
 
         render_capture()
 
-        expect( await screen.findByText( `Clip 2` ) ).toBeTruthy()
+        await open_clip_list( user )
+        expect( screen.getByText( `Clip 2` ) ).toBeTruthy()
         await user.click( screen.getByRole( `button`, { name: `Move clip 2 earlier` } ) )
 
         expect( move_clip ).toHaveBeenCalledWith( second_clip.id, `earlier` )

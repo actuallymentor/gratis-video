@@ -39,6 +39,16 @@ const record_clip_for = async ( page, duration_ms ) => {
     await page.getByRole( `button`, { name: `Stop recording` } ).click()
 }
 
+const open_clip_list = async ( page ) => {
+    await page.getByRole( `button`, { name: `Open clip list` } ).click()
+    await expect( page.getByRole( `dialog`, { name: `Clips` } ) ).toBeVisible()
+}
+
+const close_clip_list = async ( page ) => {
+    await page.getByRole( `button`, { name: `Close clip list` } ).click()
+    await expect( page.getByRole( `dialog`, { name: `Clips` } ) ).toHaveCount( 0 )
+}
+
 const read_playable_video_metadata = async ( page, {
     base64 = null,
     clip_blob = false,
@@ -313,7 +323,10 @@ test.describe( `daily video journal app`, () => {
 
         await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
         await expect_live_camera_preview( page )
-        await expect( page.getByRole( `heading`, { name: `Clip queue` } ) ).toBeVisible()
+        await expect( page.getByRole( `link`, { name: `Back to projects` } ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Share or export project` } ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Open video settings` } ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Open clip list` } ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
 
         const capture_url = page.url()
@@ -500,24 +513,36 @@ test.describe( `daily video journal app`, () => {
         } ) ).toBe( `rear-normal-camera` )
     } )
 
-    test( `keeps bottom capture actions stable at the viewport edge`, async ( { page } ) => {
+    test( `keeps floating capture actions stable over the preview`, async ( { page } ) => {
         await page.goto( `/projects` )
         await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         const record_button = page.getByRole( `button`, { name: `Record clip` } )
-        const app_bar = page.getByRole( `navigation`, { name: `Capture actions` } )
+        const clip_list_button = page.getByRole( `button`, { name: `Open clip list` } )
+        const share_button = page.getByRole( `button`, { name: `Share or export project` } )
+        const settings_button = page.getByRole( `button`, { name: `Open video settings` } )
 
         await expect( record_button ).toBeVisible()
-        await expect( app_bar ).toBeVisible()
+        await expect( clip_list_button ).toBeVisible()
+        await expect( share_button ).toBeVisible()
+        await expect( settings_button ).toBeVisible()
+        await expect( page.getByRole( `navigation`, { name: `Capture actions` } ) ).toHaveCount( 0 )
+        await expect( page.getByRole( `button`, { name: `Open projects` } ) ).toHaveCount( 0 )
 
         const button_box = await record_button.boundingBox()
-        const bar_box = await app_bar.boundingBox()
+        const clip_list_box = await clip_list_button.boundingBox()
+        const share_box = await share_button.boundingBox()
+        const settings_box = await settings_button.boundingBox()
         const viewport = page.viewportSize()
 
         expect( button_box.width ).toBeGreaterThanOrEqual( 72 )
         expect( button_box.height ).toBeGreaterThanOrEqual( 72 )
         expect( Math.abs(  button_box.x + button_box.width / 2  - viewport.width / 2 ) ).toBeLessThan( 4 )
-        expect( bar_box.y + bar_box.height ).toBeGreaterThan( viewport.height - 2 )
+        expect( button_box.y + button_box.height ).toBeGreaterThan( viewport.height - 32 )
+        expect( clip_list_box.x ).toBeGreaterThan( button_box.x + button_box.width )
+        expect( Math.abs(  clip_list_box.y + clip_list_box.height / 2  - ( button_box.y + button_box.height / 2 ) ) ).toBeLessThan( 8 )
+        expect( settings_box.x ).toBeGreaterThan( share_box.x + share_box.width - 1 )
+        expect( Math.abs( settings_box.y - share_box.y ) ).toBeLessThan( 4 )
     } )
 
     test( `records, reloads, and deletes a clip with browser media`, async ( { context, page } ) => {
@@ -530,12 +555,14 @@ test.describe( `daily video journal app`, () => {
         await page.waitForTimeout( 900 )
         await page.getByRole( `button`, { name: `Stop recording` } ).click()
 
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
 
         const capture_url = page.url()
 
         await page.reload()
         await expect( page ).toHaveURL( capture_url )
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
 
         page.once( `dialog`, ( dialog ) => dialog.accept() )
@@ -563,7 +590,9 @@ test.describe( `daily video journal app`, () => {
         await page.waitForTimeout( 900 )
         await page.mouse.up()
 
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await close_clip_list( page )
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
     } )
 
@@ -573,30 +602,34 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await record_clip_for( page, 700 )
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await close_clip_list( page )
 
         await record_clip_for( page, 1700 )
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 2` ) ).toBeVisible()
 
-        const clip_rows = page.locator( `article` ).filter( {
+        const clip_rows = () => page.getByRole( `dialog`, { name: `Clips` } ).locator( `article` ).filter( {
             hasText: /Clip [12]/
         } )
         const capture_url = page.url()
 
-        await expect( clip_rows ).toHaveCount( 2 )
-        await expect( clip_rows.nth( 0 ) ).toContainText( `1s` )
-        await expect( clip_rows.nth( 1 ) ).toContainText( `2s` )
+        await expect( clip_rows() ).toHaveCount( 2 )
+        await expect( clip_rows().nth( 0 ) ).toContainText( `1s` )
+        await expect( clip_rows().nth( 1 ) ).toContainText( `2s` )
 
         await page.getByRole( `button`, { name: `Move clip 2 earlier` } ).click()
 
-        await expect( clip_rows.nth( 0 ) ).toContainText( `2s` )
-        await expect( clip_rows.nth( 1 ) ).toContainText( `1s` )
+        await expect( clip_rows().nth( 0 ) ).toContainText( `2s` )
+        await expect( clip_rows().nth( 1 ) ).toContainText( `1s` )
 
         await page.reload()
         await expect( page ).toHaveURL( capture_url )
-        await expect( clip_rows ).toHaveCount( 2 )
-        await expect( clip_rows.nth( 0 ) ).toContainText( `2s` )
-        await expect( clip_rows.nth( 1 ) ).toContainText( `1s` )
+        await open_clip_list( page )
+        await expect( clip_rows() ).toHaveCount( 2 )
+        await expect( clip_rows().nth( 0 ) ).toContainText( `2s` )
+        await expect( clip_rows().nth( 1 ) ).toContainText( `1s` )
     } )
 
     test( `exports multiple recorded clips without stalling`, async ( { context, page } ) => {
@@ -605,10 +638,14 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Create Project` } ).click()
 
         await record_clip_for( page, 700 )
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await close_clip_list( page )
 
         await record_clip_for( page, 900 )
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 2` ) ).toBeVisible()
+        await close_clip_list( page )
 
         await page.getByRole( `button`, { name: `Share or export project` } ).first().click()
 
@@ -672,6 +709,7 @@ test.describe( `daily video journal app`, () => {
         await page.waitForTimeout( 900 )
         await page.getByRole( `button`, { name: `Stop recording` } ).click()
 
+        await open_clip_list( page )
         await expect( page.getByText( `Clip 1` ) ).toBeVisible()
         await expect.poll( async () => {
             const metadata = await read_playable_video_metadata( page, {
@@ -688,6 +726,7 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Preview clip 1` } ).click()
         await expect( page.getByRole( `dialog`, { name: `Clip preview` } ) ).toBeVisible()
         await page.getByRole( `button`, { name: `Close preview` } ).click()
+        await close_clip_list( page )
 
         await page.getByRole( `button`, { name: `Share or export project` } ).first().click()
         await expect( page.getByRole( `dialog`, { name: `Export video` } ) ).toBeVisible()
@@ -764,7 +803,7 @@ test.describe( `daily video journal app`, () => {
         expect( await read_downloaded_file_size( download ) ).toBeGreaterThan( 1_000 )
 
         await page.getByRole( `button`, { name: `Close export panel` } ).click()
-        await page.getByRole( `button`, { name: `Open projects` } ).click()
+        await page.getByRole( `link`, { name: `Back to projects` } ).click()
 
         await expect( page.locator( `article` ).filter( {
             hasText: `Export ready`
@@ -864,7 +903,7 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Create Project` } ).click()
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
 
-        await page.getByRole( `button`, { name: `Open projects` } ).click()
+        await page.getByRole( `link`, { name: `Back to projects` } ).click()
         await page.getByRole( `button`, { name: `Open settings` } ).first().click()
 
         await expect( page.getByRole( `heading`, { name: `Settings` } ) ).toBeVisible()

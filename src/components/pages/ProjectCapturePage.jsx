@@ -4,9 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { StringParam, useQueryParam } from 'use-query-params'
 import { log } from 'mentie/modules/logging.js'
 import styled from 'styled-components'
-import { ArrowLeft, Download, Home, Settings as SettingsIcon, Share2, X } from 'lucide-react'
-import { BottomAppBar } from '../atoms/BottomAppBar.jsx'
-import { Content, HeaderBar, HeaderText, AppFrame, SectionTitle } from '../atoms/Layout.jsx'
+import { ArrowLeft, List, Settings as SettingsIcon, Share2, X } from 'lucide-react'
+import { Content, AppFrame } from '../atoms/Layout.jsx'
 import { IconButton } from '../atoms/IconButton.jsx'
 import { ClipQueue } from '../molecules/ClipQueue.jsx'
 import { ExportPanel } from '../molecules/ExportPanel.jsx'
@@ -42,56 +41,248 @@ import {
 } from '../../modules/storage/journal_storage.js'
 import { useAppStore } from '../../stores/app_store.js'
 
-const CaptureGrid = styled.div`
-    display: grid;
-    gap: 1rem;
-
-    @media (min-width: 58rem) {
-        grid-template-columns: minmax( 0, 1.1fr ) minmax( 22rem, 0.9fr );
-        align-items: start;
-    }
+const CaptureFrame = styled( AppFrame )`
+    min-height: 100svh;
+    padding: 0;
+    overflow: hidden;
+    background: #0d1718;
 `
 
-const PreviewPanel = styled.section`
-    display: grid;
-    gap: 0.75rem;
+const CaptureShell = styled.section`
+    position: relative;
+    min-height: 100svh;
+    overflow: hidden;
+    background: #0d1718;
+    color: #ffffff;
 `
 
 const Preview = styled.div`
-    position: relative;
+    position: absolute;
+    inset: 0;
     display: grid;
     place-items: center;
-    min-height: 18rem;
-    overflow: hidden;
-    border-radius: 0.5rem;
     background: #0d1718;
     color: rgba( 255, 255, 255, 0.78 );
+
+    &::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background:
+            linear-gradient( to bottom, rgba( 0, 0, 0, 0.42 ), rgba( 0, 0, 0, 0 ) 28% ),
+            linear-gradient( to top, rgba( 0, 0, 0, 0.52 ), rgba( 0, 0, 0, 0 ) 38% );
+    }
 
     video {
         display: block;
         width: 100%;
-        height: auto;
-        max-height: 66svh;
+        height: 100%;
         object-fit: contain;
         background: #0d1718;
     }
 `
 
-const PreviewSettingsButton = styled( IconButton )`
+const TopChrome = styled.header`
     position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    z-index: 3;
+    top: calc( 0.85rem + env( safe-area-inset-top ) );
+    right: 1rem;
+    left: 1rem;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: minmax( 3rem, 1fr ) minmax( 0, auto ) minmax( 3rem, 1fr );
+    align-items: center;
+    gap: 0.75rem;
+`
+
+const floating_icon_style = `
     border-color: rgba( 255, 255, 255, 0.28 );
     color: #ffffff;
-    background: rgba( 13, 23, 24, 0.74 );
+    background: rgba( 13, 23, 24, 0.62 );
     box-shadow: 0 0.7rem 1.4rem rgba( 0, 0, 0, 0.24 );
-    backdrop-filter: blur( 8px );
+    backdrop-filter: blur( 10px );
 
     &:hover,
     &:focus-visible {
-        border-color: rgba( 126, 192, 208, 0.85 );
-        background: rgba( 18, 49, 51, 0.84 );
+        border-color: rgba( 126, 192, 208, 0.9 );
+        background: rgba( 18, 49, 51, 0.82 );
+    }
+
+    &:disabled {
+        color: rgba( 255, 255, 255, 0.42 );
+        background: rgba( 13, 23, 24, 0.46 );
+    }
+`
+
+const BackLink = styled( Link )`
+    ${ floating_icon_style }
+    display: inline-grid;
+    place-items: center;
+    justify-self: start;
+    width: 3rem;
+    min-width: 3rem;
+    height: 3rem;
+    min-height: 3rem;
+    border: 1px solid rgba( 255, 255, 255, 0.28 );
+    border-radius: 999px;
+    text-decoration: none;
+    transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+
+    &:active {
+        transform: scale( 0.96 );
+    }
+`
+
+const ProjectTitle = styled.h1`
+    justify-self: center;
+    max-width: min( 52vw, 28rem );
+    margin: 0;
+    overflow: hidden;
+    color: rgba( 255, 255, 255, 0.74 );
+    font-family: var(--font-heading);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    text-overflow: ellipsis;
+    text-shadow: 0 0.1rem 0.45rem rgba( 0, 0, 0, 0.44 );
+    white-space: nowrap;
+`
+
+const TopActions = styled.div`
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+`
+
+const FloatingIconButton = styled( IconButton )`
+    ${ floating_icon_style }
+`
+
+const BottomControls = styled.div`
+    position: absolute;
+    right: 1rem;
+    bottom: calc( 1.25rem + env( safe-area-inset-bottom ) );
+    left: 1rem;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 0.75rem;
+    pointer-events: none;
+
+    > * {
+        pointer-events: auto;
+    }
+`
+
+const RecordDock = styled.div`
+    grid-column: 2;
+    justify-self: center;
+`
+
+const ClipListButton = styled( FloatingIconButton )`
+    grid-column: 3;
+    justify-self: end;
+`
+
+const PreviewNotice = styled.div`
+    position: absolute;
+    right: 1rem;
+    bottom: calc( 7.5rem + env( safe-area-inset-bottom ) );
+    left: 1rem;
+    z-index: 4;
+    display: grid;
+    justify-items: center;
+    pointer-events: none;
+
+    > * {
+        width: min( 100%, 38rem );
+        pointer-events: auto;
+        box-shadow: 0 0.75rem 1.5rem rgba( 0, 0, 0, 0.22 );
+    }
+`
+
+const ClipSheetBackdrop = styled.div`
+    position: fixed;
+    inset: 0;
+    z-index: 36;
+    display: grid;
+    align-items: end;
+    background: rgba( 13, 23, 24, 0.38 );
+`
+
+const ClipSheetPanel = styled.section`
+    width: min( 100%, 44rem );
+    max-height: min( 75svh, 42rem );
+    margin: 0 auto;
+    padding: 1rem 1rem calc( 1rem + env( safe-area-inset-bottom ) );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--color-border);
+    border-bottom: 0;
+    border-radius: 0.75rem 0.75rem 0 0;
+    background: var(--color-surface);
+    box-shadow: 0 -1rem 2rem rgba( 13, 23, 24, 0.18 );
+    transform: translateY( 0 );
+
+    @media (prefers-reduced-motion: no-preference) {
+        animation: slide-up 180ms ease-out both;
+    }
+
+    @keyframes slide-up {
+        from { transform: translateY( 100% ); }
+        to { transform: translateY( 0 ); }
+    }
+`
+
+const ClipSheetHeader = styled.header`
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+
+    h2 {
+        margin: 0;
+        color: var(--color-ink);
+        font-family: var(--font-heading);
+        font-size: 1.1rem;
+        font-weight: 600;
+        letter-spacing: 0;
+    }
+`
+
+const ReadyState = styled.div`
+    position: relative;
+    z-index: 2;
+    max-width: 28ch;
+    padding: 1rem;
+    border-color: rgba( 255, 255, 255, 0.28 );
+    color: #ffffff;
+    border: 1px solid rgba( 255, 255, 255, 0.18 );
+    border-radius: 0.5rem;
+    background: rgba( 13, 23, 24, 0.56 );
+    backdrop-filter: blur( 8px );
+    text-align: center;
+    line-height: 1.45;
+`
+
+const BottomNotice = styled.div`
+    position: fixed;
+    right: 1rem;
+    bottom: calc( 7.5rem + env( safe-area-inset-bottom ) );
+    left: 1rem;
+    z-index: 22;
+    display: grid;
+    justify-items: center;
+    pointer-events: none;
+
+    > * {
+        width: min( 100%, 38rem );
+        pointer-events: auto;
+        box-shadow: var(--shadow-soft);
     }
 `
 
@@ -191,44 +382,6 @@ const PresetButton = styled.button`
     }
 `
 
-const ReadyState = styled.div`
-    max-width: 28ch;
-    padding: 1rem;
-    text-align: center;
-    line-height: 1.45;
-`
-
-const QueuePanel = styled.section`
-    min-width: 0;
-`
-
-const BottomNotice = styled.div`
-    position: fixed;
-    right: 1rem;
-    bottom: calc( 6.35rem + env( safe-area-inset-bottom ) );
-    left: 1rem;
-    z-index: 22;
-    display: grid;
-    justify-items: center;
-    pointer-events: none;
-
-    > * {
-        width: min( 100%, 38rem );
-        pointer-events: auto;
-        box-shadow: var(--shadow-soft);
-    }
-`
-
-const LinkButton = styled( Link )`
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    min-height: 3rem;
-    color: var(--color-muted);
-    font-weight: 800;
-    text-decoration: none;
-`
-
 const make_export_cache_key = ( { settings_hash, clip_manifest_hash } ) => {
     return `${ settings_hash }:${ clip_manifest_hash }`
 }
@@ -315,8 +468,40 @@ const VideoSettingsModal = ( {
     </ModalBackdrop>
 }
 
+const ClipListSheet = ( {
+    clips,
+    on_close,
+    on_delete,
+    on_move
+} ) => {
+    const sheet_ref = useModalFocus( {
+        active: true,
+        on_close
+    } )
+
+    return <ClipSheetBackdrop
+        onMouseDown={ ( event ) => {
+            if( event.target === event.currentTarget ) on_close()
+        } }
+    >
+        <ClipSheetPanel
+            ref={ sheet_ref }
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clip-list-title"
+            tabIndex={ -1 }
+        >
+            <ClipSheetHeader>
+                <h2 id="clip-list-title">Clips</h2>
+                <IconButton icon={ X } label="Close clip list" onClick={ on_close } />
+            </ClipSheetHeader>
+            <ClipQueue clips={ clips } on_delete={ on_delete } on_move={ on_move } />
+        </ClipSheetPanel>
+    </ClipSheetBackdrop>
+}
+
 /**
- * Shows recording controls, live preview, clip queue, and export actions.
+ * Shows recording controls, live preview, clip-list sheet, and export actions.
  * @returns {JSX.Element} Capture page.
  */
 export function ProjectCapturePage() {
@@ -335,6 +520,7 @@ export function ProjectCapturePage() {
     const [ export_requested, set_export_requested ] = useState( false )
     const [ queue_mutation_pending, set_queue_mutation_pending ] = useState( false )
     const [ video_settings_open, set_video_settings_open ] = useState( false )
+    const [ clip_queue_open, set_clip_queue_open ] = useState( false )
     const cached_export_blob_ref = useRef( null )
     const project_id_ref = useRef( project_id )
     const settings_ref = useRef( null )
@@ -938,72 +1124,65 @@ export function ProjectCapturePage() {
         settings.recording_video_preset ?? DEFAULT_RECORDING_VIDEO_PRESET
     ).value
 
-    return <AppFrame>
-        <Content>
-            <HeaderBar>
-                <HeaderText>
-                    <LinkButton to="/projects">
-                        <ArrowLeft size={ 18 } aria-hidden="true" />
-                        Projects
-                    </LinkButton>
-                    <h1>{ project.title }</h1>
-                </HeaderText>
-                <IconButton
-                    icon={ Share2 }
-                    label="Share or export project"
-                    onClick={ share_or_export }
-                    disabled={ export_disabled }
-                />
-            </HeaderBar>
+    return <CaptureFrame>
+        <CaptureShell aria-label="Project capture">
+            <Preview>
+                { recording.stream ? <video ref={ preview_ref } aria-label="Live camera preview" muted playsInline autoPlay /> : <ReadyState>
+                    { media_stream_state === `opening`
+                        ? `Opening camera preview...`
+                        : `Press record to open the camera and save the next clip.` }
+                </ReadyState> }
+            </Preview>
 
-            <CaptureGrid>
-                <PreviewPanel>
-                    <Preview>
-                        { recording.stream ? <video ref={ preview_ref } aria-label="Live camera preview" muted playsInline autoPlay /> : <ReadyState>
-                            { media_stream_state === `opening`
-                                ? `Opening camera preview...`
-                                : `Press record to open the camera and save the next clip.` }
-                        </ReadyState> }
-                        <PreviewSettingsButton
-                            icon={ SettingsIcon }
-                            label="Open video settings"
-                            onClick={ () => set_video_settings_open( true ) }
-                        />
-                    </Preview>
-                    <PermissionNotice
-                        message={ preview_status_message }
-                        action_to={ permission_recovery_needed ? settings_return_path : null }
-                        action_label={ permission_recovery_needed ? `Open settings` : null }
-                        urgent={ Boolean( storage_error ) || notice_urgent }
+            <TopChrome>
+                <BackLink to="/projects" aria-label="Back to projects" title="Back to projects">
+                    <ArrowLeft size={ 20 } aria-hidden="true" />
+                </BackLink>
+                <ProjectTitle>{ project.title }</ProjectTitle>
+                <TopActions>
+                    <FloatingIconButton
+                        icon={ Share2 }
+                        label="Share or export project"
+                        onClick={ share_or_export }
+                        disabled={ export_disabled }
                     />
-                </PreviewPanel>
+                    <FloatingIconButton
+                        icon={ SettingsIcon }
+                        label="Open video settings"
+                        onClick={ () => set_video_settings_open( true ) }
+                    />
+                </TopActions>
+            </TopChrome>
 
-                <QueuePanel>
-                    <SectionTitle>Clip queue</SectionTitle>
-                    <ClipQueue clips={ clips } on_delete={ remove_clip } on_move={ move_existing_clip } />
-                </QueuePanel>
-            </CaptureGrid>
-        </Content>
+            { preview_status_message ? <PreviewNotice>
+                <PermissionNotice
+                    message={ preview_status_message }
+                    action_to={ permission_recovery_needed ? settings_return_path : null }
+                    action_label={ permission_recovery_needed ? `Open settings` : null }
+                    urgent={ Boolean( storage_error ) || notice_urgent }
+                />
+            </PreviewNotice> : null }
 
-        <BottomAppBar
-            label="Capture actions"
-            left={ <IconButton icon={ Home } label="Open projects" onClick={ () => navigate( `/projects` ) } /> }
-            center={ <RecordButton
-                recording_state={ recording.recording_state }
-                elapsed_ms={ recording.elapsed_ms }
-                on_press={ recording.press_record }
-                on_release={ recording.release_record }
-                on_cancel={ recording.cancel_record }
-                on_toggle={ recording.toggle_recording }
-                disabled={ record_control_disabled }
-            /> }
-            right={ <IconButton
-                icon={ Download }
-                label="Share or export project"
-                onClick={ share_or_export }
-                disabled={ export_disabled }
-            /> }
-        />
+            <BottomControls role="group" aria-label="Capture controls">
+                <RecordDock>
+                    <RecordButton
+                        recording_state={ recording.recording_state }
+                        elapsed_ms={ recording.elapsed_ms }
+                        on_press={ recording.press_record }
+                        on_release={ recording.release_record }
+                        on_cancel={ recording.cancel_record }
+                        on_toggle={ recording.toggle_recording }
+                        disabled={ record_control_disabled }
+                        bare
+                    />
+                </RecordDock>
+                <ClipListButton
+                    icon={ List }
+                    label="Open clip list"
+                    onClick={ () => set_clip_queue_open( true ) }
+                />
+            </BottomControls>
+        </CaptureShell>
 
         { bottom_status_message ? <BottomNotice>
             <PermissionNotice
@@ -1013,6 +1192,13 @@ export function ProjectCapturePage() {
                 urgent={ notice_urgent }
             />
         </BottomNotice> : null }
+
+        { clip_queue_open ? <ClipListSheet
+            clips={ clips }
+            on_close={ () => set_clip_queue_open( false ) }
+            on_delete={ remove_clip }
+            on_move={ move_existing_clip }
+        /> : null }
 
         { export_flow_open ? <ExportPanel
             project={ project }
@@ -1042,5 +1228,5 @@ export function ProjectCapturePage() {
                 update_video_setting( { recording_video_preset } )
             } }
         /> : null }
-    </AppFrame>
+    </CaptureFrame>
 }

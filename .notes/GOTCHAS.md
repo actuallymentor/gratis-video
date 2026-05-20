@@ -86,3 +86,4 @@
 - Mediabunny is intentionally loaded with a dynamic import from the remux path so the main app bundle does not pay the parser/muxer cost at startup. Keep `can_attempt_remux_export()` cheap and metadata-only, and keep failed dynamic imports retryable instead of caching a rejected promise.
 - Lossless remux must reject non-finite clip timestamps and packet durations so invalid media falls back to the canvas exporter instead of caching an export with `NaN` duration metadata.
 - The export cache hash includes an internal pipeline version. Bump it whenever existing cached exports should be invalidated because the compilation pipeline changed.
+- The capture page no longer renders the clip queue inline. Clip preview, delete, and reorder controls live inside the bottom-right clip-list sheet; tests and UI flows must open `Open clip list` before targeting those controls.

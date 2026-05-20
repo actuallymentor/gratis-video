@@ -15,11 +15,19 @@ const Button = styled.button`
     min-width: 5.25rem;
     height: 5.25rem;
     min-height: 5.25rem;
-    border: 0.35rem solid ${ ( { $recording } ) => $recording ? `var(--color-recording)` : `var(--color-surface)` };
+    border: 0.35rem solid ${ ( { $bare, $recording } ) => {
+        if( $recording ) return `var(--color-recording)`
+        if( $bare ) return `rgba( 255, 255, 255, 0.88 )`
+        return `var(--color-surface)`
+    } };
     border-radius: 999px;
     color: var(--color-on-filled);
-    background: ${ ( { $recording } ) => $recording ? `var(--color-recording)` : `var(--color-filled)` };
-    box-shadow: var(--shadow-soft);
+    background: ${ ( { $bare, $recording } ) => {
+        if( $recording ) return `var(--color-recording)`
+        if( $bare ) return `transparent`
+        return `var(--color-filled)`
+    } };
+    box-shadow: ${ ( { $bare } ) => $bare ? `0 0.75rem 1.5rem rgba( 0, 0, 0, 0.26 )` : `var(--shadow-soft)` };
     touch-action: none;
     user-select: none;
     animation: none;
@@ -87,7 +95,8 @@ export function RecordButton( {
     on_release,
     on_cancel,
     on_toggle,
-    disabled = false
+    disabled = false,
+    bare = false
 } ) {
     const recording = recording_state === `recording`
     const starting = recording_state === `starting`
@@ -165,6 +174,7 @@ export function RecordButton( {
         aria-label={ accessible_label }
         title={ accessible_label }
         $recording={ recording }
+        $bare={ bare }
         disabled={ disabled || saving }
         onPointerDown={ press_button }
         onPointerUp={ release_button }
