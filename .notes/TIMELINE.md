@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-20T11:30:48Z: Added a client-side Mediabunny remux export path that copies encoded packets when clips are compatible, keeps the existing canvas exporter as fallback, lazy-loads the remuxer dependency, and invalidates prior cached exports with a pipeline-version hash bump.
 - 2026-05-20: Prepared `0.4.0` recording optimization changes to reuse the live preview video track for recording, add persisted 720p/1080p/4K recording presets with bitrate, default to 1080p30, request microphone audio separately, start MediaRecorder without timeslices, move video controls into a preview gear modal, and drive export canvas drawing from `requestVideoFrameCallback`.
 - 2026-05-20: Prepared `0.3.28` to persist the selected camera in settings, restore it before preview opens, and fall back safely if the remembered camera id is stale.
 - 2026-05-20: Prepared `0.3.27` to keep recording on the same camera source as the live preview, add a camera picker for multi-camera devices, and cover the behavior in unit/component/Playwright media tests.

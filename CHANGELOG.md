@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2026-05-20
+
+### Added
+- add lossless client-side remuxing for compatible exports
+
+### Changed
+- keep canvas export as fallback when clips require re-encoding
+
 ## [0.4.0] - 2026-05-20
 
 ### Added

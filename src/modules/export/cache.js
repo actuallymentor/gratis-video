@@ -19,6 +19,8 @@ const fnv_1a = ( text ) => {
     return ( hash >>> 0 ).toString( 16 ).padStart( 8, `0` )
 }
 
+const EXPORT_PIPELINE_VERSION = 2
+
 /**
  * Creates a deterministic hash for plain structured data.
  * @param {*} value - Hash input.
@@ -59,6 +61,7 @@ export function create_clip_manifest( clips ) {
 export function create_export_hashes( { clips, settings } ) {
     return {
         settings_hash: stable_hash( {
+            export_pipeline_version: EXPORT_PIPELINE_VERSION,
             export_quality: settings.export_quality,
             export_resolution: settings.export_resolution,
             preferred_mime_type: settings.preferred_mime_type

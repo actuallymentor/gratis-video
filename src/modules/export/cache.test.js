@@ -128,4 +128,22 @@ describe( `export cache helpers`, () => {
         expect( standard.settings_hash ).not.toBe( high.settings_hash )
         expect( standard.clip_manifest_hash ).toBe( high.clip_manifest_hash )
     } )
+
+    test( `settings hash includes the export pipeline version`, () => {
+        const settings = {
+            export_quality: `standard`,
+            export_resolution: `source`,
+            preferred_mime_type: null
+        }
+
+        expect( create_export_hashes( {
+            clips: [],
+            settings
+        } ).settings_hash ).toBe( stable_hash( {
+            export_pipeline_version: 2,
+            export_quality: settings.export_quality,
+            export_resolution: settings.export_resolution,
+            preferred_mime_type: settings.preferred_mime_type
+        } ) )
+    } )
 } )

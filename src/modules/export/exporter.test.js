@@ -9,7 +9,18 @@ import {
     get_supported_export_mime_types,
     get_supported_export_resolutions
 } from './exporter.js'
+import {
+    can_attempt_remux_export,
+    compile_project_remux_export,
+    is_remux_unavailable_error
+} from './remuxer.js'
 import { get_clip_blob } from '../storage/journal_storage.js'
+
+vi.mock( './remuxer.js', () => ( {
+    can_attempt_remux_export: vi.fn(),
+    compile_project_remux_export: vi.fn(),
+    is_remux_unavailable_error: vi.fn()
+} ) )
 
 vi.mock( '../storage/journal_storage.js', () => ( {
     get_clip_blob: vi.fn()
@@ -126,6 +137,12 @@ describe( `export compiler`, () => {
     beforeEach( () => {
         stopped_tracks.length = 0
         vi.mocked( get_clip_blob ).mockReset()
+        vi.mocked( can_attempt_remux_export ).mockReturnValue( {
+            ok: false,
+            reason: `Remux disabled in exporter tests.`
+        } )
+        vi.mocked( compile_project_remux_export ).mockReset()
+        vi.mocked( is_remux_unavailable_error ).mockImplementation( ( error ) => error?.name === `RemuxUnavailableError` )
         vi.stubGlobal( `MediaStream`, FakeMediaStream )
         vi.stubGlobal( `MediaRecorder`, FakeMediaRecorder )
         vi.stubGlobal( `requestAnimationFrame`, ( callback ) => setTimeout( callback, 0 ) )
@@ -144,6 +161,113 @@ describe( `export compiler`, () => {
 
         if( original_canvas_capture_stream ) HTMLCanvasElement.prototype.captureStream = original_canvas_capture_stream
         else delete HTMLCanvasElement.prototype.captureStream
+    } )
+
+    test( `uses lossless remuxing before allocating a canvas export`, async () => {
+        const remux_result = {
+            blob: new Blob( [ `remuxed` ], { type: `video/webm` } ),
+            duration_ms: 1000,
+            mime_type: `video/webm`,
+            warnings: []
+        }
+
+        vi.mocked( can_attempt_remux_export ).mockReturnValue( {
+            container: { key: `webm` },
+            ok: true,
+            reason: null
+        } )
+        vi.mocked( compile_project_remux_export ).mockResolvedValue( remux_result )
+
+        const result = await compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    mime_type: `video/webm`,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } )
+
+        expect( result ).toBe( remux_result )
+        expect( compile_project_remux_export ).toHaveBeenCalledWith( expect.objectContaining( {
+            clips: expect.any( Array ),
+            settings: default_settings
+        } ) )
+        expect( HTMLCanvasElement.prototype.captureStream ).not.toHaveBeenCalled()
+        expect( get_clip_blob ).not.toHaveBeenCalled()
+    } )
+
+    test( `falls back to canvas export when remuxing is unavailable`, async () => {
+        const create_element = document.createElement.bind( document )
+        const remux_error = new Error( `The clips use different video formats.` )
+        remux_error.name = `RemuxUnavailableError`
+
+        vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
+        vi.mocked( can_attempt_remux_export ).mockReturnValue( {
+            container: { key: `webm` },
+            ok: true,
+            reason: null
+        } )
+        vi.mocked( compile_project_remux_export ).mockRejectedValue( remux_error )
+        vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
+        vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
+        vi.spyOn( URL, `revokeObjectURL` ).mockImplementation( () => {} )
+        vi.spyOn( document, `createElement` ).mockImplementation( ( tag_name, options ) => {
+            if( tag_name === `video` ) return new FakeVideoElement()
+            return create_element( tag_name, options )
+        } )
+
+        const export_result = await compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    mime_type: `video/webm`,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } )
+
+        expect( compile_project_remux_export ).toHaveBeenCalled()
+        expect( export_result ).toMatchObject( {
+            duration_ms: 1000
+        } )
+        expect( export_result.mime_type ).toMatch( /^video\// )
+        expect( get_clip_blob ).toHaveBeenCalledWith( `clip-1` )
+    } )
+
+    test( `does not fall back when remuxing is cancelled`, async () => {
+        vi.mocked( can_attempt_remux_export ).mockReturnValue( {
+            container: { key: `webm` },
+            ok: true,
+            reason: null
+        } )
+        vi.mocked( compile_project_remux_export ).mockRejectedValue(
+            new DOMException( `Export cancelled`, `AbortError` )
+        )
+
+        await expect( compile_project_export( {
+            clips: [
+                {
+                    id: `clip-1`,
+                    duration_ms: 1000,
+                    mime_type: `video/webm`,
+                    width: 640,
+                    height: 360
+                }
+            ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).rejects.toMatchObject( { name: `AbortError` } )
+
+        expect( HTMLCanvasElement.prototype.captureStream ).not.toHaveBeenCalled()
     } )
 
     test( `fails rather than exporting an incomplete project when a clip blob is missing`, async () => {

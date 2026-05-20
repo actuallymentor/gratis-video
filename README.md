@@ -45,7 +45,7 @@ Treat API tokens as single-use secrets. If a token is pasted into chat, logs, or
 - Clip queues support preview, move earlier/later, and delete actions.
 - If microphone capture fails or is blocked, recording can continue as video-only with a local notice.
 - Settings include media access status, haptics, and optional sound feedback for recording state changes.
-- Export compiles clips on demand in queue order, preserves orientation when scaling, then offers native sharing when available or a download fallback.
+- Export remuxes compatible clips losslessly, falls back to canvas re-encoding when needed, then offers native sharing when available or a download fallback.
 - Export waits until recording and clip saving are idle so the queue cannot be shared stale.
 - Export compilation remains open until ready or explicitly cancelled.
 - Cached exports are reused only while their clips, settings, and stored file remain valid.

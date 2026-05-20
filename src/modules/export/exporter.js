@@ -7,6 +7,11 @@ import {
     get_export_support_message,
     get_supported_export_mime_types
 } from './settings.js'
+import {
+    can_attempt_remux_export,
+    compile_project_remux_export,
+    is_remux_unavailable_error
+} from './remuxer.js'
 
 export {
     can_compile_project_exports,
@@ -755,7 +760,7 @@ const play_clip_to_canvas = async ( {
  * @param {Function} options.on_progress - Progress callback.
  * @returns {Promise<Object>} Export blob, MIME type, and duration.
  */
-export async function compile_project_export( { clips, settings, signal, on_progress } ) {
+async function compile_project_canvas_export( { clips, settings, signal, on_progress } ) {
     if( !clips.length ) throw new Error( `Record at least one clip before exporting.` )
     const export_support_message = get_export_support_message()
     if( export_support_message ) throw new Error( export_support_message )
@@ -883,4 +888,52 @@ export async function compile_project_export( { clips, settings, signal, on_prog
         stop_media_stream( mixed_stream )
         await audio_graph?.audio_context.close?.()
     }
+}
+
+/**
+ * Compiles project clips into a single video blob, preferring lossless remuxing.
+ * @param {Object} options - Compile options.
+ * @param {Array<Object>} options.clips - Clip metadata in queue order.
+ * @param {Object} options.settings - Export settings.
+ * @param {AbortSignal} options.signal - Cancellation signal.
+ * @param {Function} options.on_progress - Progress callback.
+ * @returns {Promise<Object>} Export blob, MIME type, and duration.
+ */
+export async function compile_project_export( { clips, settings, signal, on_progress } ) {
+    if( !clips.length ) throw new Error( `Record at least one clip before exporting.` )
+    throw_if_aborted( signal )
+
+    const remux_attempt = can_attempt_remux_export( { clips, settings } )
+
+    if( remux_attempt.ok ) {
+        try {
+            return await compile_project_remux_export( {
+                clips,
+                settings,
+                signal,
+                on_progress
+            } )
+        } catch ( error ) {
+            if( error?.name === `AbortError` ) throw error
+
+            if( is_remux_unavailable_error( error ) ) {
+                log.debug( `Lossless remux unavailable; falling back to canvas export`, {
+                    reason: error.message
+                } )
+            } else {
+                log.warn( `Lossless remux failed; falling back to canvas export`, error )
+            }
+        }
+    } else {
+        log.debug( `Lossless remux skipped`, {
+            reason: remux_attempt.reason
+        } )
+    }
+
+    return compile_project_canvas_export( {
+        clips,
+        settings,
+        signal,
+        on_progress
+    } )
 }
