@@ -27,6 +27,7 @@ import {
     is_valid_export_blob,
     load_settings,
     move_clip,
+    save_settings,
     set_active_project
 } from '../../modules/storage/journal_storage.js'
 import { share_export_file } from '../../modules/sharing/share.js'
@@ -39,6 +40,7 @@ const recording_state = vi.hoisted( () => ( {
     selected_video_device_id: null,
     select_camera_device: vi.fn(),
     open_preview: vi.fn(),
+    refresh_preview: vi.fn(),
     press_record: vi.fn(),
     release_record: vi.fn(),
     cancel_record: vi.fn(),
@@ -56,6 +58,7 @@ vi.mock( '../../hooks/use_recording_controller.js', () => ( {
         selected_video_device_id: recording_state.selected_video_device_id,
         select_camera_device: recording_state.select_camera_device,
         open_preview: recording_state.open_preview,
+        refresh_preview: recording_state.refresh_preview,
         press_record: recording_state.press_record,
         release_record: recording_state.release_record,
         cancel_record: recording_state.cancel_record,
@@ -114,6 +117,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
     is_valid_export_blob: vi.fn(),
     load_settings: vi.fn(),
     move_clip: vi.fn(),
+    save_settings: vi.fn(),
     set_active_project: vi.fn()
 } ) )
 
@@ -140,6 +144,7 @@ const settings = {
     export_quality: `standard`,
     export_resolution: `source`,
     preferred_mime_type: null,
+    recording_video_preset: `1080p30`,
     haptics_enabled: true,
     sounds_enabled: false
 }
@@ -198,6 +203,7 @@ describe( `project capture page`, () => {
         } )
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( move_clip ).mockResolvedValue( [ clip ] )
+        vi.mocked( save_settings ).mockImplementation( ( next_settings ) => Promise.resolve( next_settings ) )
         vi.mocked( set_active_project ).mockResolvedValue()
         vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
         recording_state.error_message = null
@@ -207,6 +213,7 @@ describe( `project capture page`, () => {
         recording_state.selected_video_device_id = null
         recording_state.select_camera_device.mockReset()
         recording_state.open_preview.mockReset()
+        recording_state.refresh_preview.mockReset()
         recording_state.press_record.mockReset()
         recording_state.release_record.mockReset()
         recording_state.cancel_record.mockReset()
@@ -244,7 +251,7 @@ describe( `project capture page`, () => {
         expect( await screen.findByText( /Export panel open/ ) ).toBeTruthy()
     } )
 
-    test( `shows a camera picker when multiple cameras are available`, async () => {
+    test( `shows camera selection in video settings`, async () => {
         const user = userEvent.setup()
 
         recording_state.camera_devices = [
@@ -261,11 +268,32 @@ describe( `project capture page`, () => {
 
         render_capture()
 
+        await screen.findByText( project.title )
+        await user.click( screen.getByRole( `button`, { name: `Open video settings` } ) )
         const camera_select = await screen.findByLabelText( `Camera` )
 
         await user.selectOptions( camera_select, `rear-normal-camera` )
 
         expect( recording_state.select_camera_device ).toHaveBeenCalledWith( `rear-normal-camera` )
+    } )
+
+    test( `saves the selected recording preset from video settings`, async () => {
+        const user = userEvent.setup()
+
+        render_capture()
+
+        await screen.findByText( project.title )
+        await user.click( screen.getByRole( `button`, { name: `Open video settings` } ) )
+        await user.click( screen.getByRole( `button`, { name: /4K 30/ } ) )
+
+        await waitFor( () => {
+            expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
+                recording_video_preset: `4k30`
+            } ) )
+        } )
+        await waitFor( () => {
+            expect( recording_state.refresh_preview ).toHaveBeenCalledTimes( 1 )
+        } )
     } )
 
     test( `does not export while recording is active`, async () => {

@@ -3,26 +3,36 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
     CAPTURE_WARNING_KEY,
+    DEFAULT_RECORDING_VIDEO_PRESET,
     HOLD_THRESHOLD_MS,
     classify_recording_gesture,
     create_media_recorder,
     generate_video_thumbnail,
     get_capture_error_message,
+    get_recording_video_preset,
     get_video_metadata,
     list_video_input_devices,
     pulse_haptic,
+    request_audio_stream,
     request_capture_stream,
     select_supported_mime_type
 } from './recorder.js'
 
-const expect_unsized_video_constraints = ( constraints, { video_device_id = null } = {} ) => {
+const expect_unsized_video_constraints = ( constraints, {
+    frame_rate = 30,
+    video_device_id = null
+} = {} ) => {
     const device_constraint = video_device_id
         ? { deviceId: { exact: video_device_id } }
+        : {}
+    const frame_rate_constraint = frame_rate
+        ? { frameRate: { ideal: frame_rate } }
         : {}
 
     expect( constraints.video ).toEqual( {
         facingMode: { ideal: `environment` },
         resizeMode: { ideal: `none` },
+        ...frame_rate_constraint,
         ...device_constraint
     } )
     expect( constraints.video ).not.toHaveProperty( `width` )
@@ -55,6 +65,10 @@ describe( `recorder helpers`, () => {
         expect( select_supported_mime_type( [ `video/mp4` ] ) ).toBe( null )
     } )
 
+    test( `falls back to the default recording video preset for stale values`, () => {
+        expect( get_recording_video_preset( `missing` ).value ).toBe( DEFAULT_RECORDING_VIDEO_PRESET )
+    } )
+
     test( `falls back to the default recorder constructor when a supported MIME option fails`, () => {
         const constructor_calls = []
         const stream = {}
@@ -81,6 +95,31 @@ describe( `recorder helpers`, () => {
         expect( constructor_calls ).toEqual( [
             { mimeType: `video/mp4;codecs=avc1.42E01E,mp4a.40.2` },
             undefined
+        ] )
+    } )
+
+    test( `passes recording bitrate to the recorder constructor`, () => {
+        const constructor_calls = []
+        const stream = {}
+
+        class BitrateMediaRecorder {
+
+            constructor( next_stream, options ) {
+                constructor_calls.push( options )
+                this.stream = next_stream
+                this.mimeType = options?.mimeType ?? `video/webm`
+            }
+
+        }
+
+        vi.stubGlobal( `MediaRecorder`, BitrateMediaRecorder )
+
+        expect( create_media_recorder( stream, {
+            mime_type: null,
+            video_bits_per_second: 8_000_000
+        } ).stream ).toBe( stream )
+        expect( constructor_calls ).toEqual( [
+            { videoBitsPerSecond: 8_000_000 }
         ] )
     } )
 
@@ -154,6 +193,25 @@ describe( `recorder helpers`, () => {
             audio: false
         } ) )
         expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
+    } )
+
+    test( `requests only microphone audio when adding audio to an existing preview`, async () => {
+        const audio_stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn().mockResolvedValue( audio_stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_audio_stream() ).resolves.toBe( audio_stream )
+        expect( getUserMedia ).toHaveBeenCalledWith( {
+            video: false,
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true
+            }
+        } )
     } )
 
     test( `lists available camera input devices`, async () => {
@@ -238,7 +296,7 @@ describe( `recorder helpers`, () => {
         } )
     } )
 
-    test( `asks the opened camera track for its full native resolution while keeping portrait shape`, async () => {
+    test( `applies the default 1080p30 preset to the opened camera track while keeping portrait shape`, async () => {
         const applyConstraints = vi.fn().mockResolvedValue()
         const track = {
             applyConstraints,
@@ -265,13 +323,14 @@ describe( `recorder helpers`, () => {
         expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
         expect( applyConstraints ).toHaveBeenCalledWith( {
             resizeMode: { exact: `none` },
-            width: { ideal: 4032 },
-            height: { ideal: 4032 }
+            width: { ideal: 1080 },
+            height: { ideal: 1920 },
+            frameRate: { ideal: 30 }
         } )
         expect( applyConstraints.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty( `aspectRatio` )
     } )
 
-    test( `keeps the portrait shape of the live track when capability maxes disagree`, async () => {
+    test( `keeps the portrait shape of the live track when applying a preset`, async () => {
         const applyConstraints = vi.fn().mockResolvedValue()
         const track = {
             applyConstraints,
@@ -296,12 +355,13 @@ describe( `recorder helpers`, () => {
         await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
         expect( applyConstraints ).toHaveBeenCalledWith( {
             resizeMode: { exact: `none` },
-            width: { ideal: 3024 },
-            height: { ideal: 4032 }
+            width: { ideal: 1080 },
+            height: { ideal: 1920 },
+            frameRate: { ideal: 30 }
         } )
     } )
 
-    test( `keeps the landscape shape of the live track when capability maxes disagree`, async () => {
+    test( `keeps the landscape shape of the live track when applying a preset`, async () => {
         const applyConstraints = vi.fn().mockResolvedValue()
         const track = {
             applyConstraints,
@@ -326,12 +386,13 @@ describe( `recorder helpers`, () => {
         await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
         expect( applyConstraints ).toHaveBeenCalledWith( {
             resizeMode: { exact: `none` },
-            width: { ideal: 4032 },
-            height: { ideal: 3024 }
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 }
         } )
     } )
 
-    test( `falls back to capability maxes when the opened track does not report dimensions yet`, async () => {
+    test( `uses landscape preset dimensions when the opened track does not report dimensions yet`, async () => {
         const applyConstraints = vi.fn().mockResolvedValue()
         const track = {
             applyConstraints,
@@ -356,12 +417,13 @@ describe( `recorder helpers`, () => {
         await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
         expect( applyConstraints ).toHaveBeenCalledWith( {
             resizeMode: { exact: `none` },
-            width: { ideal: 4032 },
-            height: { ideal: 3024 }
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 }
         } )
     } )
 
-    test( `keeps recording available when full resolution refinement is rejected`, async () => {
+    test( `keeps recording available when preset refinement is rejected`, async () => {
         const applyConstraints = vi.fn().mockRejectedValue( new Error( `Unsupported mode` ) )
         const track = {
             applyConstraints,
@@ -385,6 +447,24 @@ describe( `recorder helpers`, () => {
 
         await expect( request_capture_stream( { audio_enabled: false } ) ).resolves.toBe( stream )
         expect( applyConstraints ).toHaveBeenCalledTimes( 3 )
+    } )
+
+    test( `uses the selected recording preset frame rate on first camera open`, async () => {
+        const stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn().mockResolvedValue( stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( {
+            audio_enabled: false,
+            recording_video_preset: `1080p60`
+        } ) ).resolves.toBe( stream )
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ], {
+            frame_rate: 60
+        } )
     } )
 
     test( `marks microphone denial when video-only retry succeeds`, async () => {

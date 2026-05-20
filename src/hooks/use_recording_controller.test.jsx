@@ -23,6 +23,7 @@ import {
     list_video_input_devices,
     play_sound_feedback,
     pulse_haptic,
+    request_audio_stream,
     request_capture_stream,
     select_supported_mime_type
 } from '../modules/media/recorder.js'
@@ -49,12 +50,21 @@ vi.mock( '../modules/permissions/permissions.js', () => ( {
 
 vi.mock( '../modules/media/recorder.js', () => ( {
     CAPTURE_WARNING_KEY: `daily_video_journal_capture_warning`,
+    DEFAULT_RECORDING_VIDEO_PRESET: `1080p30`,
     HOLD_THRESHOLD_MS: 250,
     MINIMUM_CLIP_MS: 400,
     classify_recording_gesture: ( duration_ms, threshold_ms = 250 ) => duration_ms < threshold_ms ? `tap` : `hold`,
     create_media_recorder: vi.fn(),
     generate_video_thumbnail: vi.fn().mockResolvedValue( new Blob( [ `thumb` ], { type: `image/jpeg` } ) ),
     get_capture_error_message: vi.fn( ( error ) => error.message ),
+    get_recording_video_preset: vi.fn( ( value = `1080p30` ) => ( {
+        value: value || `1080p30`,
+        label: value || `1080p30`,
+        width: 1920,
+        height: 1080,
+        frame_rate: 30,
+        video_bits_per_second: value === `4k30` ? 24_000_000 : 8_000_000
+    } ) ),
     get_video_metadata: vi.fn().mockResolvedValue( {
         duration_ms: 1000,
         width: 640,
@@ -63,6 +73,7 @@ vi.mock( '../modules/media/recorder.js', () => ( {
     list_video_input_devices: vi.fn().mockResolvedValue( [] ),
     play_sound_feedback: vi.fn(),
     pulse_haptic: vi.fn(),
+    request_audio_stream: vi.fn(),
     request_capture_stream: vi.fn(),
     select_supported_mime_type: vi.fn(),
     stop_media_stream: vi.fn( ( stream ) => {
@@ -105,6 +116,23 @@ const make_video_only_stream = () => {
     stream.getAudioTracks = () => []
 
     return { stream, track }
+}
+
+const make_audio_stream = () => {
+    const track = {
+        stop: vi.fn()
+    }
+
+    const stream = {
+        getTracks: () => [ track ],
+        getAudioTracks: () => [ track ],
+        getVideoTracks: () => []
+    }
+
+    return {
+        track,
+        stream
+    }
 }
 
 const make_recorder = () => {
@@ -159,6 +187,7 @@ describe( `recording controller`, () => {
         vi.mocked( persisted_storage ).mockReset()
         vi.mocked( play_sound_feedback ).mockReset()
         vi.mocked( pulse_haptic ).mockReset()
+        vi.mocked( request_audio_stream ).mockReset()
         vi.mocked( request_capture_stream ).mockReset()
         vi.mocked( save_settings ).mockReset()
         vi.mocked( select_supported_mime_type ).mockReset()
@@ -167,6 +196,7 @@ describe( `recording controller`, () => {
         clip_saved.mockReset()
         recording_settings = {
             haptics_enabled: false,
+            recording_video_preset: `1080p30`,
             sounds_enabled: false
         }
         vi.mocked( add_clip_to_project ).mockResolvedValue( { id: `clip-1` } )
@@ -187,6 +217,7 @@ describe( `recording controller`, () => {
         } )
         vi.mocked( list_video_input_devices ).mockResolvedValue( [] )
         vi.mocked( persisted_storage ).mockResolvedValue( true )
+        vi.mocked( request_audio_stream ).mockResolvedValue( make_audio_stream().stream )
         vi.mocked( save_settings ).mockResolvedValue( {} )
         vi.mocked( select_supported_mime_type ).mockReturnValue( `video/webm` )
         vi.mocked( update_clip_media_details ).mockResolvedValue( { id: `clip-1` } )
@@ -295,19 +326,19 @@ describe( `recording controller`, () => {
         } )
 
         expect( request_capture_stream ).toHaveBeenCalledWith( {
-            audio_enabled: false
+            audio_enabled: false,
+            recording_video_preset: `1080p30`
         } )
         expect( controller.error_message ).toMatch( /Microphone access is blocked/ )
     } )
 
-    test( `pins recording capture to the camera used by the live preview`, async () => {
+    test( `reuses the camera stream from the live preview when recording starts`, async () => {
         const preview = make_stream( { video_device_id: `rear-normal-camera` } )
-        const recording = make_stream( { video_device_id: `rear-normal-camera` } )
+        const audio = make_audio_stream()
         const recorder = make_recorder()
 
-        vi.mocked( request_capture_stream )
-            .mockResolvedValueOnce( preview.stream )
-            .mockResolvedValueOnce( recording.stream )
+        vi.mocked( request_audio_stream ).mockResolvedValue( audio.stream )
+        vi.mocked( request_capture_stream ).mockResolvedValueOnce( preview.stream )
         vi.mocked( create_media_recorder ).mockReturnValue( recorder )
 
         render( <Harness /> )
@@ -317,7 +348,8 @@ describe( `recording controller`, () => {
         } )
 
         expect( request_capture_stream ).toHaveBeenNthCalledWith( 1, {
-            audio_enabled: false
+            audio_enabled: false,
+            recording_video_preset: `1080p30`
         } )
 
         await act( async () => {
@@ -328,11 +360,13 @@ describe( `recording controller`, () => {
         await waitFor( () => {
             expect( recorder.start ).toHaveBeenCalledTimes( 1 )
         } )
-        expect( request_capture_stream ).toHaveBeenNthCalledWith( 2, {
-            audio_enabled: true,
-            video_device_id: `rear-normal-camera`
-        } )
-        expect( preview.track.stop ).toHaveBeenCalledTimes( 1 )
+        expect( request_capture_stream ).toHaveBeenCalledTimes( 1 )
+        expect( request_audio_stream ).toHaveBeenCalledTimes( 1 )
+        const [ [ recording_stream ] ] = vi.mocked( create_media_recorder ).mock.calls
+
+        expect( recording_stream.getVideoTracks() ).toEqual( [ preview.track ] )
+        expect( recording_stream.getAudioTracks() ).toEqual( [ audio.track ] )
+        expect( preview.track.stop ).not.toHaveBeenCalled()
     } )
 
     test( `opens preview with the remembered camera device`, async () => {
@@ -352,6 +386,7 @@ describe( `recording controller`, () => {
 
         expect( request_capture_stream ).toHaveBeenCalledWith( {
             audio_enabled: false,
+            recording_video_preset: `1080p30`,
             video_device_id: `rear-normal-camera`
         } )
     } )
@@ -395,6 +430,7 @@ describe( `recording controller`, () => {
         } )
         expect( request_capture_stream ).toHaveBeenNthCalledWith( 2, {
             audio_enabled: false,
+            recording_video_preset: `1080p30`,
             video_device_id: `rear-normal-camera`
         } )
         expect( save_settings ).toHaveBeenLastCalledWith( {
@@ -423,10 +459,12 @@ describe( `recording controller`, () => {
 
         expect( request_capture_stream ).toHaveBeenNthCalledWith( 1, {
             audio_enabled: false,
+            recording_video_preset: `1080p30`,
             video_device_id: `removed-camera`
         } )
         expect( request_capture_stream ).toHaveBeenNthCalledWith( 2, {
-            audio_enabled: false
+            audio_enabled: false,
+            recording_video_preset: `1080p30`
         } )
         expect( save_settings ).toHaveBeenCalledWith( {
             last_video_device_id: null
@@ -506,14 +544,17 @@ describe( `recording controller`, () => {
         await waitFor( () => {
             expect( recovered_recorder.start ).toHaveBeenCalledTimes( 1 )
         } )
-        expect( create_media_recorder ).toHaveBeenNthCalledWith( 1, stream, {
+        expect( create_media_recorder ).toHaveBeenNthCalledWith( 1, expect.any( Object ), {
             mime_type: `video/webm`,
-            fallback_to_default: false
+            fallback_to_default: false,
+            video_bits_per_second: 8_000_000
         } )
-        expect( create_media_recorder ).toHaveBeenNthCalledWith( 2, stream, {
+        expect( create_media_recorder ).toHaveBeenNthCalledWith( 2, expect.any( Object ), {
             mime_type: null,
-            fallback_to_default: false
+            fallback_to_default: false,
+            video_bits_per_second: 8_000_000
         } )
+        expect( vi.mocked( create_media_recorder ).mock.calls[ 0 ][ 0 ].getVideoTracks() ).toEqual( stream.getVideoTracks() )
         expect( failed_recorder.ondataavailable ).toBe( null )
         expect( failed_recorder.onerror ).toBe( null )
         expect( failed_recorder.onstop ).toBe( null )
@@ -1030,7 +1071,12 @@ describe( `recording controller`, () => {
     test( `surfaces a video-only notice when the stream has no audio track`, async () => {
         const { stream } = make_video_only_stream()
         const recorder = make_recorder()
+        const empty_audio_stream = {
+            getTracks: () => [],
+            getAudioTracks: () => []
+        }
 
+        vi.mocked( request_audio_stream ).mockResolvedValue( empty_audio_stream )
         vi.mocked( request_capture_stream ).mockResolvedValue( stream )
         vi.mocked( create_media_recorder ).mockReturnValue( recorder )
 

@@ -9,11 +9,9 @@ export const recording_mime_candidates = [
 export const HOLD_THRESHOLD_MS = 250
 export const MINIMUM_CLIP_MS = 400
 export const CAPTURE_WARNING_KEY = `daily_video_journal_capture_warning`
+export const DEFAULT_RECORDING_VIDEO_PRESET = `1080p30`
 const VIDEO_EVENT_TIMEOUT_MS = 3_000
 
-// Do not request a pixel size or aspect ratio. Phones can switch into cropped
-// sensor modes when width/height are requested, so we record the frame the
-// browser gives us and only ask it not to derive one by cropping/scaling.
 const capture_video_constraints = {
     facingMode: { ideal: `environment` },
     resizeMode: { ideal: `none` }
@@ -33,6 +31,41 @@ const video_only_retry_errors = [
     `TrackStartError`,
     `OverconstrainedError`,
     `ConstraintNotSatisfiedError`
+]
+
+export const recording_video_presets = [
+    {
+        value: `720p30`,
+        label: `720p 30`,
+        width: 1280,
+        height: 720,
+        frame_rate: 30,
+        video_bits_per_second: 4_000_000
+    },
+    {
+        value: `1080p30`,
+        label: `1080p 30`,
+        width: 1920,
+        height: 1080,
+        frame_rate: 30,
+        video_bits_per_second: 8_000_000
+    },
+    {
+        value: `1080p60`,
+        label: `1080p 60`,
+        width: 1920,
+        height: 1080,
+        frame_rate: 60,
+        video_bits_per_second: 12_000_000
+    },
+    {
+        value: `4k30`,
+        label: `4K 30`,
+        width: 3840,
+        height: 2160,
+        frame_rate: 30,
+        video_bits_per_second: 24_000_000
+    }
 ]
 
 const should_retry_video_only = ( error ) => video_only_retry_errors.includes( error?.name )
@@ -61,48 +94,63 @@ const camera_denied_error = () => new DOMException(
 
 const is_finite_number = ( value ) => Number.isFinite( value )
 
-const make_capture_video_constraints = ( { video_device_id = null } = {} ) => {
-    if( !video_device_id ) return capture_video_constraints
+/**
+ * Gets a supported recording video preset, falling back to the default.
+ * @param {string|null} value - Persisted preset value.
+ * @returns {Object} Recording preset.
+ */
+export function get_recording_video_preset( value ) {
+    return recording_video_presets.find( ( preset ) => preset.value === value )
+        ?? recording_video_presets.find( ( preset ) => preset.value === DEFAULT_RECORDING_VIDEO_PRESET )
+        ?? recording_video_presets.at( 0 )
+}
+
+const make_capture_video_constraints = ( {
+    recording_video_preset = DEFAULT_RECORDING_VIDEO_PRESET,
+    video_device_id = null
+} = {} ) => {
+    const preset = get_recording_video_preset( recording_video_preset )
+    const frame_rate_constraint = preset?.frame_rate
+        ? { frameRate: { ideal: preset.frame_rate } }
+        : {}
+    const device_constraint = video_device_id
+        ? { deviceId: { exact: video_device_id } }
+        : {}
 
     return {
         ...capture_video_constraints,
-        deviceId: { exact: video_device_id }
+        ...frame_rate_constraint,
+        ...device_constraint
     }
 }
 
-// `MediaTrackCapabilities` reports the maximum value each dimension can take
-// across any sensor mode. Those independent maxes may not be simultaneously
-// achievable: a phone that supports 4032x3024 (landscape) and 3024x4032
-// (portrait) reports `width.max = height.max = 4032`. Asking for both maxes
-// makes the browser pick the sensor mode with the highest pixel count, which
-// can reorient the recording away from the active portrait/landscape frame.
-// Match the maxes to the active orientation so the recording keeps the same
-// shape the live preview is showing.
-const make_full_resolution_constraints = ( capabilities = {}, current_settings = {} ) => {
+const orient_preset_dimensions = ( preset, current_settings = {} ) => {
+    const current_width = is_finite_number( current_settings.width ) ? current_settings.width : null
+    const current_height = is_finite_number( current_settings.height ) ? current_settings.height : null
+    const current_is_portrait = current_width !== null && current_height !== null && current_height >= current_width
+    const longer_edge = Math.max( preset.width, preset.height )
+    const shorter_edge = Math.min( preset.width, preset.height )
+
+    return {
+        width: current_is_portrait ? shorter_edge : longer_edge,
+        height: current_is_portrait ? longer_edge : shorter_edge
+    }
+}
+
+// Do not request width, height, or aspect ratio on first camera open. Mobile
+// browsers can satisfy those constraints by cropping or switching sensor modes.
+// Once the track is open, apply ideal preset dimensions in the preview's active
+// orientation so recording and preview keep matching.
+const make_recording_video_constraints = ( preset, capabilities = {}, current_settings = {} ) => {
     const constraints = {}
 
     if( capabilities.resizeMode?.includes?.( `none` ) ) constraints.resizeMode = { exact: `none` }
 
-    const width_max = is_finite_number( capabilities.width?.max ) ? capabilities.width.max : null
-    const height_max = is_finite_number( capabilities.height?.max ) ? capabilities.height.max : null
+    const { width, height } = orient_preset_dimensions( preset, current_settings )
 
-    if( width_max === null && height_max === null ) return constraints
-
-    const current_width = is_finite_number( current_settings.width ) ? current_settings.width : null
-    const current_height = is_finite_number( current_settings.height ) ? current_settings.height : null
-    const orientation_known = current_width !== null && current_height !== null && width_max !== null && height_max !== null
-
-    if( orientation_known ) {
-        const longer_max = Math.max( width_max, height_max )
-        const shorter_max = Math.min( width_max, height_max )
-        const current_is_portrait = current_height >= current_width
-
-        constraints.width = { ideal: current_is_portrait ? shorter_max : longer_max }
-        constraints.height = { ideal: current_is_portrait ? longer_max : shorter_max }
-    } else {
-        if( width_max !== null ) constraints.width = { ideal: width_max }
-        if( height_max !== null ) constraints.height = { ideal: height_max }
-    }
+    constraints.width = { ideal: width }
+    constraints.height = { ideal: height }
+    if( preset.frame_rate ) constraints.frameRate = { ideal: preset.frame_rate }
 
     return constraints
 }
@@ -129,13 +177,14 @@ const apply_track_constraints = async ( track, constraints ) => {
     }
 }
 
-const prefer_full_resolution = async ( stream ) => {
+const apply_recording_video_preset = async ( stream, recording_video_preset ) => {
+    const preset = get_recording_video_preset( recording_video_preset )
     const video_tracks = stream.getVideoTracks?.() ?? []
 
     await Promise.all( video_tracks.map( async ( track ) => {
         const capabilities = track.getCapabilities?.() ?? {}
         const current_settings = track.getSettings?.() ?? {}
-        const constraints = make_full_resolution_constraints( capabilities, current_settings )
+        const constraints = make_recording_video_constraints( preset, capabilities, current_settings )
 
         await apply_track_constraints( track, constraints )
     } ) )
@@ -206,11 +255,13 @@ export function stop_media_stream( stream ) {
  * Opens the camera and microphone from an explicit user action.
  * @param {Object} options - Capture request options.
  * @param {boolean} options.audio_enabled - Whether to request microphone audio.
+ * @param {string|null} options.recording_video_preset - Recording video preset value.
  * @param {string|null} options.video_device_id - Specific camera source to reuse.
  * @returns {Promise<MediaStream>} Media stream.
  */
 export async function request_capture_stream( {
     audio_enabled = true,
+    recording_video_preset = DEFAULT_RECORDING_VIDEO_PRESET,
     video_device_id = null
 } = {} ) {
     if( globalThis.isSecureContext === false ) {
@@ -221,29 +272,35 @@ export async function request_capture_stream( {
         throw new Error( `This browser does not support camera or microphone capture.` )
     }
 
-    const video_constraints = make_capture_video_constraints( { video_device_id } )
+    const video_constraints = make_capture_video_constraints( {
+        recording_video_preset,
+        video_device_id
+    } )
     const capture_constraints = {
         video: video_constraints,
         audio: audio_enabled ? capture_audio_constraints : false
     }
 
-    if( !audio_enabled ) return prefer_full_resolution(
-        await navigator.mediaDevices.getUserMedia( capture_constraints )
+    if( !audio_enabled ) return apply_recording_video_preset(
+        await navigator.mediaDevices.getUserMedia( capture_constraints ),
+        recording_video_preset
     )
 
     try {
-        return await prefer_full_resolution(
-            await navigator.mediaDevices.getUserMedia( capture_constraints )
+        return await apply_recording_video_preset(
+            await navigator.mediaDevices.getUserMedia( capture_constraints ),
+            recording_video_preset
         )
     } catch ( error ) {
         if( !should_retry_video_only( error ) ) throw error
 
         try {
-            const video_only_stream = await prefer_full_resolution(
+            const video_only_stream = await apply_recording_video_preset(
                 await navigator.mediaDevices.getUserMedia( {
                     video: video_constraints,
                     audio: false
-                } )
+                } ),
+                recording_video_preset
             )
 
             const warning = error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError`
@@ -265,20 +322,46 @@ export async function request_capture_stream( {
 }
 
 /**
+ * Opens only the microphone so recording can reuse the already-visible camera track.
+ * @returns {Promise<MediaStream>} Audio stream.
+ */
+export async function request_audio_stream() {
+    if( globalThis.isSecureContext === false ) {
+        throw new Error( `Camera and microphone require a secure browser origin.` )
+    }
+
+    if( !globalThis.navigator?.mediaDevices?.getUserMedia ) {
+        throw new Error( `This browser does not support camera or microphone capture.` )
+    }
+
+    return navigator.mediaDevices.getUserMedia( {
+        video: false,
+        audio: capture_audio_constraints
+    } )
+}
+
+/**
  * Creates a configured MediaRecorder for a stream.
  * @param {MediaStream} stream - Capture stream.
  * @param {Object} options - Recorder construction options.
  * @param {string|null} options.mime_type - MIME type to request, or null for browser default.
  * @param {boolean} options.fallback_to_default - Whether typed construction may retry without MIME.
+ * @param {number|null} options.video_bits_per_second - Requested video encoder bitrate.
  * @returns {MediaRecorder} Recorder instance.
  */
 export function create_media_recorder( stream, {
     mime_type = select_supported_mime_type(),
-    fallback_to_default = true
+    fallback_to_default = true,
+    video_bits_per_second = null
 } = {} ) {
     if( !globalThis.MediaRecorder ) throw new Error( `MediaRecorder is unavailable in this browser.` )
 
-    const recorder_options = mime_type ? { mimeType: mime_type } : undefined
+    const requested_options = {}
+
+    if( mime_type ) requested_options.mimeType = mime_type
+    if( video_bits_per_second ) requested_options.videoBitsPerSecond = video_bits_per_second
+
+    const recorder_options = Object.keys( requested_options ).length ? requested_options : undefined
 
     try {
         return new MediaRecorder( stream, recorder_options )

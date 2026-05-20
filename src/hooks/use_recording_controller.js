@@ -11,17 +11,19 @@ import {
     update_clip_media_details
 } from '../modules/storage/journal_storage.js'
 import {
-    CAPTURE_WARNING_KEY,
+    DEFAULT_RECORDING_VIDEO_PRESET,
     HOLD_THRESHOLD_MS,
     MINIMUM_CLIP_MS,
     classify_recording_gesture,
     create_media_recorder,
     generate_video_thumbnail,
     get_capture_error_message,
+    get_recording_video_preset,
     get_video_metadata,
     list_video_input_devices,
     play_sound_feedback,
     pulse_haptic,
+    request_audio_stream,
     request_capture_stream,
     select_supported_mime_type,
     stop_media_stream
@@ -58,6 +60,24 @@ const get_stream_video_device_id = ( stream ) => {
     const { deviceId = null } = video_track?.getSettings?.() ?? {}
 
     return normalize_video_device_id( deviceId )
+}
+
+const combine_recording_stream = ( video_stream, audio_stream = null ) => {
+    const video_tracks = video_stream?.getVideoTracks?.() ?? []
+    const audio_tracks = audio_stream?.getAudioTracks?.() ?? []
+    const tracks = [
+        ...video_tracks,
+        ...audio_tracks
+    ]
+
+    if( !audio_tracks.length ) return video_stream
+    if( globalThis.MediaStream ) return new MediaStream( tracks )
+
+    return {
+        getTracks: () => tracks,
+        getVideoTracks: () => video_tracks,
+        getAudioTracks: () => audio_tracks
+    }
 }
 
 const can_retry_without_camera_choice = ( error ) => stale_camera_error_names.has( error?.name )
@@ -199,7 +219,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         const preview_video_device_id = selected_video_device_id_ref.current
             || saved_video_device_id
         const preview_request = {
-            audio_enabled: false
+            audio_enabled: false,
+            recording_video_preset: settings?.recording_video_preset ?? DEFAULT_RECORDING_VIDEO_PRESET
         }
 
         if( preview_video_device_id ) preview_request.video_device_id = preview_video_device_id
@@ -211,9 +232,12 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                     return null
                 }
 
+                const preview_can_attach = phase_ref.current === `idle`
+                    || phase_ref.current === `starting`
+
                 if(
                     !mounted_ref.current
-                    || phase_ref.current !== `idle`
+                    || !preview_can_attach
                     || stream_ref.current
                 ) {
                     stop_media_stream( preview_stream )
@@ -260,7 +284,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         refresh_camera_devices,
         request_capture_with_camera_fallback,
         saved_video_device_id,
-        set_media_stream_state
+        set_media_stream_state,
+        settings?.recording_video_preset
     ] )
 
     const reset_startup_after_forced_stop = useCallback( ( next_stream ) => {
@@ -301,6 +326,19 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         clear_current_stream,
         open_preview,
         remember_video_device_id
+    ] )
+
+    const refresh_preview = useCallback( () => {
+        if( phase_ref.current !== `idle` ) return Promise.resolve( stream_ref.current )
+
+        preview_attempted_ref.current = false
+        clear_current_stream()
+        if( document.hidden ) return Promise.resolve( null )
+
+        return open_preview( { force: true } )
+    }, [
+        clear_current_stream,
+        open_preview
     ] )
 
     const refresh_environment_state = useCallback( async () => {
@@ -563,29 +601,66 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         recording_mode_ref.current = null
         set_recording_mode( null )
 
-        if( preview_open_promise_ref.current ) await preview_open_promise_ref.current.catch( () => null )
-        const preview_video_device_id = get_stream_video_device_id( stream_ref.current )
-            || selected_video_device_id_ref.current
-            || saved_video_device_id
-        if( stream_ref.current ) clear_current_stream()
-
         set_phase( `starting` )
         set_media_stream_state( `opening` )
 
         let next_stream = null
 
         try {
+            if( preview_open_promise_ref.current ) await preview_open_promise_ref.current.catch( () => null )
+
+            const recording_video_preset = get_recording_video_preset(
+                settings?.recording_video_preset ?? DEFAULT_RECORDING_VIDEO_PRESET
+            )
+            const preview_video_device_id = get_stream_video_device_id( stream_ref.current )
+                || selected_video_device_id_ref.current
+                || saved_video_device_id
+            const preview_request = {
+                audio_enabled: false,
+                recording_video_preset: recording_video_preset.value
+            }
+
+            if( preview_video_device_id ) preview_request.video_device_id = preview_video_device_id
+
             log.debug( `Recording start requested`, {
                 project_id,
                 audio_enabled: permission_status.microphone !== `denied`,
-                video_device_id: preview_video_device_id
+                video_device_id: preview_video_device_id,
+                recording_video_preset: recording_video_preset.value
             } )
-            const capture_request = {
-                audio_enabled: permission_status.microphone !== `denied`
+
+            const preview_stream = stream_ref.current
+                ?? await request_capture_with_camera_fallback( preview_request )
+
+            if( !preview_stream ) throw new Error( `Camera preview could not open.` )
+
+            if( pending_forced_stop_ref.current ) {
+                log.debug( `Recording startup stopped before recorder activation`, {
+                    project_id
+                } )
+                reset_startup_after_forced_stop( preview_stream )
+                return
             }
 
-            if( preview_video_device_id ) capture_request.video_device_id = preview_video_device_id
-            next_stream = await request_capture_with_camera_fallback( capture_request )
+            const active_video_device_id = get_stream_video_device_id( preview_stream )
+            const should_request_audio = permission_status.microphone !== `denied`
+            let audio_stream = null
+            let capture_warning = permission_status.microphone === `denied`
+                ? `microphone_denied`
+                : null
+
+            if( should_request_audio ) {
+                try {
+                    audio_stream = await request_audio_stream()
+                } catch ( error ) {
+                    log.warn( `Microphone could not be added to recording; continuing video-only`, error )
+                    capture_warning = error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError`
+                        ? `microphone_denied`
+                        : `microphone_unavailable`
+                }
+            }
+
+            next_stream = combine_recording_stream( preview_stream, audio_stream )
             if( pending_forced_stop_ref.current ) {
                 log.debug( `Recording startup stopped before recorder activation`, {
                     project_id
@@ -596,8 +671,6 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
             stream_ref.current = next_stream
             set_media_stream_state( `active` )
-            const capture_warning = next_stream[ CAPTURE_WARNING_KEY ]
-            const active_video_device_id = get_stream_video_device_id( next_stream )
 
             refresh_camera_devices( active_video_device_id ).catch( ( error ) => {
                 log.warn( `Camera device list could not be refreshed`, error )
@@ -607,7 +680,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 video_tracks: next_stream.getVideoTracks?.().length ?? 0,
                 audio_tracks: next_stream.getAudioTracks?.().length ?? 0,
                 capture_warning: capture_warning ?? null,
-                video_device_id: active_video_device_id
+                video_device_id: active_video_device_id,
+                recording_video_preset: recording_video_preset.value
             } )
 
             if(
@@ -636,7 +710,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 } )
                 const recorder = create_media_recorder( next_stream, {
                     mime_type,
-                    fallback_to_default: false
+                    fallback_to_default: false,
+                    video_bits_per_second: recording_video_preset.video_bits_per_second
                 } )
                 const chunks = []
                 const started_at = Date.now()
@@ -675,11 +750,12 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 recorder_ref.current = recorder
                 recording_result_ref.current.mime_type = recorder.mimeType || null
                 stop_promise_ref.current = stopped
-                recorder.start( 250 )
+                recorder.start()
                 log.debug( `Recorder started`, {
                     project_id,
                     requested_mime_type: mime_type ?? null,
-                    recorder_mime_type: recorder.mimeType || null
+                    recorder_mime_type: recorder.mimeType || null,
+                    video_bits_per_second: recording_video_preset.video_bits_per_second
                 } )
 
                 return {
@@ -794,6 +870,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_phase,
         set_media_stream_state,
         settings.haptics_enabled,
+        settings?.recording_video_preset,
         settings.sounds_enabled,
         permission_status.microphone,
         stop_recording
@@ -918,6 +995,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         selected_video_device_id,
         select_camera_device,
         open_preview,
+        refresh_preview,
         press_record,
         release_record,
         cancel_record,

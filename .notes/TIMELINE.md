@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-20: Prepared `0.4.0` recording optimization changes to reuse the live preview video track for recording, add persisted 720p/1080p/4K recording presets with bitrate, default to 1080p30, request microphone audio separately, start MediaRecorder without timeslices, move video controls into a preview gear modal, and drive export canvas drawing from `requestVideoFrameCallback`.
 - 2026-05-20: Prepared `0.3.28` to persist the selected camera in settings, restore it before preview opens, and fall back safely if the remembered camera id is stale.
 - 2026-05-20: Prepared `0.3.27` to keep recording on the same camera source as the live preview, add a camera picker for multi-camera devices, and cover the behavior in unit/component/Playwright media tests.
 - 2026-05-19: Reviewed follow-up service-worker bug analysis after the 0.3.25 reload fix. Prepared 0.3.26 to return controlled offline responses for non-ok navigation shell refreshes, preserve older caches until the current cache is validated, guard build-asset pruning against concurrent navigation refreshes, and document the `/` fetch versus `/index.html` cache-key split.

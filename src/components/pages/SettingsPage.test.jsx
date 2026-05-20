@@ -41,6 +41,7 @@ vi.mock( '../../modules/storage/journal_storage.js', () => ( {
         export_quality: `standard`,
         export_resolution: `source`,
         preferred_mime_type: null,
+        recording_video_preset: `1080p30`,
         haptics_enabled: true,
         sounds_enabled: false
     },
@@ -62,6 +63,7 @@ const settings = {
     export_quality: `standard`,
     export_resolution: `source`,
     preferred_mime_type: null,
+    recording_video_preset: `1080p30`,
     haptics_enabled: true,
     sounds_enabled: false
 }

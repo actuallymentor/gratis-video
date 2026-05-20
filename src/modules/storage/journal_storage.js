@@ -1,6 +1,7 @@
 import { log } from 'mentie/modules/logging.js'
 import { create_export_hashes } from '../export/cache.js'
 import { normalize_export_settings } from '../export/settings.js'
+import { DEFAULT_RECORDING_VIDEO_PRESET } from '../media/recorder.js'
 import {
     clear_all_records,
     get_all_records,
@@ -27,6 +28,7 @@ export const default_settings = {
     export_quality: `standard`,
     export_resolution: `source`,
     preferred_mime_type: null,
+    recording_video_preset: DEFAULT_RECORDING_VIDEO_PRESET,
     haptics_enabled: true,
     sounds_enabled: false,
     last_video_device_id: null

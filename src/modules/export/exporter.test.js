@@ -474,6 +474,9 @@ describe( `export compiler`, () => {
 
     test( `finishes a clip when the browser never flips the ended flag`, async () => {
         const create_element = document.createElement.bind( document )
+        const animation_frame = vi.fn( ( callback ) => setTimeout( callback, 0 ) )
+        const cancel_video_frame_callback = vi.fn()
+        let video_frame_callback_count = 0
 
         class UnendedVideoElement extends FakeVideoElement {
 
@@ -502,8 +505,19 @@ describe( `export compiler`, () => {
                 this.playing = false
             }
 
+            requestVideoFrameCallback( callback ) {
+                video_frame_callback_count += 1
+                setTimeout( () => callback( performance.now(), {} ), 0 )
+                return video_frame_callback_count
+            }
+
+            cancelVideoFrameCallback( callback_id ) {
+                cancel_video_frame_callback( callback_id )
+            }
+
         }
 
+        vi.stubGlobal( `requestAnimationFrame`, animation_frame )
         vi.stubGlobal( `MediaRecorder`, DataMediaRecorder )
         vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
         vi.spyOn( URL, `createObjectURL` ).mockReturnValue( `blob:clip` )
@@ -527,6 +541,9 @@ describe( `export compiler`, () => {
         } ) ).resolves.toMatchObject( {
             duration_ms: 1000
         } )
+        expect( video_frame_callback_count ).toBeGreaterThan( 0 )
+        expect( cancel_video_frame_callback ).toHaveBeenCalled()
+        expect( animation_frame ).not.toHaveBeenCalled()
     } )
 
     test( `sets playback attributes before assigning clip video sources`, async () => {

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] - 2026-05-20
+
+### Added
+- add bitrate-backed recording presets in preview video settings
+
+### Changed
+- reuse the live preview camera stream and record without timeslices
+- drive export frame drawing from requestVideoFrameCallback
+
 ## [0.3.28] - 2026-05-20
 
 ### Fixed

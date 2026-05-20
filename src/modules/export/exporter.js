@@ -24,6 +24,7 @@ const PLAYBACK_RECOVERY_ATTEMPTS = 2
 const END_OF_CLIP_TOLERANCE_SECONDS = 0.2
 const HAVE_CURRENT_DATA = 2
 const EXPORT_RECORDER_STOP_TIMEOUT_MS = 5_000
+const VIDEO_FRAME_CALLBACK_TIMEOUT_MS = 500
 
 const make_abort_error = () => new DOMException( `Export cancelled`, `AbortError` )
 
@@ -178,7 +179,54 @@ const wait_for_recorder_stop = ( recorder, chunks, signal ) => {
     }
 }
 
-const next_animation_frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) )
+const next_video_frame = ( video, signal ) => new Promise( ( resolve, reject ) => {
+    let settled = false
+    let timeout_id = null
+    let frame_id = null
+    let animation_frame_id = null
+    let abort = null
+
+    const cleanup = () => {
+        if( timeout_id ) clearTimeout( timeout_id )
+        if( frame_id !== null ) video.cancelVideoFrameCallback?.( frame_id )
+        if( animation_frame_id !== null ) globalThis.cancelAnimationFrame?.( animation_frame_id )
+        signal?.removeEventListener( `abort`, abort )
+    }
+
+    const finish = ( timestamp = performance.now() ) => {
+        if( settled ) return
+
+        settled = true
+        cleanup()
+        resolve( timestamp )
+    }
+
+    abort = () => {
+        if( settled ) return
+
+        settled = true
+        cleanup()
+        reject( make_abort_error() )
+    }
+
+    if( signal?.aborted ) {
+        abort()
+        return
+    }
+
+    signal?.addEventListener( `abort`, abort, { once: true } )
+
+    if( video.requestVideoFrameCallback ) {
+        frame_id = video.requestVideoFrameCallback( ( timestamp ) => finish( timestamp ) )
+
+        // A decode stall can mean no video-frame callback arrives. Let the
+        // export loop advance so its existing recovery checks can run.
+        timeout_id = setTimeout( () => finish(), VIDEO_FRAME_CALLBACK_TIMEOUT_MS )
+        return
+    }
+
+    animation_frame_id = requestAnimationFrame( finish )
+} )
 
 const orient_resolution_limit = ( limit, { width, height } ) => {
     if( !limit || height <= width ) return limit
@@ -449,7 +497,7 @@ const start_export_recorder = ( { stream, settings, signal } ) => {
             stop_wait = wait_for_recorder_stop( recorder, chunks, signal )
             stop_wait.stopped.catch( () => null )
             throw_if_aborted( signal )
-            recorder.start( 250 )
+            recorder.start()
 
             log.info( `Export recorder started`, {
                 requested_mime_type: mime_type ?? null,
@@ -672,7 +720,7 @@ const play_clip_to_canvas = async ( {
                 message: `Exporting clip ${ clip_index + 1 } of ${ clips.length }`
             } )
 
-            await next_animation_frame()
+            await next_video_frame( video, signal )
         }
 
         draw_video_frame( context, video, canvas )

@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { StringParam, useQueryParam } from 'use-query-params'
 import { log } from 'mentie/modules/logging.js'
 import styled from 'styled-components'
-import { ArrowLeft, Download, Home, Share2 } from 'lucide-react'
+import { ArrowLeft, Download, Home, Settings as SettingsIcon, Share2, X } from 'lucide-react'
 import { BottomAppBar } from '../atoms/BottomAppBar.jsx'
 import { Content, HeaderBar, HeaderText, AppFrame, SectionTitle } from '../atoms/Layout.jsx'
 import { IconButton } from '../atoms/IconButton.jsx'
@@ -12,9 +12,15 @@ import { ClipQueue } from '../molecules/ClipQueue.jsx'
 import { ExportPanel } from '../molecules/ExportPanel.jsx'
 import { PermissionNotice } from '../molecules/PermissionNotice.jsx'
 import { RecordButton } from '../molecules/RecordButton.jsx'
+import { useModalFocus } from '../../hooks/use_modal_focus.js'
 import { useRecordingController } from '../../hooks/use_recording_controller.js'
 import { create_export_hashes } from '../../modules/export/cache.js'
 import { normalize_export_settings } from '../../modules/export/exporter.js'
+import {
+    DEFAULT_RECORDING_VIDEO_PRESET,
+    get_recording_video_preset,
+    recording_video_presets
+} from '../../modules/media/recorder.js'
 import {
     can_attempt_recording,
     has_denied_media_permission,
@@ -31,6 +37,7 @@ import {
     is_valid_export_blob,
     load_settings,
     move_clip,
+    save_settings,
     set_active_project
 } from '../../modules/storage/journal_storage.js'
 import { useAppStore } from '../../stores/app_store.js'
@@ -70,24 +77,117 @@ const Preview = styled.div`
     }
 `
 
-const CameraChooser = styled.label`
+const PreviewSettingsButton = styled( IconButton )`
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 3;
+    border-color: rgba( 255, 255, 255, 0.28 );
+    color: #ffffff;
+    background: rgba( 13, 23, 24, 0.74 );
+    box-shadow: 0 0.7rem 1.4rem rgba( 0, 0, 0, 0.24 );
+    backdrop-filter: blur( 8px );
+
+    &:hover,
+    &:focus-visible {
+        border-color: rgba( 126, 192, 208, 0.85 );
+        background: rgba( 18, 49, 51, 0.84 );
+    }
+`
+
+const ModalBackdrop = styled.div`
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba( 13, 23, 24, 0.46 );
+`
+
+const ModalPanel = styled.section`
+    width: min( 100%, 34rem );
+    max-height: min( 42rem, calc( 100svh - 2rem ) );
+    overflow: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-strong);
+`
+
+const ModalHeader = styled.header`
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    color: var(--color-muted);
-    font-size: 0.95rem;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--color-border);
+
+    h2 {
+        margin: 0;
+        color: var(--color-ink);
+        font-family: var(--font-heading);
+        font-size: 1.2rem;
+        letter-spacing: 0;
+    }
+`
+
+const ModalBody = styled.div`
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+`
+
+const VideoSettingField = styled.label`
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    color: var(--color-ink);
     font-weight: 800;
 
     select {
-        min-width: 0;
-        flex: 1;
+        width: 100%;
         min-height: 2.75rem;
-        border: 1px solid rgba( 18, 49, 51, 0.18 );
+        border: 1px solid var(--color-border);
         border-radius: 0.5rem;
         padding: 0.55rem 0.75rem;
-        background: #ffffff;
+        background: var(--color-surface);
         color: var(--color-text);
         font: inherit;
+    }
+`
+
+const PresetGrid = styled.div`
+    display: grid;
+    grid-template-columns: repeat( 2, minmax( 0, 1fr ) );
+    gap: 0.5rem;
+
+    @media (min-width: 32rem) {
+        grid-template-columns: repeat( 4, minmax( 0, 1fr ) );
+    }
+`
+
+const PresetButton = styled.button`
+    display: grid;
+    gap: 0.25rem;
+    min-height: 4rem;
+    padding: 0.55rem 0.45rem;
+    border: 1px solid ${ ( { $active } ) => $active ? `var(--color-accent-strong)` : `var(--color-border)` };
+    border-radius: 0.5rem;
+    color: ${ ( { $active } ) => $active ? `#0d1718` : `var(--color-ink)` };
+    background: ${ ( { $active } ) => $active ? `var(--color-accent)` : `var(--color-surface-strong)` };
+    font-weight: 900;
+    letter-spacing: 0;
+
+    small {
+        color: ${ ( { $active } ) => $active ? `rgba( 13, 23, 24, 0.72 )` : `var(--color-muted)` };
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    &:disabled {
+        color: var(--color-muted);
+        background: var(--color-surface-strong);
     }
 `
 
@@ -137,6 +237,84 @@ const make_settings_return_path = ( project_id ) => {
     return `/settings?return_to=${ encodeURIComponent( `/projects/${ project_id }` ) }`
 }
 
+const format_bitrate = ( bits_per_second ) => {
+    return `${ Math.round( bits_per_second / 1_000_000 ) } Mbps`
+}
+
+const get_camera_label = ( camera_device, index ) => {
+    return camera_device.label || `Camera ${ index + 1 }`
+}
+
+const VideoSettingsModal = ( {
+    camera_devices,
+    disabled,
+    recording_video_preset,
+    selected_video_device_id,
+    on_close,
+    on_select_camera,
+    on_select_preset
+} ) => {
+    const modal_ref = useModalFocus( {
+        active: true,
+        on_close
+    } )
+
+    return <ModalBackdrop
+        onMouseDown={ ( event ) => {
+            if( event.target === event.currentTarget ) on_close()
+        } }
+    >
+        <ModalPanel
+            ref={ modal_ref }
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="video-settings-title"
+            tabIndex={ -1 }
+        >
+            <ModalHeader>
+                <h2 id="video-settings-title">Video settings</h2>
+                <IconButton icon={ X } label="Close video settings" onClick={ on_close } />
+            </ModalHeader>
+            <ModalBody>
+                <VideoSettingField>
+                    Camera
+                    <select
+                        aria-label="Camera"
+                        value={ selected_video_device_id ?? `` }
+                        onChange={ ( event ) => on_select_camera( event.target.value ) }
+                        disabled={ disabled }
+                    >
+                        <option value="">Default camera</option>
+                        { camera_devices.map( ( camera_device, index ) => <option
+                            key={ camera_device.device_id }
+                            value={ camera_device.device_id }
+                        >
+                            { get_camera_label( camera_device, index ) }
+                        </option> ) }
+                    </select>
+                </VideoSettingField>
+
+                <VideoSettingField as="div">
+                    <span id="recording-preset-label">Recording preset</span>
+                    <PresetGrid role="group" aria-labelledby="recording-preset-label">
+                        { recording_video_presets.map( ( preset ) => <PresetButton
+                            key={ preset.value }
+                            type="button"
+                            $active={ preset.value === recording_video_preset }
+                            aria-pressed={ preset.value === recording_video_preset }
+                            onClick={ () => on_select_preset( preset.value ) }
+                            disabled={ disabled }
+                        >
+                            { preset.label }
+                            <small>{ format_bitrate( preset.video_bits_per_second ) }</small>
+                        </PresetButton> ) }
+                    </PresetGrid>
+                </VideoSettingField>
+            </ModalBody>
+        </ModalPanel>
+    </ModalBackdrop>
+}
+
 /**
  * Shows recording controls, live preview, clip queue, and export actions.
  * @returns {JSX.Element} Capture page.
@@ -156,8 +334,11 @@ export function ProjectCapturePage() {
     const [ export_panel_record, set_export_panel_record ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
     const [ queue_mutation_pending, set_queue_mutation_pending ] = useState( false )
+    const [ video_settings_open, set_video_settings_open ] = useState( false )
     const cached_export_blob_ref = useRef( null )
     const project_id_ref = useRef( project_id )
+    const settings_ref = useRef( null )
+    const previous_recording_video_preset_ref = useRef( null )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const media_stream_state = useAppStore( ( state ) => state.media_stream_state )
@@ -165,6 +346,10 @@ export function ProjectCapturePage() {
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
 
     project_id_ref.current = project_id
+
+    useEffect( () => {
+        settings_ref.current = settings
+    }, [ settings ] )
 
     const redirect_missing_project = useCallback( async ( missing_project_id ) => {
         const active_project = await get_active_project().catch( () => null )
@@ -264,6 +449,44 @@ export function ProjectCapturePage() {
         on_clip_saved: refresh_project
     } )
     const open_camera_preview = recording.open_preview
+    const refresh_camera_preview = recording.refresh_preview
+
+    const update_video_setting = useCallback( async ( patch ) => {
+        const previous_settings = settings_ref.current
+
+        if( !previous_settings ) return
+
+        const next_settings = normalize_export_settings( {
+            ...previous_settings,
+            ...patch
+        } )
+
+        log.debug( `Video setting update requested`, patch )
+        settings_ref.current = next_settings
+        set_settings( next_settings )
+
+        try {
+            const saved_settings = await save_settings( next_settings )
+
+            if( settings_ref.current === next_settings ) {
+                const normalized_settings = normalize_export_settings( saved_settings )
+
+                settings_ref.current = normalized_settings
+                set_settings( normalized_settings )
+            }
+            log.info( `Video settings saved`, {
+                changed_keys: Object.keys( patch )
+            } )
+        } catch ( error ) {
+            log.error( `Video settings could not be saved`, error )
+            toast.error( `Video setting could not be saved` )
+
+            if( settings_ref.current === next_settings ) {
+                settings_ref.current = previous_settings
+                set_settings( previous_settings )
+            }
+        }
+    }, [] )
 
     useEffect( () => {
         if( !project || !settings ) return
@@ -278,6 +501,25 @@ export function ProjectCapturePage() {
         permission_status,
         project,
         settings
+    ] )
+
+    useEffect( () => {
+        if( !settings ) return
+
+        const recording_video_preset = settings.recording_video_preset ?? DEFAULT_RECORDING_VIDEO_PRESET
+        const previous_recording_video_preset = previous_recording_video_preset_ref.current
+
+        previous_recording_video_preset_ref.current = recording_video_preset
+
+        if(
+            previous_recording_video_preset
+            && previous_recording_video_preset !== recording_video_preset
+        ) {
+            refresh_camera_preview()
+        }
+    }, [
+        refresh_camera_preview,
+        settings?.recording_video_preset
     ] )
 
     useEffect( () => {
@@ -690,7 +932,9 @@ export function ProjectCapturePage() {
         : null
     const preview_status_message = storage_error || ( bottom_status_message ? null : status_message )
     const camera_devices = recording.camera_devices ?? []
-    const show_camera_chooser = camera_devices.length > 1
+    const selected_recording_video_preset = get_recording_video_preset(
+        settings.recording_video_preset ?? DEFAULT_RECORDING_VIDEO_PRESET
+    ).value
 
     return <AppFrame>
         <Content>
@@ -718,23 +962,12 @@ export function ProjectCapturePage() {
                                 ? `Opening camera preview...`
                                 : `Press record to open the camera and save the next clip.` }
                         </ReadyState> }
+                        <PreviewSettingsButton
+                            icon={ SettingsIcon }
+                            label="Open video settings"
+                            onClick={ () => set_video_settings_open( true ) }
+                        />
                     </Preview>
-                    { show_camera_chooser ? <CameraChooser>
-                        Camera
-                        <select
-                            aria-label="Camera"
-                            value={ recording.selected_video_device_id ?? `` }
-                            onChange={ ( event ) => recording.select_camera_device( event.target.value ) }
-                            disabled={ recording_in_progress || media_stream_state === `opening` }
-                        >
-                            { camera_devices.map( ( camera_device, index ) => <option
-                                key={ camera_device.device_id }
-                                value={ camera_device.device_id }
-                            >
-                                { camera_device.label || `Camera ${ index + 1 }` }
-                            </option> ) }
-                        </select>
-                    </CameraChooser> : null }
                     <PermissionNotice
                         message={ preview_status_message }
                         action_to={ permission_recovery_needed ? settings_return_path : null }
@@ -793,6 +1026,18 @@ export function ProjectCapturePage() {
                 set_export_panel_record( null )
                 set_export_requested( false )
                 set_panel( undefined )
+            } }
+        /> : null }
+
+        { video_settings_open ? <VideoSettingsModal
+            camera_devices={ camera_devices }
+            disabled={ recording_in_progress || media_stream_state === `opening` }
+            recording_video_preset={ selected_recording_video_preset }
+            selected_video_device_id={ recording.selected_video_device_id }
+            on_close={ () => set_video_settings_open( false ) }
+            on_select_camera={ recording.select_camera_device }
+            on_select_preset={ ( recording_video_preset ) => {
+                update_video_setting( { recording_video_preset } )
             } }
         /> : null }
     </AppFrame>

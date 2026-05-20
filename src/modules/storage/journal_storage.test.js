@@ -805,6 +805,7 @@ describe( `journal storage`, () => {
             export_resolution: `source`,
             haptics_enabled: true,
             last_video_device_id: null,
+            recording_video_preset: `1080p30`,
             sounds_enabled: false
         } )
     } )

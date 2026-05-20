@@ -370,6 +370,7 @@ test.describe( `daily video journal app`, () => {
             audio: false,
             video: {
                 facingMode: { ideal: `environment` },
+                frameRate: { ideal: 30 },
                 resizeMode: { ideal: `none` }
             }
         } )
@@ -384,13 +385,19 @@ test.describe( `daily video journal app`, () => {
         await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
         await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBeGreaterThanOrEqual( 2 )
 
-        if( preview_device_id ) {
-            const recording_constraints = await page.evaluate( () => window.__get_user_media_calls.at( -1 ) )
+        const recording_constraints = await page.evaluate( () => window.__get_user_media_calls.at( -1 ) )
+        const video_capture_call_count = await page.evaluate( () => {
+            return window.__get_user_media_calls.filter( ( constraints ) => {
+                return constraints.video && typeof constraints.video === `object`
+            } ).length
+        } )
 
-            expect( recording_constraints.video.deviceId ).toEqual( {
-                exact: preview_device_id
-            } )
-        }
+        expect( recording_constraints.video ).toBe( false )
+        expect( recording_constraints.audio ).toMatchObject( {
+            echoCancellation: true,
+            noiseSuppression: true
+        } )
+        if( preview_device_id ) expect( video_capture_call_count ).toBe( 1 )
 
         await page.waitForTimeout( 500 )
         await page.getByRole( `button`, { name: `Stop recording` } ).click()
@@ -475,6 +482,7 @@ test.describe( `daily video journal app`, () => {
 
         await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
         await expect_live_camera_preview( page )
+        await page.getByRole( `button`, { name: `Open video settings` } ).click()
         const camera_select = page.getByLabel( `Camera`, { exact: true } )
 
         await expect( camera_select ).toBeEnabled()
