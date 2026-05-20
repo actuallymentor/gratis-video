@@ -421,6 +421,29 @@ describe( `project capture page`, () => {
         } )
     } )
 
+    test( `opens cached export actions when native sharing needs a fresh tap`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( get_valid_cached_export ).mockResolvedValue( export_record )
+        vi.mocked( share_export_file ).mockResolvedValue( `activation-required` )
+
+        render_capture()
+
+        expect( await screen.findByText( project.title ) ).toBeTruthy()
+        await waitFor( () => {
+            expect( get_export_blob ).toHaveBeenCalledWith( export_record.id )
+        } )
+
+        await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
+
+        expect( await screen.findByText( /for cached export/ ) ).toBeTruthy()
+        expect( share_export_file ).toHaveBeenCalledWith( {
+            project,
+            export_record,
+            blob: expect.any( Blob )
+        } )
+    } )
+
     test( `opens a cached export panel when a cached export is found after the tap`, async () => {
         const user = userEvent.setup()
         let allow_cache = false

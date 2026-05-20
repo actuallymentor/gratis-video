@@ -648,6 +648,7 @@ test.describe( `daily video journal app`, () => {
                 configurable: true,
                 value: async ( share_data ) => {
                     const [ file = null ] = share_data.files ?? []
+                    const user_activation_active = navigator.userActivation?.isActive ?? null
                     const file_buffer = file ? await file.arrayBuffer() : null
 
                     native_share_calls.push( {
@@ -655,7 +656,8 @@ test.describe( `daily video journal app`, () => {
                         file_name: file?.name ?? null,
                         file_size: file_buffer?.byteLength ?? null,
                         file_type: file?.type ?? null,
-                        title: share_data.title ?? null
+                        title: share_data.title ?? null,
+                        user_activation_active
                     } )
 
                     throw new DOMException( `Share cancelled`, `AbortError` )
@@ -716,7 +718,8 @@ test.describe( `daily video journal app`, () => {
         expect( share_call.title ).toBeTruthy()
         expect( share_call.file_name ).toMatch( /\.(webm|mp4)$/ )
         expect( share_call.file_size ).toBeGreaterThan( 1_000 )
-        expect( share_call.file_type ).toMatch( /^video\// )
+        expect( share_call.file_type ).toMatch( /^video\/(webm|mp4)$/ )
+        expect( share_call.user_activation_active ).toBe( true )
 
         await page.evaluate( () => {
             Object.defineProperty( navigator, `canShare`, {

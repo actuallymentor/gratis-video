@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import toast from 'react-hot-toast'
 import { ExportPanel } from './ExportPanel.jsx'
 import {
     compile_project_export,
@@ -271,6 +272,26 @@ describe( `export panel`, () => {
         await user.click( await screen.findByRole( `button`, { name: `Share` } ) )
 
         expect( download_export_file ).toHaveBeenCalledWith( saved_export, compiled_export.blob )
+    } )
+
+    test( `keeps the ready share action when native sharing needs a fresh tap`, async () => {
+        const user = userEvent.setup()
+
+        vi.mocked( share_export_file ).mockResolvedValue( `activation-required` )
+
+        render( <ExportPanel
+            project={ project }
+            clips={ clips }
+            settings={ settings }
+            initial_export_record={ saved_export }
+            on_close={ vi.fn() }
+        /> )
+
+        await user.click( await screen.findByRole( `button`, { name: `Share` } ) )
+
+        expect( download_export_file ).not.toHaveBeenCalled()
+        expect( toast ).toHaveBeenCalledWith( `Tap Share again to open the native share sheet.` )
+        expect( screen.getByRole( `button`, { name: `Share` } ) ).toBeTruthy()
     } )
 
     test( `downloads from the ready share action when native sharing fails`, async () => {

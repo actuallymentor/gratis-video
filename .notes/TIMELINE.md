@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-20T12:34:00Z: Hardened native export sharing: share files now use bare video MIME types, `navigator.share()` is guarded by transient user activation, expired-activation results keep the user in explicit share actions, and Playwright verifies the Share button reaches native share while user activation is active.
 - 2026-05-20T12:00:10Z: Hardened the Mediabunny remux export path after review: failed dynamic imports retry, malformed packet timing declines to canvas fallback, progress reaches the intended cap, output sources close on failures, and real Mediabunny packet remux coverage was added.
 - 2026-05-20T11:30:48Z: Added a client-side Mediabunny remux export path that copies encoded packets when clips are compatible, keeps the existing canvas exporter as fallback, lazy-loads the remuxer dependency, and invalidates prior cached exports with a pipeline-version hash bump.
 - 2026-05-20: Prepared `0.4.0` recording optimization changes to reuse the live preview video track for recording, add persisted 720p/1080p/4K recording presets with bitrate, default to 1080p30, request microphone audio separately, start MediaRecorder without timeslices, move video controls into a preview gear modal, and drive export canvas drawing from `requestVideoFrameCallback`.

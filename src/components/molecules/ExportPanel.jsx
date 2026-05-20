@@ -474,6 +474,11 @@ export function ExportPanel( {
             } )
             const result = await share_export_file( { project, export_record, blob: export_blob } )
 
+            if( result === `activation-required` ) {
+                toast( `Tap Share again to open the native share sheet.` )
+                return
+            }
+
             if( result !== `unsupported` ) {
                 log.info( `Ready export share finished`, {
                     project_id: project.id,

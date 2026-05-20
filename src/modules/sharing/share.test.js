@@ -33,6 +33,20 @@ describe( `sharing helpers`, () => {
         expect( file.type ).toBe( `video/webm` )
     } )
 
+    test( `normalizes codec MIME parameters to shareable video file types`, () => {
+        const mp4_export_record = {
+            filename: `may-17-2026.mp4`,
+            mime_type: `video/mp4;codecs=avc1.42e01e,mp4a.40.2`
+        }
+        const mp4_blob = new Blob( [ `video` ], {
+            type: `video/mp4;codecs=avc1.42e01e,mp4a.40.2`
+        } )
+        const file = create_share_file( mp4_export_record, mp4_blob )
+
+        expect( file.name ).toBe( `may-17-2026.mp4` )
+        expect( file.type ).toBe( `video/mp4` )
+    } )
+
     test( `reports unsupported native sharing when the browser has no share API`, () => {
         vi.stubGlobal( `navigator`, {} )
 
@@ -45,7 +59,8 @@ describe( `sharing helpers`, () => {
 
         vi.stubGlobal( `navigator`, { share, canShare } )
 
-        await expect( share_export_file( { project, export_record, blob } ) ).resolves.toBe( `shared` )
+        const share_result = share_export_file( { project, export_record, blob } )
+
         expect( canShare ).toHaveBeenCalledWith( {
             files: [ expect.objectContaining( { name: export_record.filename } ) ]
         } )
@@ -54,6 +69,23 @@ describe( `sharing helpers`, () => {
             title: project.title,
             text: `Video journal export`
         } )
+        await expect( share_result ).resolves.toBe( `shared` )
+    } )
+
+    test( `does not call native share after transient activation expires`, async () => {
+        vi.stubGlobal( `navigator`, {
+            canShare: vi.fn().mockReturnValue( true ),
+            share: vi.fn(),
+            userActivation: {
+                isActive: false
+            }
+        } )
+
+        await expect( share_export_file( { project, export_record, blob } ) ).resolves.toBe( `activation-required` )
+        expect( navigator.canShare ).toHaveBeenCalledWith( {
+            files: [ expect.objectContaining( { name: export_record.filename } ) ]
+        } )
+        expect( navigator.share ).not.toHaveBeenCalled()
     } )
 
     test( `returns unsupported when native file sharing rejects the file`, async () => {

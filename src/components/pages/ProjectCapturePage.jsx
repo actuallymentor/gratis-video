@@ -775,6 +775,8 @@ export function ProjectCapturePage() {
                 clear_cached_export()
             } else {
                 try {
+                    // Web Share must start from this same tap, so only already-loaded
+                    // export blobs are eligible for immediate native sharing.
                     const share_result = await share_export_file( {
                         project,
                         export_record: cached_export_record,

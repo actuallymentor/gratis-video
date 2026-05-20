@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.2] - 2026-05-20
+
+### Fixed
+- keep native export sharing inside explicit user activation
+- use shareable video MIME metadata for exported files
+
 ## [0.5.1] - 2026-05-20
 
 ### Fixed
