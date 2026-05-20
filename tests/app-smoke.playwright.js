@@ -374,6 +374,28 @@ test.describe( `daily video journal app`, () => {
             }
         } )
 
+        const preview_device_id = await page.evaluate( () => {
+            const preview = document.querySelector( `video[aria-label="Live camera preview"]` )
+            const [ track ] = preview?.srcObject?.getVideoTracks?.() ?? []
+            return track?.getSettings?.().deviceId ?? null
+        } )
+
+        await page.getByRole( `button`, { name: `Record clip` } ).click()
+        await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
+        await expect.poll( () => page.evaluate( () => window.__get_user_media_calls.length ) ).toBeGreaterThanOrEqual( 2 )
+
+        if( preview_device_id ) {
+            const recording_constraints = await page.evaluate( () => window.__get_user_media_calls.at( -1 ) )
+
+            expect( recording_constraints.video.deviceId ).toEqual( {
+                exact: preview_device_id
+            } )
+        }
+
+        await page.waitForTimeout( 500 )
+        await page.getByRole( `button`, { name: `Stop recording` } ).click()
+        await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
+
         const active_capture_url = page.url()
 
         await page.goto( `/` )

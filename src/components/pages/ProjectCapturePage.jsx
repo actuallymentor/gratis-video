@@ -70,6 +70,27 @@ const Preview = styled.div`
     }
 `
 
+const CameraChooser = styled.label`
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--color-muted);
+    font-size: 0.95rem;
+    font-weight: 800;
+
+    select {
+        min-width: 0;
+        flex: 1;
+        min-height: 2.75rem;
+        border: 1px solid rgba( 18, 49, 51, 0.18 );
+        border-radius: 0.5rem;
+        padding: 0.55rem 0.75rem;
+        background: #ffffff;
+        color: var(--color-text);
+        font: inherit;
+    }
+`
+
 const ReadyState = styled.div`
     max-width: 28ch;
     padding: 1rem;
@@ -668,6 +689,8 @@ export function ProjectCapturePage() {
         ? status_message
         : null
     const preview_status_message = storage_error || ( bottom_status_message ? null : status_message )
+    const camera_devices = recording.camera_devices ?? []
+    const show_camera_chooser = camera_devices.length > 1
 
     return <AppFrame>
         <Content>
@@ -696,6 +719,21 @@ export function ProjectCapturePage() {
                                 : `Press record to open the camera and save the next clip.` }
                         </ReadyState> }
                     </Preview>
+                    { show_camera_chooser ? <CameraChooser>
+                        Camera
+                        <select
+                            value={ recording.selected_video_device_id ?? `` }
+                            onChange={ ( event ) => recording.select_camera_device( event.target.value ) }
+                            disabled={ recording_in_progress || media_stream_state === `opening` }
+                        >
+                            { camera_devices.map( ( camera_device, index ) => <option
+                                key={ camera_device.device_id }
+                                value={ camera_device.device_id }
+                            >
+                                { camera_device.label || `Camera ${ index + 1 }` }
+                            </option> ) }
+                        </select>
+                    </CameraChooser> : null }
                     <PermissionNotice
                         message={ preview_status_message }
                         action_to={ permission_recovery_needed ? settings_return_path : null }

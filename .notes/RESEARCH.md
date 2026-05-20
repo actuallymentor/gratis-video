@@ -1,5 +1,6 @@
 # Research
 
+- 2026-05-20: MDN and the Media Capture spec document `enumerateDevices()` for discovering `videoinput` devices and `MediaTrackConstraints.deviceId` for requesting a specific camera. Device labels may be empty until permission is granted, so camera selection should refresh after preview/capture opens.
 - 2026-05-19: Cloudflare Workers Static Assets `html_handling = "auto-trailing-slash"` redirects root `index.html` requests to the extensionless root URL; setting `html_handling = "none"` makes explicit `/index.html` requests directly serve the asset and makes extensionless HTML paths fall through to `not_found_handling`. This matters because service workers cannot safely answer a navigation with a redirected app-shell response.
 - 2026-05-19: MDN MediaTrackConstraints documents `resizeMode: none` as using the resolution provided by the underlying camera/driver/OS, while `crop-and-scale` allows cropping/downscaling. MDN MediaStreamTrack docs say `getCapabilities()` exposes supported width/height ranges and `getSettings()` reports the active track configuration.
 - 2026-05-18: MDN Web media autoplay guidance says script-started media playback with audible tracks can be blocked outside user interaction, while muted media is generally allowed. Keep export playback resilient with muted fallback for detached video elements.

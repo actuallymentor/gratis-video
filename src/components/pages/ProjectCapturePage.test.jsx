@@ -35,6 +35,9 @@ const recording_state = vi.hoisted( () => ( {
     error_message: null,
     permission_recovery_needed: false,
     recording_state: `idle`,
+    camera_devices: [],
+    selected_video_device_id: null,
+    select_camera_device: vi.fn(),
     open_preview: vi.fn(),
     press_record: vi.fn(),
     release_record: vi.fn(),
@@ -49,6 +52,9 @@ vi.mock( '../../hooks/use_recording_controller.js', () => ( {
         permission_recovery_needed: recording_state.permission_recovery_needed,
         recording_state: recording_state.recording_state,
         elapsed_ms: 0,
+        camera_devices: recording_state.camera_devices,
+        selected_video_device_id: recording_state.selected_video_device_id,
+        select_camera_device: recording_state.select_camera_device,
         open_preview: recording_state.open_preview,
         press_record: recording_state.press_record,
         release_record: recording_state.release_record,
@@ -197,6 +203,9 @@ describe( `project capture page`, () => {
         recording_state.error_message = null
         recording_state.permission_recovery_needed = false
         recording_state.recording_state = `idle`
+        recording_state.camera_devices = []
+        recording_state.selected_video_device_id = null
+        recording_state.select_camera_device.mockReset()
         recording_state.open_preview.mockReset()
         recording_state.press_record.mockReset()
         recording_state.release_record.mockReset()
@@ -233,6 +242,30 @@ describe( `project capture page`, () => {
         await user.click( screen.getAllByRole( `button`, { name: `Share or export project` } )[ 0 ] )
 
         expect( await screen.findByText( /Export panel open/ ) ).toBeTruthy()
+    } )
+
+    test( `shows a camera picker when multiple cameras are available`, async () => {
+        const user = userEvent.setup()
+
+        recording_state.camera_devices = [
+            {
+                device_id: `rear-wide-camera`,
+                label: `Back Ultra Wide Camera`
+            },
+            {
+                device_id: `rear-normal-camera`,
+                label: `Back Camera`
+            }
+        ]
+        recording_state.selected_video_device_id = `rear-wide-camera`
+
+        render_capture()
+
+        const camera_select = await screen.findByLabelText( `Camera` )
+
+        await user.selectOptions( camera_select, `rear-normal-camera` )
+
+        expect( recording_state.select_camera_device ).toHaveBeenCalledWith( `rear-normal-camera` )
     } )
 
     test( `does not export while recording is active`, async () => {

@@ -19,6 +19,7 @@ import {
     create_media_recorder,
     generate_video_thumbnail,
     get_video_metadata,
+    list_video_input_devices,
     play_sound_feedback,
     pulse_haptic,
     request_capture_stream,
@@ -57,6 +58,7 @@ vi.mock( '../modules/media/recorder.js', () => ( {
         width: 640,
         height: 360
     } ),
+    list_video_input_devices: vi.fn().mockResolvedValue( [] ),
     play_sound_feedback: vi.fn(),
     pulse_haptic: vi.fn(),
     request_capture_stream: vi.fn(),
@@ -77,17 +79,21 @@ const make_deferred = () => {
     return { promise, resolve, reject }
 }
 
-const make_stream = () => {
+const make_stream = ( { video_device_id = null } = {} ) => {
     const track = {
         addEventListener: vi.fn(),
+        getSettings: vi.fn( () => video_device_id ? { deviceId: video_device_id } : {} ),
         stop: vi.fn()
+    }
+
+    const stream = {
+        getTracks: () => [ track ],
+        getVideoTracks: () => [ track ]
     }
 
     return {
         track,
-        stream: {
-            getTracks: () => [ track ]
-        }
+        stream
     }
 }
 
@@ -147,6 +153,7 @@ describe( `recording controller`, () => {
         vi.mocked( estimate_storage ).mockReset()
         vi.mocked( generate_video_thumbnail ).mockReset()
         vi.mocked( get_video_metadata ).mockReset()
+        vi.mocked( list_video_input_devices ).mockReset()
         vi.mocked( persisted_storage ).mockReset()
         vi.mocked( play_sound_feedback ).mockReset()
         vi.mocked( pulse_haptic ).mockReset()
@@ -175,6 +182,7 @@ describe( `recording controller`, () => {
             width: 640,
             height: 360
         } )
+        vi.mocked( list_video_input_devices ).mockResolvedValue( [] )
         vi.mocked( persisted_storage ).mockResolvedValue( true )
         vi.mocked( select_supported_mime_type ).mockReturnValue( `video/webm` )
         vi.mocked( update_clip_media_details ).mockResolvedValue( { id: `clip-1` } )
@@ -286,6 +294,85 @@ describe( `recording controller`, () => {
             audio_enabled: false
         } )
         expect( controller.error_message ).toMatch( /Microphone access is blocked/ )
+    } )
+
+    test( `pins recording capture to the camera used by the live preview`, async () => {
+        const preview = make_stream( { video_device_id: `rear-normal-camera` } )
+        const recording = make_stream( { video_device_id: `rear-normal-camera` } )
+        const recorder = make_recorder()
+
+        vi.mocked( request_capture_stream )
+            .mockResolvedValueOnce( preview.stream )
+            .mockResolvedValueOnce( recording.stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            await controller.open_preview( { force: true } )
+        } )
+
+        expect( request_capture_stream ).toHaveBeenNthCalledWith( 1, {
+            audio_enabled: false
+        } )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+        expect( request_capture_stream ).toHaveBeenNthCalledWith( 2, {
+            audio_enabled: true,
+            video_device_id: `rear-normal-camera`
+        } )
+        expect( preview.track.stop ).toHaveBeenCalledTimes( 1 )
+    } )
+
+    test( `reopens preview with a selected camera device`, async () => {
+        const first_preview = make_stream( { video_device_id: `rear-wide-camera` } )
+        const second_preview = make_stream( { video_device_id: `rear-normal-camera` } )
+
+        vi.mocked( list_video_input_devices ).mockResolvedValue( [
+            {
+                device_id: `rear-wide-camera`,
+                group_id: `rear`,
+                label: `Back Ultra Wide Camera`
+            },
+            {
+                device_id: `rear-normal-camera`,
+                group_id: `rear`,
+                label: `Back Camera`
+            }
+        ] )
+        vi.mocked( request_capture_stream )
+            .mockResolvedValueOnce( first_preview.stream )
+            .mockResolvedValueOnce( second_preview.stream )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            await controller.open_preview( { force: true } )
+        } )
+
+        await waitFor( () => {
+            expect( controller.camera_devices ).toHaveLength( 2 )
+        } )
+
+        act( () => {
+            controller.select_camera_device( `rear-normal-camera` )
+        } )
+
+        await waitFor( () => {
+            expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
+        } )
+        expect( request_capture_stream ).toHaveBeenNthCalledWith( 2, {
+            audio_enabled: false,
+            video_device_id: `rear-normal-camera`
+        } )
+        expect( first_preview.track.stop ).toHaveBeenCalledTimes( 1 )
     } )
 
     test( `stops keyboard-started pending capture on page lifecycle cancellation`, async () => {

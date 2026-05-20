@@ -18,6 +18,7 @@ import {
     generate_video_thumbnail,
     get_capture_error_message,
     get_video_metadata,
+    list_video_input_devices,
     play_sound_feedback,
     pulse_haptic,
     request_capture_stream,
@@ -40,6 +41,13 @@ const is_storage_quota_error = ( error ) => {
 
 const media_recorder_unavailable_message = `This browser cannot record video with MediaRecorder.`
 const RECORDER_STOP_TIMEOUT_MS = 3_000
+
+const get_stream_video_device_id = ( stream ) => {
+    const [ video_track = null ] = stream?.getVideoTracks?.() ?? []
+    const { deviceId = null } = video_track?.getSettings?.() ?? {}
+
+    return typeof deviceId === `string` && deviceId ? deviceId : null
+}
 
 const clear_recorder_handlers = ( recorder ) => {
     if( !recorder ) return
@@ -64,6 +72,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const [ recording_started_at, set_recording_started_at ] = useState( null )
     const [ recording_mode, set_recording_mode ] = useState( null )
     const [ timer_tick, set_timer_tick ] = useState( 0 )
+    const [ camera_devices, set_camera_devices ] = useState( [] )
+    const [ selected_video_device_id, set_selected_video_device_id ] = useState( null )
 
     const set_recording_state = useAppStore( ( state ) => state.set_recording_state )
     const recording_state = useAppStore( ( state ) => state.recording_state )
@@ -86,6 +96,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const recording_mode_ref = useRef( null )
     const preview_attempted_ref = useRef( false )
     const preview_open_promise_ref = useRef( null )
+    const selected_video_device_id_ref = useRef( null )
 
     const set_phase = useCallback( ( phase ) => {
         log.debug( `Recording phase changed`, {
@@ -103,6 +114,24 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_media_stream_state( `idle` )
     }, [ set_media_stream_state ] )
 
+    const refresh_camera_devices = useCallback( async ( active_video_device_id = null ) => {
+        const next_camera_devices = await list_video_input_devices()
+
+        if( !mounted_ref.current ) return
+
+        const selected_id = selected_video_device_id_ref.current
+        const selected_device_still_available = next_camera_devices.some( ( { device_id } ) => {
+            return device_id === selected_id
+        } )
+        const next_selected_id = selected_id && selected_device_still_available
+            ? selected_id
+            : active_video_device_id
+
+        selected_video_device_id_ref.current = next_selected_id ?? null
+        set_selected_video_device_id( next_selected_id ?? null )
+        set_camera_devices( next_camera_devices )
+    }, [] )
+
     const open_preview = useCallback( ( { force = false } = {} ) => {
         if( !project_id ) return Promise.resolve( null )
         if( stream_ref.current || phase_ref.current !== `idle` ) return Promise.resolve( stream_ref.current )
@@ -112,7 +141,14 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         preview_attempted_ref.current = true
         set_media_stream_state( `opening` )
 
-        const preview_work = Promise.resolve( request_capture_stream( { audio_enabled: false } ) )
+        const preview_video_device_id = selected_video_device_id_ref.current
+        const preview_request = {
+            audio_enabled: false
+        }
+
+        if( preview_video_device_id ) preview_request.video_device_id = preview_video_device_id
+
+        const preview_work = Promise.resolve( request_capture_stream( preview_request ) )
             .then( ( preview_stream ) => {
                 if( !preview_stream ) {
                     if( mounted_ref.current ) set_media_stream_state( `idle` )
@@ -131,9 +167,16 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 stream_ref.current = preview_stream
                 set_stream( preview_stream )
                 set_media_stream_state( `active` )
+                const active_video_device_id = get_stream_video_device_id( preview_stream )
+
+                refresh_camera_devices( active_video_device_id ).catch( ( error ) => {
+                    log.warn( `Camera device list could not be refreshed`, error )
+                } )
+
                 log.debug( `Camera preview opened`, {
                     project_id,
-                    video_tracks: preview_stream.getVideoTracks?.().length ?? 0
+                    video_tracks: preview_stream.getVideoTracks?.().length ?? 0,
+                    video_device_id: active_video_device_id
                 } )
                 return preview_stream
             } )
@@ -158,6 +201,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         return preview_work
     }, [
         project_id,
+        refresh_camera_devices,
         set_media_stream_state
     ] )
 
@@ -182,6 +226,21 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         open_preview,
         set_media_stream_state,
         set_phase
+    ] )
+
+    const select_camera_device = useCallback( ( video_device_id ) => {
+        const next_video_device_id = video_device_id || null
+
+        selected_video_device_id_ref.current = next_video_device_id
+        set_selected_video_device_id( next_video_device_id )
+        if( phase_ref.current !== `idle` ) return
+
+        preview_attempted_ref.current = false
+        clear_current_stream()
+        if( !document.hidden ) open_preview( { force: true } )
+    }, [
+        clear_current_stream,
+        open_preview
     ] )
 
     const refresh_environment_state = useCallback( async () => {
@@ -445,6 +504,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_recording_mode( null )
 
         if( preview_open_promise_ref.current ) await preview_open_promise_ref.current.catch( () => null )
+        const preview_video_device_id = get_stream_video_device_id( stream_ref.current )
+            || selected_video_device_id_ref.current
         if( stream_ref.current ) clear_current_stream()
 
         set_phase( `starting` )
@@ -455,11 +516,15 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         try {
             log.debug( `Recording start requested`, {
                 project_id,
-                audio_enabled: permission_status.microphone !== `denied`
+                audio_enabled: permission_status.microphone !== `denied`,
+                video_device_id: preview_video_device_id
             } )
-            next_stream = await request_capture_stream( {
+            const capture_request = {
                 audio_enabled: permission_status.microphone !== `denied`
-            } )
+            }
+
+            if( preview_video_device_id ) capture_request.video_device_id = preview_video_device_id
+            next_stream = await request_capture_stream( capture_request )
             if( pending_forced_stop_ref.current ) {
                 log.debug( `Recording startup stopped before recorder activation`, {
                     project_id
@@ -471,11 +536,17 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             stream_ref.current = next_stream
             set_media_stream_state( `active` )
             const capture_warning = next_stream[ CAPTURE_WARNING_KEY ]
+            const active_video_device_id = get_stream_video_device_id( next_stream )
+
+            refresh_camera_devices( active_video_device_id ).catch( ( error ) => {
+                log.warn( `Camera device list could not be refreshed`, error )
+            } )
             log.debug( `Capture stream opened`, {
                 project_id,
                 video_tracks: next_stream.getVideoTracks?.().length ?? 0,
                 audio_tracks: next_stream.getAudioTracks?.().length ?? 0,
-                capture_warning: capture_warning ?? null
+                capture_warning: capture_warning ?? null,
+                video_device_id: active_video_device_id
             } )
 
             if(
@@ -655,6 +726,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         open_preview,
         project_id,
         refresh_environment_state,
+        refresh_camera_devices,
         reset_startup_after_forced_stop,
         set_phase,
         set_media_stream_state,
@@ -771,6 +843,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         recording_state,
         recording_mode,
         elapsed_ms,
+        camera_devices,
+        selected_video_device_id,
+        select_camera_device,
         open_preview,
         press_record,
         release_record,

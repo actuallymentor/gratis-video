@@ -9,15 +9,21 @@ import {
     generate_video_thumbnail,
     get_capture_error_message,
     get_video_metadata,
+    list_video_input_devices,
     pulse_haptic,
     request_capture_stream,
     select_supported_mime_type
 } from './recorder.js'
 
-const expect_unsized_video_constraints = ( constraints ) => {
+const expect_unsized_video_constraints = ( constraints, { video_device_id = null } = {} ) => {
+    const device_constraint = video_device_id
+        ? { deviceId: { exact: video_device_id } }
+        : {}
+
     expect( constraints.video ).toEqual( {
         facingMode: { ideal: `environment` },
-        resizeMode: { ideal: `none` }
+        resizeMode: { ideal: `none` },
+        ...device_constraint
     } )
     expect( constraints.video ).not.toHaveProperty( `width` )
     expect( constraints.video ).not.toHaveProperty( `height` )
@@ -148,6 +154,88 @@ describe( `recorder helpers`, () => {
             audio: false
         } ) )
         expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
+    } )
+
+    test( `lists available camera input devices`, async () => {
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: {
+                enumerateDevices: vi.fn().mockResolvedValue( [
+                    {
+                        deviceId: `camera-1`,
+                        groupId: `rear`,
+                        kind: `videoinput`,
+                        label: `Back Camera`
+                    },
+                    {
+                        deviceId: `microphone-1`,
+                        kind: `audioinput`,
+                        label: `Microphone`
+                    },
+                    {
+                        deviceId: `camera-2`,
+                        groupId: `rear`,
+                        kind: `videoinput`,
+                        label: ``
+                    }
+                ] )
+            }
+        } )
+
+        await expect( list_video_input_devices() ).resolves.toEqual( [
+            {
+                device_id: `camera-1`,
+                group_id: `rear`,
+                label: `Back Camera`
+            },
+            {
+                device_id: `camera-2`,
+                group_id: `rear`,
+                label: `Camera 2`
+            }
+        ] )
+    } )
+
+    test( `pins capture to a known camera device id`, async () => {
+        const stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn().mockResolvedValue( stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( {
+            audio_enabled: true,
+            video_device_id: `rear-normal-camera`
+        } ) ).resolves.toBe( stream )
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ], {
+            video_device_id: `rear-normal-camera`
+        } )
+    } )
+
+    test( `keeps the pinned camera device id for video-only microphone retry`, async () => {
+        const video_only_stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn()
+            .mockRejectedValueOnce( new DOMException( `No microphone`, `NotFoundError` ) )
+            .mockResolvedValueOnce( video_only_stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_capture_stream( {
+            video_device_id: `rear-normal-camera`
+        } ) ).resolves.toBe( video_only_stream )
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ], {
+            video_device_id: `rear-normal-camera`
+        } )
+        expect_unsized_video_constraints( getUserMedia.mock.calls[ 1 ][ 0 ], {
+            video_device_id: `rear-normal-camera`
+        } )
+        expect( getUserMedia.mock.calls[ 1 ][ 0 ] ).toMatchObject( {
+            audio: false
+        } )
     } )
 
     test( `asks the opened camera track for its full native resolution while keeping portrait shape`, async () => {

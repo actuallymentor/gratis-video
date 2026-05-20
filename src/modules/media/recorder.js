@@ -61,6 +61,15 @@ const camera_denied_error = () => new DOMException(
 
 const is_finite_number = ( value ) => Number.isFinite( value )
 
+const make_capture_video_constraints = ( { video_device_id = null } = {} ) => {
+    if( !video_device_id ) return capture_video_constraints
+
+    return {
+        ...capture_video_constraints,
+        deviceId: { exact: video_device_id }
+    }
+}
+
 // `MediaTrackCapabilities` reports the maximum value each dimension can take
 // across any sensor mode. Those independent maxes may not be simultaneously
 // achievable: a phone that supports 4032x3024 (landscape) and 3024x4032
@@ -156,6 +165,25 @@ export function get_supported_mime_types( candidates = recording_mime_candidates
 }
 
 /**
+ * Lists camera input devices available to this origin.
+ * @returns {Promise<Array<Object>>} Video input device options.
+ */
+export async function list_video_input_devices() {
+    if( !globalThis.navigator?.mediaDevices?.enumerateDevices ) return []
+
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const video_devices = devices.filter( ( { kind, deviceId } ) => {
+        return kind === `videoinput` && deviceId
+    } )
+
+    return video_devices.map( ( { deviceId, groupId, label }, index ) => ( {
+        device_id: deviceId,
+        group_id: groupId || null,
+        label: label || `Camera ${ index + 1 }`
+    } ) )
+}
+
+/**
  * Classifies a record-button pointer gesture.
  * @param {number} duration_ms - Pointer press duration.
  * @param {number} threshold_ms - Hold threshold.
@@ -178,9 +206,13 @@ export function stop_media_stream( stream ) {
  * Opens the camera and microphone from an explicit user action.
  * @param {Object} options - Capture request options.
  * @param {boolean} options.audio_enabled - Whether to request microphone audio.
+ * @param {string|null} options.video_device_id - Specific camera source to reuse.
  * @returns {Promise<MediaStream>} Media stream.
  */
-export async function request_capture_stream( { audio_enabled = true } = {} ) {
+export async function request_capture_stream( {
+    audio_enabled = true,
+    video_device_id = null
+} = {} ) {
     if( globalThis.isSecureContext === false ) {
         throw new Error( `Camera and microphone require a secure browser origin.` )
     }
@@ -189,8 +221,9 @@ export async function request_capture_stream( { audio_enabled = true } = {} ) {
         throw new Error( `This browser does not support camera or microphone capture.` )
     }
 
+    const video_constraints = make_capture_video_constraints( { video_device_id } )
     const capture_constraints = {
-        video: capture_video_constraints,
+        video: video_constraints,
         audio: audio_enabled ? capture_audio_constraints : false
     }
 
@@ -208,7 +241,7 @@ export async function request_capture_stream( { audio_enabled = true } = {} ) {
         try {
             const video_only_stream = await prefer_full_resolution(
                 await navigator.mediaDevices.getUserMedia( {
-                    video: capture_video_constraints,
+                    video: video_constraints,
                     audio: false
                 } )
             )

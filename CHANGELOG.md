@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.27] - 2026-05-20
+
+### Fixed
+- preserve the preview camera source when recording on multi-camera devices
+
 ## [0.3.26] - 2026-05-19
 
 ### Fixed
