@@ -305,9 +305,25 @@ describe( `client-side remux exporter`, () => {
         } ) ).toMatchObject( {
             ok: false
         } )
+
+        expect( can_attempt_remux_export( {
+            clips: [ { mime_type: `application/mp4` } ],
+            settings: default_settings
+        } ) ).toMatchObject( {
+            ok: false
+        } )
+
+        expect( can_attempt_remux_export( {
+            clips: [ { mime_type: `video/mp4-fragment` } ],
+            settings: default_settings
+        } ) ).toMatchObject( {
+            ok: false
+        } )
     } )
 
     test( `copies packets into one output with continuous timestamps`, async () => {
+        const progress = []
+
         vi.mocked( get_clip_blob ).mockImplementation( ( clip_id ) => {
             if( clip_id === `clip-a` ) return Promise.resolve( make_clip_blob() )
             return Promise.resolve( make_clip_blob() )
@@ -319,7 +335,8 @@ describe( `client-side remux exporter`, () => {
                 { id: `clip-b`, mime_type: `video/webm` }
             ],
             settings: default_settings,
-            signal: new AbortController().signal
+            signal: new AbortController().signal,
+            on_progress: ( update ) => progress.push( update )
         } )
 
         const [ video_source ] = mediabunny_mock.state.video_sources
@@ -349,6 +366,7 @@ describe( `client-side remux exporter`, () => {
         expect( video_source.closed ).toBe( true )
         expect( audio_source.closed ).toBe( true )
         expect( mediabunny_mock.state.disposed_inputs ).toHaveLength( 2 )
+        expect( progress.map( ( { percent } ) => percent ) ).toContain( 95 )
     } )
 
     test( `normalizes non-zero clip start timestamps while preserving duration`, async () => {
@@ -430,6 +448,41 @@ describe( `client-side remux exporter`, () => {
         expect( mediabunny_mock.state.disposed_inputs ).toHaveLength( 2 )
     } )
 
+    test( `rejects invalid clip timestamp metadata before writing an export`, async () => {
+        vi.mocked( get_clip_blob ).mockResolvedValue( make_clip_blob( {
+            first_timestamp: Number.NaN
+        } ) )
+
+        await expect( compile_project_remux_export( {
+            clips: [ { id: `clip-a`, mime_type: `video/webm` } ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).rejects.toBeInstanceOf( RemuxUnavailableError )
+
+        expect( mediabunny_mock.state.outputs ).toHaveLength( 0 )
+        expect( mediabunny_mock.state.disposed_inputs ).toHaveLength( 1 )
+    } )
+
+    test( `rejects invalid packet durations and closes output sources`, async () => {
+        vi.mocked( get_clip_blob ).mockResolvedValue( make_clip_blob( {
+            video_track: make_video_track( {
+                packets: [
+                    make_packet( 0, Number.NaN )
+                ]
+            } )
+        } ) )
+
+        await expect( compile_project_remux_export( {
+            clips: [ { id: `clip-a`, mime_type: `video/webm` } ],
+            settings: default_settings,
+            signal: new AbortController().signal
+        } ) ).rejects.toBeInstanceOf( RemuxUnavailableError )
+
+        expect( mediabunny_mock.state.outputs.at( 0 ).cancelled ).toBe( true )
+        expect( mediabunny_mock.state.video_sources.at( 0 ).closed ).toBe( true )
+        expect( mediabunny_mock.state.audio_sources.at( 0 ).closed ).toBe( true )
+    } )
+
     test( `cancels the output when packet copying fails`, async () => {
         vi.mocked( get_clip_blob ).mockResolvedValue( make_clip_blob( {
             video_track: make_video_track( { packets: [] } )
@@ -442,6 +495,8 @@ describe( `client-side remux exporter`, () => {
         } ) ).rejects.toBeInstanceOf( RemuxUnavailableError )
 
         expect( mediabunny_mock.state.outputs.at( 0 ).cancelled ).toBe( true )
+        expect( mediabunny_mock.state.video_sources.at( 0 ).closed ).toBe( true )
+        expect( mediabunny_mock.state.audio_sources.at( 0 ).closed ).toBe( true )
         expect( mediabunny_mock.state.disposed_inputs ).toHaveLength( 1 )
     } )
 } )

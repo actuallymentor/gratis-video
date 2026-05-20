@@ -4,6 +4,7 @@ import { get_clip_blob } from '../storage/journal_storage.js'
 const REMUXABLE_EXPORT_RESOLUTION = `source`
 const REMUX_PROGRESS_START_PERCENT = 1
 const REMUX_PROGRESS_END_PERCENT = 95
+const REMUX_PROGRESS_RANGE = REMUX_PROGRESS_END_PERCENT - REMUX_PROGRESS_START_PERCENT
 
 let mediabunny_module_promise = null
 
@@ -36,14 +37,23 @@ const container_definitions = [
 ]
 
 const load_mediabunny = () => {
-    mediabunny_module_promise ??= import( 'mediabunny' )
+    mediabunny_module_promise ??= import( 'mediabunny' ).catch( ( error ) => {
+        mediabunny_module_promise = null
+        throw error
+    } )
 
     return mediabunny_module_promise
 }
 
+const get_base_mime_type = ( mime_type = `` ) => {
+    return mime_type.toLowerCase().split( `;` ).at( 0 )?.trim() ?? ``
+}
+
 const get_container_from_mime_type = ( mime_type = `` ) => {
-    return container_definitions.find( ( { key, mime_type: container_mime_type } ) => {
-        return mime_type.includes( key ) || mime_type.startsWith( container_mime_type )
+    const base_mime_type = get_base_mime_type( mime_type )
+
+    return container_definitions.find( ( { mime_type: container_mime_type } ) => {
+        return base_mime_type === container_mime_type
     } ) ?? null
 }
 
@@ -75,7 +85,7 @@ const get_metadata_container = ( clips ) => {
 
 const preferred_mime_matches_container = ( settings, container ) => {
     if( !settings.preferred_mime_type ) return true
-    return settings.preferred_mime_type.startsWith( container.mime_type )
+    return get_base_mime_type( settings.preferred_mime_type ) === container.mime_type
 }
 
 const normalize_signature_value = ( value ) => {
@@ -107,6 +117,12 @@ const normalize_signature_value = ( value ) => {
 }
 
 const make_signature = ( value ) => JSON.stringify( normalize_signature_value( value ) )
+
+const assert_finite_number = ( value, message ) => {
+    if( Number.isFinite( value ) ) return value
+
+    throw remux_unavailable( message )
+}
 
 const read_video_info = async ( video_track ) => {
     const [
@@ -223,12 +239,18 @@ const inspect_remux_input = async ( { blob, clip, clip_index, mediabunny, signal
         if( !video_track ) throw remux_unavailable( `A clip has no video track to export losslessly.` )
 
         const audio_track = await input.getPrimaryAudioTrack()
+        throw_if_aborted( signal )
+
         const tracks = [ video_track, audio_track ].filter( Boolean )
         const first_timestamp = await input.getFirstTimestamp( tracks )
+        assert_finite_number( first_timestamp, `A clip has invalid timestamp metadata.` )
+        throw_if_aborted( signal )
+
         const [ video_info, audio_info ] = await Promise.all( [
             read_video_info( video_track ),
             read_audio_info( audio_track )
         ] )
+        throw_if_aborted( signal )
 
         return {
             audio_info,
@@ -275,6 +297,9 @@ const validate_remux_inputs = ( remux_inputs, settings ) => {
 }
 
 const make_remuxed_packet = ( packet, { sequence_state, timestamp_delta } ) => {
+    assert_finite_number( packet.timestamp, `A clip packet has an invalid timestamp.` )
+    assert_finite_number( packet.duration, `A clip packet has an invalid duration.` )
+
     return packet.clone( {
         sequenceNumber: sequence_state.next++,
         timestamp: packet.timestamp + timestamp_delta
@@ -292,6 +317,10 @@ const add_packet_to_source = async ( {
         sequence_state,
         timestamp_delta
     } )
+    assert_finite_number( remuxed_packet.timestamp, `A remuxed packet has an invalid timestamp.` )
+    assert_finite_number( remuxed_packet.duration, `A remuxed packet has an invalid duration.` )
+
+    // All clips must share decoder config, so the output track only needs it once.
     const metadata = sequence_state.next === 1
         ? { decoderConfig: decoder_config }
         : undefined
@@ -344,7 +373,12 @@ const pipe_clip_packets = async ( {
     video_sequence_state,
     video_source
 } ) => {
+    assert_finite_number( clip_offset, `Lossless export clip timing became invalid.` )
+    assert_finite_number( remux_input.first_timestamp, `A clip has invalid timestamp metadata.` )
+
     const timestamp_delta = clip_offset - remux_input.first_timestamp
+    assert_finite_number( timestamp_delta, `Lossless export timestamp adjustment became invalid.` )
+
     const video_duration = pipe_track_packets( {
         decoder_config: remux_input.video_info.decoder_config,
         mediabunny,
@@ -395,6 +429,14 @@ const write_remuxed_output = async ( { mediabunny, remux_inputs, settings, signa
     const video_sequence_state = { next: 0 }
     const audio_sequence_state = { next: 0 }
     let finalized = false
+    let sources_closed = false
+
+    const close_output_sources = () => {
+        if( sources_closed ) return
+
+        close_sources( [ video_source, audio_source ] )
+        sources_closed = true
+    }
 
     output.addVideoTrack( video_source, {
         hasOnlyKeyPackets: first_input.video_info.has_only_key_packets,
@@ -423,7 +465,7 @@ const write_remuxed_output = async ( { mediabunny, remux_inputs, settings, signa
             } )
             const percent = Math.min(
                 REMUX_PROGRESS_END_PERCENT,
-                Math.round( REMUX_PROGRESS_START_PERCENT +  ( index + 1 ) / remux_inputs.length  * 90 )
+                Math.round( REMUX_PROGRESS_START_PERCENT +  ( index + 1 ) / remux_inputs.length  * REMUX_PROGRESS_RANGE )
             )
 
             on_progress?.( {
@@ -434,7 +476,7 @@ const write_remuxed_output = async ( { mediabunny, remux_inputs, settings, signa
             return next_offset
         }, Promise.resolve( 0 ) )
 
-        close_sources( [ video_source, audio_source ] )
+        close_output_sources()
         throw_if_aborted( signal )
         await output.finalize()
         finalized = true
@@ -442,6 +484,7 @@ const write_remuxed_output = async ( { mediabunny, remux_inputs, settings, signa
         const mime_type = await output.getMimeType().catch( () => first_input.container.mime_type )
         const { buffer } = target
         if( !buffer?.byteLength ) throw new Error( `Lossless export did not produce a video file.` )
+        assert_finite_number( duration_seconds, `Lossless export duration became invalid.` )
 
         on_progress?.( {
             percent: 100,
@@ -455,6 +498,7 @@ const write_remuxed_output = async ( { mediabunny, remux_inputs, settings, signa
             warnings: []
         }
     } catch ( error ) {
+        close_output_sources()
         if( !finalized ) await output.cancel().catch( ( cancel_error ) => {
             log.warn( `Could not cancel failed lossless export`, cancel_error )
         } )

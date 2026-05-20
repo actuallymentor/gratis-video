@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1] - 2026-05-20
+
+### Fixed
+- retry failed remux chunk loads on later exports
+- fall back from malformed remux timing metadata
+- close remux sources after failed packet writes
+
 ## [0.5.0] - 2026-05-20
 
 ### Added
