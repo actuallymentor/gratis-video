@@ -88,3 +88,4 @@
 - The export cache hash includes an internal pipeline version. Bump it whenever existing cached exports should be invalidated because the compilation pipeline changed.
 - The capture page no longer renders the clip queue inline. Clip preview, delete, and reorder controls live inside the bottom-right clip-list sheet; tests and UI flows must open `Open clip list` before targeting those controls.
 - Idle camera preview streams are stopped while the page is hidden and reopened when it returns. Keep this behavior when changing lifecycle code because mobile browsers can resume a visually frozen camera even while the old track still looks usable.
+- If the page becomes visible while recording cleanup is still `saving`, keep the preview resume request pending and reopen from the idle cleanup path. A `pagehide` without a later visible return must still avoid reopening camera devices.

@@ -817,6 +817,71 @@ describe( `recording controller`, () => {
         expect( request_capture_stream ).toHaveBeenCalledTimes( 1 )
     } )
 
+    test( `reopens preview after returning while a background stop is still saving`, async () => {
+        const recording = make_stream()
+        const preview = make_stream()
+        const recorder = make_recorder()
+        const saved_deferred = make_deferred()
+        const date_values = [ 0, 1000 ]
+
+        vi.spyOn( Date, `now` ).mockImplementation( () => date_values.shift() ?? 1000 )
+        vi.mocked( request_capture_stream )
+            .mockResolvedValueOnce( recording.stream )
+            .mockResolvedValueOnce( preview.stream )
+        vi.mocked( create_media_recorder ).mockReturnValue( recorder )
+        clip_saved.mockReturnValue( saved_deferred.promise )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            controller.press_record()
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( recorder.start ).toHaveBeenCalledTimes( 1 )
+        } )
+
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: true
+        } )
+
+        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( expect.objectContaining( {
+                project_id: `project-1`,
+                duration_ms: 1000
+            } ) )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `saving` )
+
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: false
+        } )
+
+        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+
+        expect( request_capture_stream ).toHaveBeenCalledTimes( 1 )
+
+        await act( async () => {
+            saved_deferred.resolve()
+            await saved_deferred.promise
+            await Promise.resolve()
+        } )
+
+        await waitFor( () => {
+            expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
+        } )
+        await waitFor( () => {
+            expect( controller.stream ).toBe( preview.stream )
+        } )
+        expect( useAppStore.getState().recording_state ).toBe( `idle` )
+        expect( useAppStore.getState().media_stream_state ).toBe( `active` )
+    } )
+
     test( `stops and saves a valid clip on page lifecycle backgrounding`, async () => {
         const { stream } = make_stream()
         const recorder = make_recorder()

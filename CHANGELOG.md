@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.2] - 2026-05-21
+
+### Fixed
+- resume camera preview after returning during clip save
+
 ## [0.6.1] - 2026-05-21
 
 ### Fixed
