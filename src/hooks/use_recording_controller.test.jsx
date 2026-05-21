@@ -45,6 +45,7 @@ vi.mock( '../modules/storage/journal_storage.js', () => ( {
 } ) )
 
 vi.mock( '../modules/permissions/permissions.js', () => ( {
+    can_attempt_recording: vi.fn( ( permission_status ) => permission_status.camera !== `denied` ),
     check_media_permissions: vi.fn()
 } ) )
 
@@ -96,6 +97,9 @@ const make_stream = ( { video_device_id = null } = {} ) => {
     const track = {
         addEventListener: vi.fn(),
         getSettings: vi.fn( () => video_device_id ? { deviceId: video_device_id } : {} ),
+        muted: false,
+        readyState: `live`,
+        removeEventListener: vi.fn(),
         stop: vi.fn()
     }
 
@@ -471,6 +475,157 @@ describe( `recording controller`, () => {
         } )
     } )
 
+    test( `reopens the idle preview after returning from a hidden page`, async () => {
+        const first_preview = make_stream( { video_device_id: `rear-normal-camera` } )
+        const second_preview = make_stream( { video_device_id: `rear-normal-camera` } )
+
+        vi.mocked( request_capture_stream )
+            .mockResolvedValueOnce( first_preview.stream )
+            .mockResolvedValueOnce( second_preview.stream )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            await controller.open_preview( { force: true } )
+        } )
+
+        expect( controller.stream ).toBe( first_preview.stream )
+
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: true
+        } )
+
+        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+
+        expect( first_preview.track.stop ).toHaveBeenCalledTimes( 1 )
+        expect( useAppStore.getState().media_stream_state ).toBe( `idle` )
+
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: false
+        } )
+
+        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+
+        await waitFor( () => {
+            expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
+        } )
+        await waitFor( () => {
+            expect( controller.stream ).toBe( second_preview.stream )
+        } )
+        expect( useAppStore.getState().media_stream_state ).toBe( `active` )
+    } )
+
+    test( `does not attach a preview stream that resolves while the page is hidden`, async () => {
+        const preview_deferred = make_deferred()
+        const first_preview = make_stream()
+        const second_preview = make_stream()
+
+        vi.mocked( request_capture_stream )
+            .mockReturnValueOnce( preview_deferred.promise )
+            .mockResolvedValueOnce( second_preview.stream )
+
+        render( <Harness /> )
+
+        const preview_promise = controller.open_preview( { force: true } )
+
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: true
+        } )
+        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+
+        await act( async () => {
+            preview_deferred.resolve( first_preview.stream )
+            await preview_promise
+        } )
+
+        expect( first_preview.track.stop ).toHaveBeenCalledTimes( 1 )
+        expect( controller.stream ).toBe( null )
+
+        Object.defineProperty( document, `hidden`, {
+            configurable: true,
+            value: false
+        } )
+        act( () => window.dispatchEvent( new Event( `pageshow` ) ) )
+
+        await waitFor( () => {
+            expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
+        } )
+        await waitFor( () => {
+            expect( controller.stream ).toBe( second_preview.stream )
+        } )
+    } )
+
+    test( `reopens the visible idle preview when the video track ends`, async () => {
+        const first_preview = make_stream()
+        const second_preview = make_stream()
+
+        vi.mocked( request_capture_stream )
+            .mockResolvedValueOnce( first_preview.stream )
+            .mockResolvedValueOnce( second_preview.stream )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            await controller.open_preview( { force: true } )
+        } )
+
+        const [ , ended_listener ] = first_preview.track.addEventListener.mock.calls.find( ( [ event_name ] ) => event_name === `ended` )
+
+        act( () => ended_listener() )
+
+        await waitFor( () => {
+            expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
+        } )
+        expect( first_preview.track.stop ).toHaveBeenCalledTimes( 1 )
+        await waitFor( () => {
+            expect( controller.stream ).toBe( second_preview.stream )
+        } )
+    } )
+
+    test( `reopens the visible idle preview when the video track stays muted`, async () => {
+        const first_preview = make_stream()
+        const second_preview = make_stream()
+        let fake_timers_active = false
+
+        try {
+            vi.mocked( request_capture_stream )
+                .mockResolvedValueOnce( first_preview.stream )
+                .mockResolvedValueOnce( second_preview.stream )
+
+            render( <Harness /> )
+
+            await act( async () => {
+                await controller.open_preview( { force: true } )
+            } )
+
+            const [ , mute_listener ] = first_preview.track.addEventListener.mock.calls.find( ( [ event_name ] ) => event_name === `mute` )
+
+            vi.useFakeTimers()
+            fake_timers_active = true
+            first_preview.track.muted = true
+            act( () => mute_listener() )
+
+            await act( async () => {
+                await vi.advanceTimersByTimeAsync( 700 )
+            } )
+            vi.useRealTimers()
+            fake_timers_active = false
+
+            await waitFor( () => {
+                expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
+            } )
+            expect( first_preview.track.stop ).toHaveBeenCalledTimes( 1 )
+            await waitFor( () => {
+                expect( controller.stream ).toBe( second_preview.stream )
+            } )
+        } finally {
+            if( fake_timers_active ) vi.useRealTimers()
+        }
+    } )
+
     test( `stops keyboard-started pending capture on page lifecycle cancellation`, async () => {
         const stream_deferred = make_deferred()
         const { stream, track } = make_stream()
@@ -659,6 +814,7 @@ describe( `recording controller`, () => {
         expect( recorder.ondataavailable ).toBe( null )
         expect( recorder.onerror ).toBe( null )
         expect( recorder.onstop ).toBe( null )
+        expect( request_capture_stream ).toHaveBeenCalledTimes( 1 )
     } )
 
     test( `stops and saves a valid clip on page lifecycle backgrounding`, async () => {
@@ -693,6 +849,7 @@ describe( `recording controller`, () => {
         expect( recorder.ondataavailable ).toBe( null )
         expect( recorder.onerror ).toBe( null )
         expect( recorder.onstop ).toBe( null )
+        expect( request_capture_stream ).toHaveBeenCalledTimes( 1 )
     } )
 
     test( `stops and saves a valid clip after pointer cancellation during recording`, async () => {

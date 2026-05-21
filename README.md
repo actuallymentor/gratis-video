@@ -41,6 +41,7 @@ Treat API tokens as single-use secrets. If a token is pasted into chat, logs, or
 - Recording supports tap-to-start/tap-to-stop and press-and-hold.
 - Recording opens the camera preview, reuses that video stream for the saved clip, and records without MediaRecorder timeslices.
 - The capture view uses a full-screen preview with floating back, share, settings, record, and clip-list controls.
+- Camera preview refreshes itself after the browser returns from the background.
 - The preview gear opens video settings for camera selection and bitrate-backed 720p/1080p/4K recording presets; 1080p30 is the default.
 - Multi-camera devices remember the last selected camera across reloads.
 - The clip-list sheet supports preview, move earlier/later, and delete actions.

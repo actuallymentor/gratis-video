@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.1] - 2026-05-21
+
+### Fixed
+- refresh frozen camera previews after returning to the browser
+
 ## [0.6.0] - 2026-05-20
 
 ### Added

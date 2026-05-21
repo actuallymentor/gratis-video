@@ -87,3 +87,4 @@
 - Lossless remux must reject non-finite clip timestamps and packet durations so invalid media falls back to the canvas exporter instead of caching an export with `NaN` duration metadata.
 - The export cache hash includes an internal pipeline version. Bump it whenever existing cached exports should be invalidated because the compilation pipeline changed.
 - The capture page no longer renders the clip queue inline. Clip preview, delete, and reorder controls live inside the bottom-right clip-list sheet; tests and UI flows must open `Open clip list` before targeting those controls.
+- Idle camera preview streams are stopped while the page is hidden and reopened when it returns. Keep this behavior when changing lifecycle code because mobile browsers can resume a visually frozen camera even while the old track still looks usable.

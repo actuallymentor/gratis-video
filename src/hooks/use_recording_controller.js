@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { log } from 'mentie/modules/logging.js'
 import { useAppStore } from '../stores/app_store.js'
-import { check_media_permissions } from '../modules/permissions/permissions.js'
+import {
+    can_attempt_recording,
+    check_media_permissions
+} from '../modules/permissions/permissions.js'
 import {
     add_clip_to_project,
     estimate_storage,
@@ -82,6 +85,12 @@ const combine_recording_stream = ( video_stream, audio_stream = null ) => {
 
 const can_retry_without_camera_choice = ( error ) => stale_camera_error_names.has( error?.name )
 
+const has_live_video_track = ( stream ) => {
+    return ( stream?.getVideoTracks?.() ?? [] ).some( ( track ) => {
+        return track.readyState !== `ended` && !track.muted
+    } )
+}
+
 const clear_recorder_handlers = ( recorder ) => {
     if( !recorder ) return
 
@@ -130,6 +139,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const recording_mode_ref = useRef( null )
     const preview_attempted_ref = useRef( false )
     const preview_open_promise_ref = useRef( null )
+    const open_preview_ref = useRef( null )
+    const preview_resume_requested_ref = useRef( false )
+    const preview_track_cleanup_ref = useRef( null )
     const selected_video_device_id_ref = useRef( saved_video_device_id )
     const persisted_video_device_id_ref = useRef( saved_video_device_id )
 
@@ -143,6 +155,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     }, [ project_id, set_recording_state ] )
 
     const clear_current_stream = useCallback( () => {
+        preview_track_cleanup_ref.current?.()
+        preview_track_cleanup_ref.current = null
         stop_media_stream( stream_ref.current )
         stream_ref.current = null
         if( mounted_ref.current ) set_stream( null )
@@ -188,6 +202,65 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         }
     }, [ forget_video_device_id ] )
 
+    const watch_preview_track_health = useCallback( ( preview_stream ) => {
+        preview_track_cleanup_ref.current?.()
+
+        const preview_tracks = preview_stream.getVideoTracks?.() ?? []
+        const cleanup_callbacks = []
+        let muted_timeout = null
+
+        const restart_preview = ( reason ) => {
+            if( stream_ref.current !== preview_stream ) return
+            if( phase_ref.current !== `idle` ) return
+
+            preview_resume_requested_ref.current = true
+
+            if( document.hidden ) {
+                clear_current_stream()
+                return
+            }
+
+            log.warn( `Camera preview stream stopped producing frames; reopening`, {
+                project_id,
+                reason
+            } )
+            preview_attempted_ref.current = false
+            clear_current_stream()
+            open_preview_ref.current?.( { force: true } )
+        }
+
+        preview_tracks.forEach( ( track ) => {
+            const restart_after_muted_delay = () => {
+                window.clearTimeout( muted_timeout )
+                muted_timeout = window.setTimeout( () => {
+                    if( track.muted ) restart_preview( `muted` )
+                }, 700 )
+            }
+            const clear_muted_delay = () => {
+                window.clearTimeout( muted_timeout )
+                muted_timeout = null
+            }
+            const restart_after_end = () => restart_preview( `ended` )
+
+            track.addEventListener?.( `ended`, restart_after_end, { once: true } )
+            track.addEventListener?.( `mute`, restart_after_muted_delay )
+            track.addEventListener?.( `unmute`, clear_muted_delay )
+            cleanup_callbacks.push( () => {
+                track.removeEventListener?.( `ended`, restart_after_end )
+                track.removeEventListener?.( `mute`, restart_after_muted_delay )
+                track.removeEventListener?.( `unmute`, clear_muted_delay )
+            } )
+        } )
+
+        preview_track_cleanup_ref.current = () => {
+            window.clearTimeout( muted_timeout )
+            cleanup_callbacks.forEach( ( cleanup ) => cleanup() )
+        }
+    }, [
+        clear_current_stream,
+        project_id
+    ] )
+
     const refresh_camera_devices = useCallback( async ( active_video_device_id = null ) => {
         const next_camera_devices = await list_video_input_devices()
 
@@ -232,6 +305,13 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                     return null
                 }
 
+                if( document.hidden ) {
+                    preview_resume_requested_ref.current = true
+                    stop_media_stream( preview_stream )
+                    if( mounted_ref.current ) set_media_stream_state( `idle` )
+                    return null
+                }
+
                 const preview_can_attach = phase_ref.current === `idle`
                     || phase_ref.current === `starting`
 
@@ -247,6 +327,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 stream_ref.current = preview_stream
                 set_stream( preview_stream )
                 set_media_stream_state( `active` )
+                preview_resume_requested_ref.current = false
+                watch_preview_track_health( preview_stream )
                 const active_video_device_id = get_stream_video_device_id( preview_stream )
 
                 refresh_camera_devices( active_video_device_id ).catch( ( error ) => {
@@ -285,8 +367,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         request_capture_with_camera_fallback,
         saved_video_device_id,
         set_media_stream_state,
-        settings?.recording_video_preset
+        settings?.recording_video_preset,
+        watch_preview_track_health
     ] )
+    open_preview_ref.current = open_preview
 
     const reset_startup_after_forced_stop = useCallback( ( next_stream ) => {
         stop_media_stream( next_stream )
@@ -304,7 +388,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_stream( null )
         set_recording_mode( null )
         set_recording_started_at( null )
-        if( !document.hidden ) open_preview( { force: true } )
+        if( !document.hidden && !preview_resume_requested_ref.current ) open_preview( { force: true } )
     }, [
         open_preview,
         set_media_stream_state,
@@ -559,7 +643,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 }
                 clear_current_stream()
                 set_phase( `idle` )
-                if( mounted_ref.current && !document.hidden ) open_preview( { force: true } )
+                if( mounted_ref.current && !document.hidden && !preview_resume_requested_ref.current ) open_preview( { force: true } )
                 stopping_ref.current = null
             }
         }
@@ -855,7 +939,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             if( mounted_ref.current ) set_recording_mode( null )
             clear_current_stream()
             set_phase( `idle` )
-            if( mounted_ref.current && !document.hidden ) open_preview( { force: true } )
+            if( mounted_ref.current && !document.hidden && !preview_resume_requested_ref.current ) open_preview( { force: true } )
             refresh_environment_state().catch( ( refresh_error ) => log.warn( `Environment refresh failed`, refresh_error ) )
         }
     }, [
@@ -960,20 +1044,75 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     }, [ recording_started_at, recording_state ] )
 
     useEffect( () => {
-        const stop_when_hidden = () => {
-            if( document.hidden ) cancel_record()
-        }
-        const stop_for_page_lifecycle = () => cancel_record()
+        const suspend_preview_for_background = () => {
+            if( phase_ref.current === `recording` || phase_ref.current === `starting` ) {
+                preview_resume_requested_ref.current = true
+                cancel_record()
+                return
+            }
 
-        document.addEventListener( `visibilitychange`, stop_when_hidden )
-        window.addEventListener( `pagehide`, stop_for_page_lifecycle )
-        document.addEventListener( `freeze`, stop_for_page_lifecycle )
-        return () => {
-            document.removeEventListener( `visibilitychange`, stop_when_hidden )
-            window.removeEventListener( `pagehide`, stop_for_page_lifecycle )
-            document.removeEventListener( `freeze`, stop_for_page_lifecycle )
+            if( phase_ref.current !== `idle` ) return
+            if( !stream_ref.current && !preview_open_promise_ref.current && !preview_attempted_ref.current ) return
+
+            preview_resume_requested_ref.current = true
+            clear_current_stream()
         }
-    }, [ cancel_record ] )
+        const refresh_preview_after_return = () => {
+            if( document.hidden ) return
+            if( phase_ref.current !== `idle` ) return
+            if( !can_attempt_recording( permission_status ) ) return
+
+            const current_stream = stream_ref.current
+            const should_check_preview = preview_resume_requested_ref.current
+                || preview_attempted_ref.current
+                || Boolean( current_stream )
+
+            if( !should_check_preview ) return
+
+            if( current_stream && has_live_video_track( current_stream ) && !preview_resume_requested_ref.current ) {
+                set_media_stream_state( `active` )
+                return
+            }
+
+            log.debug( `Refreshing camera preview after page became visible`, {
+                project_id,
+                had_stream: Boolean( current_stream ),
+                resume_requested: preview_resume_requested_ref.current
+            } )
+            preview_resume_requested_ref.current = false
+            preview_attempted_ref.current = false
+            clear_current_stream()
+            open_preview( { force: true } )
+        }
+        const handle_visibility_change = () => {
+            if( document.hidden ) {
+                suspend_preview_for_background()
+                return
+            }
+
+            refresh_preview_after_return()
+        }
+
+        document.addEventListener( `visibilitychange`, handle_visibility_change )
+        window.addEventListener( `pagehide`, suspend_preview_for_background )
+        document.addEventListener( `freeze`, suspend_preview_for_background )
+        window.addEventListener( `pageshow`, refresh_preview_after_return )
+        window.addEventListener( `focus`, refresh_preview_after_return )
+        return () => {
+            document.removeEventListener( `visibilitychange`, handle_visibility_change )
+            window.removeEventListener( `pagehide`, suspend_preview_for_background )
+            document.removeEventListener( `freeze`, suspend_preview_for_background )
+            window.removeEventListener( `pageshow`, refresh_preview_after_return )
+            window.removeEventListener( `focus`, refresh_preview_after_return )
+        }
+    }, [
+        cancel_record,
+        clear_current_stream,
+        open_preview,
+        permission_status,
+        project_id,
+        set_media_stream_state
+    ] )
 
     useEffect( () => {
         return () => {
