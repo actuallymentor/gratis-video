@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-24T15:21:32Z: Added a persisted recording audio mode in capture media settings. Noise cancelling preserves the existing browser voice-processing request; Unfiltered requests echo cancellation, noise suppression, and auto gain control off.
 - 2026-05-21T14:25:41Z: Fixed a camera lifecycle race where returning to the app while background recording cleanup was still saving could leave the preview dark. Added regression coverage for a return event during the `saving` phase.
 - 2026-05-21T14:08:00Z: Fixed mobile camera-preview freezes after app/browser backgrounding by stopping idle preview streams when the page is hidden, reopening them on visible/pageshow/focus return, and watching preview video tracks for ended/muted states.
 - 2026-05-20T12:56:00Z: Reworked the project capture screen into a full-screen camera preview with floating back/share/settings controls, a transparent centered record button, and a bottom-right clip-list sheet that preserves existing preview/delete/reorder clip actions.

@@ -19,6 +19,11 @@ const Segment = styled.button`
     background: ${ ( { $active } ) => $active ? `var(--color-surface)` : `transparent` };
     box-shadow: ${ ( { $active } ) => $active ? `0 0.25rem 0.75rem rgba( 18, 49, 51, 0.08 )` : `none` };
     font-weight: 800;
+
+    &:disabled {
+        color: var(--color-muted);
+        opacity: 0.62;
+    }
 `
 
 /**
@@ -26,7 +31,7 @@ const Segment = styled.button`
  * @param {Object} props - Control props.
  * @returns {JSX.Element} Segmented control.
  */
-export function SegmentedControl( { label, options, value, on_change } ) {
+export function SegmentedControl( { label, options, value, on_change, disabled = false } ) {
     return <Group role="group" aria-label={ label } $count={ Math.max( 1, options.length ) }>
         { options.map( ( option ) => <Segment
             key={ option.value }
@@ -34,6 +39,7 @@ export function SegmentedControl( { label, options, value, on_change } ) {
             $active={ option.value === value }
             aria-pressed={ option.value === value }
             onClick={ () => on_change( option.value ) }
+            disabled={ disabled }
         >
             { option.label }
         </Segment> ) }

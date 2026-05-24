@@ -715,7 +715,8 @@ describe( `journal storage`, () => {
 
         await save_settings( {
             haptics_enabled: false,
-            last_video_device_id: `rear-normal-camera`
+            last_video_device_id: `rear-normal-camera`,
+            recording_audio_mode: `unfiltered`
         } )
 
         expect( await get_export_blob( export_record.id ) ).toBeTruthy()
@@ -805,6 +806,7 @@ describe( `journal storage`, () => {
             export_resolution: `source`,
             haptics_enabled: true,
             last_video_device_id: null,
+            recording_audio_mode: `noise_cancelling`,
             recording_video_preset: `1080p30`,
             sounds_enabled: false
         } )

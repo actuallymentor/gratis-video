@@ -146,6 +146,7 @@ const settings = {
     export_quality: `standard`,
     export_resolution: `source`,
     preferred_mime_type: null,
+    recording_audio_mode: `noise_cancelling`,
     recording_video_preset: `1080p30`,
     haptics_enabled: true,
     sounds_enabled: false
@@ -211,7 +212,10 @@ describe( `project capture page`, () => {
         } )
         vi.mocked( load_settings ).mockResolvedValue( settings )
         vi.mocked( move_clip ).mockResolvedValue( [ clip ] )
-        vi.mocked( save_settings ).mockImplementation( ( next_settings ) => Promise.resolve( next_settings ) )
+        vi.mocked( save_settings ).mockImplementation( ( next_settings ) => Promise.resolve( {
+            ...settings,
+            ...next_settings
+        } ) )
         vi.mocked( set_active_project ).mockResolvedValue()
         vi.mocked( share_export_file ).mockResolvedValue( `unsupported` )
         recording_state.error_message = null
@@ -259,7 +263,7 @@ describe( `project capture page`, () => {
         expect( await screen.findByText( /Export panel open/ ) ).toBeTruthy()
     } )
 
-    test( `shows camera selection in video settings`, async () => {
+    test( `shows camera selection in media settings`, async () => {
         const user = userEvent.setup()
 
         recording_state.camera_devices = [
@@ -277,7 +281,7 @@ describe( `project capture page`, () => {
         render_capture()
 
         await screen.findByText( project.title )
-        await user.click( screen.getByRole( `button`, { name: `Open video settings` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Open media settings` } ) )
         const camera_select = await screen.findByLabelText( `Camera` )
 
         await user.selectOptions( camera_select, `rear-normal-camera` )
@@ -285,22 +289,40 @@ describe( `project capture page`, () => {
         expect( recording_state.select_camera_device ).toHaveBeenCalledWith( `rear-normal-camera` )
     } )
 
-    test( `saves the selected recording preset from video settings`, async () => {
+    test( `saves the selected recording preset from media settings`, async () => {
         const user = userEvent.setup()
 
         render_capture()
 
         await screen.findByText( project.title )
-        await user.click( screen.getByRole( `button`, { name: `Open video settings` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Open media settings` } ) )
         await user.click( screen.getByRole( `button`, { name: /4K 30/ } ) )
 
         await waitFor( () => {
-            expect( save_settings ).toHaveBeenCalledWith( expect.objectContaining( {
+            expect( save_settings ).toHaveBeenCalledWith( {
                 recording_video_preset: `4k30`
-            } ) )
+            } )
         } )
         await waitFor( () => {
             expect( recording_state.refresh_preview ).toHaveBeenCalledTimes( 1 )
+        } )
+    } )
+
+    test( `saves the selected audio mode from media settings`, async () => {
+        const user = userEvent.setup()
+
+        render_capture()
+
+        await screen.findByText( project.title )
+        await user.click( screen.getByRole( `button`, { name: `Open media settings` } ) )
+        expect( await screen.findByRole( `dialog`, { name: `Media settings` } ) ).toBeTruthy()
+
+        await user.click( screen.getByRole( `button`, { name: `Unfiltered` } ) )
+
+        await waitFor( () => {
+            expect( save_settings ).toHaveBeenCalledWith( {
+                recording_audio_mode: `unfiltered`
+            } )
         } )
     } )
 

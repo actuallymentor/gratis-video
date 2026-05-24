@@ -14,6 +14,7 @@ import {
     update_clip_media_details
 } from '../modules/storage/journal_storage.js'
 import {
+    DEFAULT_RECORDING_AUDIO_MODE,
     DEFAULT_RECORDING_VIDEO_PRESET,
     HOLD_THRESHOLD_MS,
     MINIMUM_CLIP_MS,
@@ -765,7 +766,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
             if( should_request_audio ) {
                 try {
-                    audio_stream = await request_audio_stream()
+                    audio_stream = await request_audio_stream( {
+                        recording_audio_mode: settings?.recording_audio_mode ?? DEFAULT_RECORDING_AUDIO_MODE
+                    } )
                 } catch ( error ) {
                     log.warn( `Microphone could not be added to recording; continuing video-only`, error )
                     capture_warning = error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError`
@@ -984,6 +987,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         set_phase,
         set_media_stream_state,
         settings.haptics_enabled,
+        settings?.recording_audio_mode,
         settings?.recording_video_preset,
         settings.sounds_enabled,
         permission_status.microphone,

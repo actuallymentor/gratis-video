@@ -3,12 +3,14 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
     CAPTURE_WARNING_KEY,
+    DEFAULT_RECORDING_AUDIO_MODE,
     DEFAULT_RECORDING_VIDEO_PRESET,
     HOLD_THRESHOLD_MS,
     classify_recording_gesture,
     create_media_recorder,
     generate_video_thumbnail,
     get_capture_error_message,
+    get_recording_audio_mode,
     get_recording_video_preset,
     get_video_metadata,
     list_video_input_devices,
@@ -67,6 +69,10 @@ describe( `recorder helpers`, () => {
 
     test( `falls back to the default recording video preset for stale values`, () => {
         expect( get_recording_video_preset( `missing` ).value ).toBe( DEFAULT_RECORDING_VIDEO_PRESET )
+    } )
+
+    test( `falls back to the default recording audio mode for stale values`, () => {
+        expect( get_recording_audio_mode( `missing` ).value ).toBe( DEFAULT_RECORDING_AUDIO_MODE )
     } )
 
     test( `falls back to the default recorder constructor when a supported MIME option fails`, () => {
@@ -167,6 +173,7 @@ describe( `recorder helpers`, () => {
         expect( getUserMedia ).toHaveBeenCalledTimes( 2 )
         expect( getUserMedia.mock.calls[ 0 ][ 0 ] ).toMatchObject( {
             audio: {
+                autoGainControl: true,
                 echoCancellation: true,
                 noiseSuppression: true
             }
@@ -208,8 +215,31 @@ describe( `recorder helpers`, () => {
         expect( getUserMedia ).toHaveBeenCalledWith( {
             video: false,
             audio: {
+                autoGainControl: true,
                 echoCancellation: true,
                 noiseSuppression: true
+            }
+        } )
+    } )
+
+    test( `requests unfiltered microphone audio when selected`, async () => {
+        const audio_stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn().mockResolvedValue( audio_stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_audio_stream( {
+            recording_audio_mode: `unfiltered`
+        } ) ).resolves.toBe( audio_stream )
+        expect( getUserMedia ).toHaveBeenCalledWith( {
+            video: false,
+            audio: {
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false
             }
         } )
     } )

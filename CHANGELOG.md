@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.0] - 2026-05-24
+
+### Added
+- add unfiltered and noise-cancelling recording audio modes
+
 ## [0.6.2] - 2026-05-21
 
 ### Fixed

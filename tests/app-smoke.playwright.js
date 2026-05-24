@@ -325,7 +325,7 @@ test.describe( `daily video journal app`, () => {
         await expect_live_camera_preview( page )
         await expect( page.getByRole( `link`, { name: `Back to projects` } ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Share or export project` } ) ).toBeVisible()
-        await expect( page.getByRole( `button`, { name: `Open video settings` } ) ).toBeVisible()
+        await expect( page.getByRole( `button`, { name: `Open media settings` } ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Open clip list` } ) ).toBeVisible()
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
 
@@ -407,6 +407,7 @@ test.describe( `daily video journal app`, () => {
 
         expect( recording_constraints.video ).toBe( false )
         expect( recording_constraints.audio ).toMatchObject( {
+            autoGainControl: true,
             echoCancellation: true,
             noiseSuppression: true
         } )
@@ -424,7 +425,7 @@ test.describe( `daily video journal app`, () => {
         await expect_live_camera_preview( page )
     } )
 
-    test( `remembers the selected camera after reload`, async ( { context, page } ) => {
+    test( `remembers selected capture settings after reload`, async ( { context, page } ) => {
         await context.grantPermissions( [ `camera`, `microphone` ] )
         await page.addInitScript( () => {
             const calls = []
@@ -495,12 +496,13 @@ test.describe( `daily video journal app`, () => {
 
         await expect( page ).toHaveURL( /\/projects\/[^/]+$/ )
         await expect_live_camera_preview( page )
-        await page.getByRole( `button`, { name: `Open video settings` } ).click()
+        await page.getByRole( `button`, { name: `Open media settings` } ).click()
         const camera_select = page.getByLabel( `Camera`, { exact: true } )
 
         await expect( camera_select ).toBeEnabled()
 
         await camera_select.selectOption( `rear-normal-camera` )
+        await page.getByRole( `button`, { name: `Unfiltered` } ).click()
         await expect.poll( () => page.evaluate( () => {
             return window.__get_user_media_calls.at( -1 )?.video?.deviceId?.exact ?? null
         } ) ).toBe( `rear-normal-camera` )
@@ -511,6 +513,23 @@ test.describe( `daily video journal app`, () => {
         await expect.poll( () => page.evaluate( () => {
             return window.__get_user_media_calls.at( 0 )?.video?.deviceId?.exact ?? null
         } ) ).toBe( `rear-normal-camera` )
+
+        await page.getByRole( `button`, { name: `Record clip` } ).click()
+        await expect( page.getByRole( `button`, { name: `Stop recording` } ) ).toBeVisible()
+        await expect.poll( () => page.evaluate( () => {
+            return window.__get_user_media_calls.some( ( constraints ) => constraints.video === false )
+        } ) ).toBe( true )
+
+        const audio_constraints = await page.evaluate( () => {
+            return window.__get_user_media_calls.find( ( constraints ) => constraints.video === false )?.audio
+        } )
+
+        expect( audio_constraints ).toMatchObject( {
+            autoGainControl: false,
+            echoCancellation: false,
+            noiseSuppression: false
+        } )
+        await page.getByRole( `button`, { name: `Stop recording` } ).click()
     } )
 
     test( `keeps floating capture actions stable over the preview`, async ( { page } ) => {
@@ -520,7 +539,7 @@ test.describe( `daily video journal app`, () => {
         const record_button = page.getByRole( `button`, { name: `Record clip` } )
         const clip_list_button = page.getByRole( `button`, { name: `Open clip list` } )
         const share_button = page.getByRole( `button`, { name: `Share or export project` } )
-        const settings_button = page.getByRole( `button`, { name: `Open video settings` } )
+        const settings_button = page.getByRole( `button`, { name: `Open media settings` } )
 
         await expect( record_button ).toBeVisible()
         await expect( clip_list_button ).toBeVisible()

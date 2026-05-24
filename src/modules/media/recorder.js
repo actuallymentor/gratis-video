@@ -10,16 +10,12 @@ export const HOLD_THRESHOLD_MS = 250
 export const MINIMUM_CLIP_MS = 400
 export const CAPTURE_WARNING_KEY = `daily_video_journal_capture_warning`
 export const DEFAULT_RECORDING_VIDEO_PRESET = `1080p30`
+export const DEFAULT_RECORDING_AUDIO_MODE = `noise_cancelling`
 const VIDEO_EVENT_TIMEOUT_MS = 3_000
 
 const capture_video_constraints = {
     facingMode: { ideal: `environment` },
     resizeMode: { ideal: `none` }
-}
-
-const capture_audio_constraints = {
-    echoCancellation: true,
-    noiseSuppression: true
 }
 
 const video_only_retry_errors = [
@@ -68,6 +64,23 @@ export const recording_video_presets = [
     }
 ]
 
+export const recording_audio_modes = [
+    {
+        value: `unfiltered`,
+        label: `Unfiltered`,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+    },
+    {
+        value: DEFAULT_RECORDING_AUDIO_MODE,
+        label: `Noise cancelling`,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+    }
+]
+
 const should_retry_video_only = ( error ) => video_only_retry_errors.includes( error?.name )
 
 const mark_capture_warning = ( stream, warning ) => {
@@ -103,6 +116,31 @@ export function get_recording_video_preset( value ) {
     return recording_video_presets.find( ( preset ) => preset.value === value )
         ?? recording_video_presets.find( ( preset ) => preset.value === DEFAULT_RECORDING_VIDEO_PRESET )
         ?? recording_video_presets.at( 0 )
+}
+
+/**
+ * Gets a supported recording audio mode, falling back to the default.
+ * @param {string|null} value - Persisted audio mode value.
+ * @returns {Object} Recording audio mode.
+ */
+export function get_recording_audio_mode( value ) {
+    return recording_audio_modes.find( ( mode ) => mode.value === value )
+        ?? recording_audio_modes.find( ( mode ) => mode.value === DEFAULT_RECORDING_AUDIO_MODE )
+        ?? recording_audio_modes.at( 0 )
+}
+
+const make_capture_audio_constraints = ( recording_audio_mode = DEFAULT_RECORDING_AUDIO_MODE ) => {
+    const {
+        echoCancellation,
+        noiseSuppression,
+        autoGainControl
+    } = get_recording_audio_mode( recording_audio_mode )
+
+    return {
+        echoCancellation,
+        noiseSuppression,
+        autoGainControl
+    }
 }
 
 const make_capture_video_constraints = ( {
@@ -255,12 +293,14 @@ export function stop_media_stream( stream ) {
  * Opens the camera and microphone from an explicit user action.
  * @param {Object} options - Capture request options.
  * @param {boolean} options.audio_enabled - Whether to request microphone audio.
+ * @param {string|null} options.recording_audio_mode - Recording audio processing mode.
  * @param {string|null} options.recording_video_preset - Recording video preset value.
  * @param {string|null} options.video_device_id - Specific camera source to reuse.
  * @returns {Promise<MediaStream>} Media stream.
  */
 export async function request_capture_stream( {
     audio_enabled = true,
+    recording_audio_mode = DEFAULT_RECORDING_AUDIO_MODE,
     recording_video_preset = DEFAULT_RECORDING_VIDEO_PRESET,
     video_device_id = null
 } = {} ) {
@@ -278,7 +318,7 @@ export async function request_capture_stream( {
     } )
     const capture_constraints = {
         video: video_constraints,
-        audio: audio_enabled ? capture_audio_constraints : false
+        audio: audio_enabled ? make_capture_audio_constraints( recording_audio_mode ) : false
     }
 
     if( !audio_enabled ) return apply_recording_video_preset(
@@ -323,9 +363,13 @@ export async function request_capture_stream( {
 
 /**
  * Opens only the microphone so recording can reuse the already-visible camera track.
+ * @param {Object} options - Audio request options.
+ * @param {string|null} options.recording_audio_mode - Recording audio processing mode.
  * @returns {Promise<MediaStream>} Audio stream.
  */
-export async function request_audio_stream() {
+export async function request_audio_stream( {
+    recording_audio_mode = DEFAULT_RECORDING_AUDIO_MODE
+} = {} ) {
     if( globalThis.isSecureContext === false ) {
         throw new Error( `Camera and microphone require a secure browser origin.` )
     }
@@ -336,7 +380,7 @@ export async function request_audio_stream() {
 
     return navigator.mediaDevices.getUserMedia( {
         video: false,
-        audio: capture_audio_constraints
+        audio: make_capture_audio_constraints( recording_audio_mode )
     } )
 }
 

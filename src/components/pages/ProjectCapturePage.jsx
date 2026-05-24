@@ -7,6 +7,7 @@ import styled from 'styled-components'
 import { ArrowLeft, List, Settings as SettingsIcon, Share2, X } from 'lucide-react'
 import { Content, AppFrame } from '../atoms/Layout.jsx'
 import { IconButton } from '../atoms/IconButton.jsx'
+import { SegmentedControl } from '../atoms/SegmentedControl.jsx'
 import { ClipQueue } from '../molecules/ClipQueue.jsx'
 import { ExportPanel } from '../molecules/ExportPanel.jsx'
 import { PermissionNotice } from '../molecules/PermissionNotice.jsx'
@@ -16,8 +17,11 @@ import { useRecordingController } from '../../hooks/use_recording_controller.js'
 import { create_export_hashes } from '../../modules/export/cache.js'
 import { normalize_export_settings } from '../../modules/export/exporter.js'
 import {
+    DEFAULT_RECORDING_AUDIO_MODE,
     DEFAULT_RECORDING_VIDEO_PRESET,
+    get_recording_audio_mode,
     get_recording_video_preset,
+    recording_audio_modes,
     recording_video_presets
 } from '../../modules/media/recorder.js'
 import {
@@ -329,7 +333,7 @@ const ModalBody = styled.div`
     padding: 1rem;
 `
 
-const VideoSettingField = styled.label`
+const MediaSettingField = styled.label`
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -398,13 +402,15 @@ const get_camera_label = ( camera_device, index ) => {
     return camera_device.label || `Camera ${ index + 1 }`
 }
 
-const VideoSettingsModal = ( {
+const MediaSettingsModal = ( {
     camera_devices,
     disabled,
+    recording_audio_mode,
     recording_video_preset,
     selected_video_device_id,
     on_close,
     on_select_camera,
+    on_select_audio_mode,
     on_select_preset
 } ) => {
     const modal_ref = useModalFocus( {
@@ -421,15 +427,15 @@ const VideoSettingsModal = ( {
             ref={ modal_ref }
             role="dialog"
             aria-modal="true"
-            aria-labelledby="video-settings-title"
+            aria-labelledby="media-settings-title"
             tabIndex={ -1 }
         >
             <ModalHeader>
-                <h2 id="video-settings-title">Video settings</h2>
-                <IconButton icon={ X } label="Close video settings" onClick={ on_close } />
+                <h2 id="media-settings-title">Media settings</h2>
+                <IconButton icon={ X } label="Close media settings" onClick={ on_close } />
             </ModalHeader>
             <ModalBody>
-                <VideoSettingField>
+                <MediaSettingField>
                     Camera
                     <select
                         aria-label="Camera"
@@ -445,9 +451,9 @@ const VideoSettingsModal = ( {
                             { get_camera_label( camera_device, index ) }
                         </option> ) }
                     </select>
-                </VideoSettingField>
+                </MediaSettingField>
 
-                <VideoSettingField as="div">
+                <MediaSettingField as="div">
                     <span id="recording-preset-label">Recording preset</span>
                     <PresetGrid role="group" aria-labelledby="recording-preset-label">
                         { recording_video_presets.map( ( preset ) => <PresetButton
@@ -462,7 +468,18 @@ const VideoSettingsModal = ( {
                             <small>{ format_bitrate( preset.video_bits_per_second ) }</small>
                         </PresetButton> ) }
                     </PresetGrid>
-                </VideoSettingField>
+                </MediaSettingField>
+
+                <MediaSettingField as="div">
+                    <span>Audio mode</span>
+                    <SegmentedControl
+                        label="Audio mode"
+                        options={ recording_audio_modes }
+                        value={ recording_audio_mode }
+                        on_change={ on_select_audio_mode }
+                        disabled={ disabled }
+                    />
+                </MediaSettingField>
             </ModalBody>
         </ModalPanel>
     </ModalBackdrop>
@@ -519,7 +536,7 @@ export function ProjectCapturePage() {
     const [ export_panel_record, set_export_panel_record ] = useState( null )
     const [ export_requested, set_export_requested ] = useState( false )
     const [ queue_mutation_pending, set_queue_mutation_pending ] = useState( false )
-    const [ video_settings_open, set_video_settings_open ] = useState( false )
+    const [ media_settings_open, set_media_settings_open ] = useState( false )
     const [ clip_queue_open, set_clip_queue_open ] = useState( false )
     const cached_export_blob_ref = useRef( null )
     const project_id_ref = useRef( project_id )
@@ -637,7 +654,7 @@ export function ProjectCapturePage() {
     const open_camera_preview = recording.open_preview
     const refresh_camera_preview = recording.refresh_preview
 
-    const update_video_setting = useCallback( async ( patch ) => {
+    const update_media_setting = useCallback( async ( patch ) => {
         const previous_settings = settings_ref.current
 
         if( !previous_settings ) return
@@ -647,12 +664,12 @@ export function ProjectCapturePage() {
             ...patch
         } )
 
-        log.debug( `Video setting update requested`, patch )
+        log.debug( `Media setting update requested`, patch )
         settings_ref.current = next_settings
         set_settings( next_settings )
 
         try {
-            const saved_settings = await save_settings( next_settings )
+            const saved_settings = await save_settings( patch )
 
             if( settings_ref.current === next_settings ) {
                 const normalized_settings = normalize_export_settings( saved_settings )
@@ -660,12 +677,12 @@ export function ProjectCapturePage() {
                 settings_ref.current = normalized_settings
                 set_settings( normalized_settings )
             }
-            log.info( `Video settings saved`, {
+            log.info( `Media settings saved`, {
                 changed_keys: Object.keys( patch )
             } )
         } catch ( error ) {
-            log.error( `Video settings could not be saved`, error )
-            toast.error( `Video setting could not be saved` )
+            log.error( `Media settings could not be saved`, error )
+            toast.error( `Media setting could not be saved` )
 
             if( settings_ref.current === next_settings ) {
                 settings_ref.current = previous_settings
@@ -1123,6 +1140,9 @@ export function ProjectCapturePage() {
     const selected_recording_video_preset = get_recording_video_preset(
         settings.recording_video_preset ?? DEFAULT_RECORDING_VIDEO_PRESET
     ).value
+    const selected_recording_audio_mode = get_recording_audio_mode(
+        settings.recording_audio_mode ?? DEFAULT_RECORDING_AUDIO_MODE
+    ).value
 
     return <CaptureFrame>
         <CaptureShell aria-label="Project capture">
@@ -1148,8 +1168,8 @@ export function ProjectCapturePage() {
                     />
                     <FloatingIconButton
                         icon={ SettingsIcon }
-                        label="Open video settings"
-                        onClick={ () => set_video_settings_open( true ) }
+                        label="Open media settings"
+                        onClick={ () => set_media_settings_open( true ) }
                     />
                 </TopActions>
             </TopChrome>
@@ -1217,15 +1237,19 @@ export function ProjectCapturePage() {
             } }
         /> : null }
 
-        { video_settings_open ? <VideoSettingsModal
+        { media_settings_open ? <MediaSettingsModal
             camera_devices={ camera_devices }
             disabled={ recording_in_progress || media_stream_state === `opening` }
+            recording_audio_mode={ selected_recording_audio_mode }
             recording_video_preset={ selected_recording_video_preset }
             selected_video_device_id={ recording.selected_video_device_id }
-            on_close={ () => set_video_settings_open( false ) }
+            on_close={ () => set_media_settings_open( false ) }
             on_select_camera={ recording.select_camera_device }
+            on_select_audio_mode={ ( recording_audio_mode ) => {
+                update_media_setting( { recording_audio_mode } )
+            } }
             on_select_preset={ ( recording_video_preset ) => {
-                update_video_setting( { recording_video_preset } )
+                update_media_setting( { recording_video_preset } )
             } }
         /> : null }
     </CaptureFrame>
