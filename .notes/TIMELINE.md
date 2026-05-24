@@ -1,5 +1,6 @@
 # Timeline
 
+- 2026-05-24T15:42:00Z: Fixed stale camera/microphone permission reporting after returning to the browser by making live capture success authoritative, guarding passive permission refreshes with store-level sequencing, and routing visible app-return events through one lifecycle event. Verified lint, Vitest, production build, and Playwright desktop/mobile smoke after installing Chromium system deps.
 - 2026-05-24T15:21:32Z: Added a persisted recording audio mode in capture media settings. Noise cancelling preserves the existing browser voice-processing request; Unfiltered requests echo cancellation, noise suppression, and auto gain control off.
 - 2026-05-21T14:25:41Z: Fixed a camera lifecycle race where returning to the app while background recording cleanup was still saving could leave the preview dark. Added regression coverage for a return event during the `saving` phase.
 - 2026-05-21T14:08:00Z: Fixed mobile camera-preview freezes after app/browser backgrounding by stopping idle preview streams when the page is hidden, reopening them on visible/pageshow/focus return, and watching preview video tracks for ended/muted states.

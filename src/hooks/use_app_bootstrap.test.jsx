@@ -10,6 +10,7 @@ import {
     persisted_storage
 } from '../modules/storage/journal_storage.js'
 import {
+    default_live_media_access,
     default_permission_status,
     useAppStore
 } from '../stores/app_store.js'
@@ -54,6 +55,8 @@ describe( `app bootstrap`, () => {
         vi.mocked( persisted_storage ).mockResolvedValue( null )
         useAppStore.setState( {
             active_project_id: undefined,
+            live_media_access: default_live_media_access,
+            permission_refresh_id: 0,
             permission_status: default_permission_status,
             storage_estimate: null,
             storage_persisted: null
@@ -65,6 +68,8 @@ describe( `app bootstrap`, () => {
         vi.resetAllMocks()
         useAppStore.setState( {
             active_project_id: undefined,
+            live_media_access: default_live_media_access,
+            permission_refresh_id: 0,
             permission_status: default_permission_status,
             storage_estimate: null,
             storage_persisted: null
@@ -90,6 +95,56 @@ describe( `app bootstrap`, () => {
         await waitFor( () => {
             expect( useAppStore.getState().permission_status.camera ).toBe( `denied` )
         } )
+    } )
+
+    test( `refreshes passive permission state when the page becomes visible`, async () => {
+        vi.mocked( check_media_permissions )
+            .mockResolvedValueOnce( permission_status( `prompt` ) )
+            .mockResolvedValueOnce( permission_status( `granted` ) )
+
+        render( <Harness /> )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().permission_status.camera ).toBe( `prompt` )
+        } )
+
+        await act( async () => {
+            document.dispatchEvent( new Event( `visibilitychange` ) )
+        } )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().permission_status.camera ).toBe( `granted` )
+        } )
+    } )
+
+    test( `ignores stale passive refreshes after observed camera access`, async () => {
+        const focus_permission = make_deferred()
+
+        vi.mocked( check_media_permissions )
+            .mockResolvedValueOnce( permission_status( `prompt` ) )
+            .mockReturnValueOnce( focus_permission.promise )
+
+        render( <Harness /> )
+
+        await waitFor( () => {
+            expect( useAppStore.getState().permission_status.camera ).toBe( `prompt` )
+        } )
+
+        await act( async () => {
+            window.dispatchEvent( new Event( `focus` ) )
+            await Promise.resolve()
+        } )
+
+        act( () => {
+            useAppStore.getState().set_live_media_access( { camera: true } )
+        } )
+
+        await act( async () => {
+            focus_permission.resolve( permission_status( `denied` ) )
+            await focus_permission.promise
+        } )
+
+        expect( useAppStore.getState().permission_status.camera ).toBe( `granted` )
     } )
 
     test( `keeps the active project when optional passive checks fail`, async () => {

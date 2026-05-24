@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import toast from 'react-hot-toast'
 import { useRecordingController } from './use_recording_controller.js'
+import { emit_app_return_event } from '../modules/lifecycle/app_lifecycle.js'
 import {
+    default_live_media_access,
     default_permission_status,
     useAppStore
 } from '../stores/app_store.js'
@@ -178,7 +180,9 @@ function Harness() {
 describe( `recording controller`, () => {
     beforeEach( () => {
         useAppStore.setState( {
+            live_media_access: default_live_media_access,
             media_stream_state: `idle`,
+            permission_refresh_id: 0,
             recording_state: `idle`,
             permission_status: default_permission_status
         } )
@@ -239,6 +243,8 @@ describe( `recording controller`, () => {
             value: false
         } )
         useAppStore.setState( {
+            live_media_access: default_live_media_access,
+            permission_refresh_id: 0,
             recording_state: `idle`,
             permission_status: default_permission_status
         } )
@@ -305,6 +311,7 @@ describe( `recording controller`, () => {
         } )
         expect( controller.error_message ).toBe( `Permission denied` )
         expect( create_media_recorder ).not.toHaveBeenCalled()
+        expect( useAppStore.getState().permission_status.camera ).toBe( `denied` )
     } )
 
     test( `requests video-only capture when microphone permission is known denied`, async () => {
@@ -375,6 +382,30 @@ describe( `recording controller`, () => {
         expect( recording_stream.getVideoTracks() ).toEqual( [ preview.track ] )
         expect( recording_stream.getAudioTracks() ).toEqual( [ audio.track ] )
         expect( preview.track.stop ).not.toHaveBeenCalled()
+        expect( useAppStore.getState().permission_status.microphone ).toBe( `granted` )
+    } )
+
+    test( `marks camera permission granted after preview opens successfully`, async () => {
+        const preview = make_stream()
+
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `denied`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
+        vi.mocked( request_capture_stream ).mockResolvedValue( preview.stream )
+
+        render( <Harness /> )
+
+        await act( async () => {
+            await controller.open_preview( { force: true } )
+        } )
+
+        expect( useAppStore.getState().permission_status.camera ).toBe( `granted` )
+        expect( useAppStore.getState().live_media_access.camera ).toBe( true )
     } )
 
     test( `opens preview with the remembered camera device`, async () => {
@@ -505,12 +536,20 @@ describe( `recording controller`, () => {
         expect( first_preview.track.stop ).toHaveBeenCalledTimes( 1 )
         expect( useAppStore.getState().media_stream_state ).toBe( `idle` )
 
+        useAppStore.setState( {
+            permission_status: {
+                ...default_permission_status,
+                camera: `denied`,
+                media_devices: `supported`,
+                media_recorder: `supported`
+            }
+        } )
         Object.defineProperty( document, `hidden`, {
             configurable: true,
             value: false
         } )
 
-        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+        act( () => emit_app_return_event( `test` ) )
 
         await waitFor( () => {
             expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
@@ -519,6 +558,7 @@ describe( `recording controller`, () => {
             expect( controller.stream ).toBe( second_preview.stream )
         } )
         expect( useAppStore.getState().media_stream_state ).toBe( `active` )
+        expect( useAppStore.getState().permission_status.camera ).toBe( `granted` )
     } )
 
     test( `does not attach a preview stream that resolves while the page is hidden`, async () => {
@@ -552,7 +592,7 @@ describe( `recording controller`, () => {
             configurable: true,
             value: false
         } )
-        act( () => window.dispatchEvent( new Event( `pageshow` ) ) )
+        act( () => emit_app_return_event( `test` ) )
 
         await waitFor( () => {
             expect( request_capture_stream ).toHaveBeenCalledTimes( 2 )
@@ -866,7 +906,7 @@ describe( `recording controller`, () => {
             value: false
         } )
 
-        act( () => document.dispatchEvent( new Event( `visibilitychange` ) ) )
+        act( () => emit_app_return_event( `test` ) )
 
         expect( request_capture_stream ).toHaveBeenCalledTimes( 1 )
 

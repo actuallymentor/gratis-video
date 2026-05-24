@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { log } from 'mentie/modules/logging.js'
 import { useAppStore } from '../stores/app_store.js'
+import { emit_app_return_event } from '../modules/lifecycle/app_lifecycle.js'
 import { check_media_permissions } from '../modules/permissions/permissions.js'
 import {
     estimate_storage,
@@ -14,7 +15,8 @@ import {
  */
 export function useAppBootstrap() {
     const set_active_project_id = useAppStore( ( state ) => state.set_active_project_id )
-    const set_permission_status = useAppStore( ( state ) => state.set_permission_status )
+    const begin_permission_refresh = useAppStore( ( state ) => state.begin_permission_refresh )
+    const apply_passive_permission_status = useAppStore( ( state ) => state.apply_passive_permission_status )
     const set_storage_estimate = useAppStore( ( state ) => state.set_storage_estimate )
     const set_storage_persisted = useAppStore( ( state ) => state.set_storage_persisted )
 
@@ -38,12 +40,14 @@ export function useAppBootstrap() {
         }
 
         const refresh_permissions = async () => {
+            const permission_refresh_id = begin_permission_refresh()
+
             log.debug( `Refreshing passive permission status` )
 
             try {
                 const permission_status = await check_media_permissions()
                 if( !cancelled ) {
-                    set_permission_status( permission_status )
+                    apply_passive_permission_status( permission_status, permission_refresh_id )
                     log.info( `Permission status refreshed`, permission_status )
                 }
             } catch ( error ) {
@@ -63,12 +67,7 @@ export function useAppBootstrap() {
         }
 
         const load_permission_state = async () => {
-            const permission_status = await read_boot_value( `Permission check`, check_media_permissions )
-
-            if( permission_status && !cancelled ) {
-                set_permission_status( permission_status )
-                log.info( `Initial permission status loaded`, permission_status )
-            }
+            await refresh_permissions()
         }
 
         const load_storage_state = async () => {
@@ -95,20 +94,39 @@ export function useAppBootstrap() {
         // storage probes are useful background context but should not hold the app shell.
         load_active_project_state()
         load_permission_state()
+        const refresh_after_app_return = ( reason ) => {
+            if( document.hidden ) return
+
+            emit_app_return_event( reason )
+            refresh_permissions()
+        }
+        const refresh_after_visibility_return = () => {
+            if( document.hidden ) return
+
+            refresh_after_app_return( `visibilitychange` )
+        }
+        const refresh_after_page_show = () => refresh_after_app_return( `pageshow` )
+        const refresh_after_focus = () => refresh_after_app_return( `focus` )
+
         load_storage_state()
-        window.addEventListener( `focus`, refresh_permissions )
+        document.addEventListener( `visibilitychange`, refresh_after_visibility_return )
+        window.addEventListener( `pageshow`, refresh_after_page_show )
+        window.addEventListener( `focus`, refresh_after_focus )
         window.addEventListener( `online`, refresh_permissions )
         window.addEventListener( `offline`, refresh_permissions )
 
         return () => {
             cancelled = true
-            window.removeEventListener( `focus`, refresh_permissions )
+            document.removeEventListener( `visibilitychange`, refresh_after_visibility_return )
+            window.removeEventListener( `pageshow`, refresh_after_page_show )
+            window.removeEventListener( `focus`, refresh_after_focus )
             window.removeEventListener( `online`, refresh_permissions )
             window.removeEventListener( `offline`, refresh_permissions )
         }
     }, [
+        apply_passive_permission_status,
+        begin_permission_refresh,
         set_active_project_id,
-        set_permission_status,
         set_storage_estimate,
         set_storage_persisted
     ] )

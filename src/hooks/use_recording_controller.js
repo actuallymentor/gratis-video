@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { log } from 'mentie/modules/logging.js'
 import { useAppStore } from '../stores/app_store.js'
+import { listen_for_app_return_event } from '../modules/lifecycle/app_lifecycle.js'
+import {
+    get_stream_media_access,
+    is_media_permission_denial
+} from '../modules/permissions/runtime_state.js'
 import {
     can_attempt_recording,
     check_media_permissions
@@ -86,6 +91,14 @@ const combine_recording_stream = ( video_stream, audio_stream = null ) => {
 
 const can_retry_without_camera_choice = ( error ) => stale_camera_error_names.has( error?.name )
 
+const can_resume_previously_open_preview = ( permission_status ) => {
+    if( permission_status.secure_context === false ) return false
+    if( permission_status.media_devices === `unsupported` ) return false
+    if( permission_status.media_recorder === `unsupported` ) return false
+
+    return true
+}
+
 const has_live_video_track = ( stream ) => {
     return ( stream?.getVideoTracks?.() ?? [] ).some( ( track ) => {
         return track.readyState !== `ended` && !track.muted
@@ -123,7 +136,10 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     const recording_state = useAppStore( ( state ) => state.recording_state )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const set_media_stream_state = useAppStore( ( state ) => state.set_media_stream_state )
-    const set_permission_status = useAppStore( ( state ) => state.set_permission_status )
+    const begin_permission_refresh = useAppStore( ( state ) => state.begin_permission_refresh )
+    const apply_passive_permission_status = useAppStore( ( state ) => state.apply_passive_permission_status )
+    const set_live_media_access = useAppStore( ( state ) => state.set_live_media_access )
+    const mark_media_permission_denied = useAppStore( ( state ) => state.mark_media_permission_denied )
     const set_storage_estimate = useAppStore( ( state ) => state.set_storage_estimate )
     const set_storage_persisted = useAppStore( ( state ) => state.set_storage_persisted )
 
@@ -165,8 +181,15 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         stop_media_stream( stream_ref.current )
         stream_ref.current = null
         if( mounted_ref.current ) set_stream( null )
+        set_live_media_access( {
+            camera: false,
+            microphone: false
+        } )
         set_media_stream_state( `idle` )
-    }, [ set_media_stream_state ] )
+    }, [
+        set_live_media_access,
+        set_media_stream_state
+    ] )
 
     const remember_video_device_id = useCallback( ( video_device_id ) => {
         const next_video_device_id = normalize_video_device_id( video_device_id )
@@ -333,6 +356,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
                 stream_ref.current = preview_stream
                 set_stream( preview_stream )
+                set_live_media_access( get_stream_media_access( preview_stream ) )
                 set_media_stream_state( `active` )
                 preview_resume_requested_ref.current = false
                 preview_resume_after_idle_ref.current = false
@@ -353,6 +377,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             .catch( ( error ) => {
                 if( mounted_ref.current ) {
                     log.warn( `Camera preview could not open`, error )
+                    if( is_media_permission_denial( error ) ) {
+                        mark_media_permission_denied( { camera: true } )
+                    }
                     set_media_stream_state( `idle` )
                     set_error_message( get_capture_error_message( error ) )
                     set_permission_recovery_needed(
@@ -374,7 +401,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         refresh_camera_devices,
         request_capture_with_camera_fallback,
         saved_video_device_id,
+        mark_media_permission_denied,
         set_media_stream_state,
+        set_live_media_access,
         settings?.recording_video_preset,
         watch_preview_track_health
     ] )
@@ -385,7 +414,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
 
         if( preview_resume_requested_ref.current ) {
             if( !preview_resume_after_idle_ref.current ) return
-            if( !can_attempt_recording( permission_status_ref.current ) ) return
+            if( !can_resume_previously_open_preview( permission_status_ref.current ) ) return
 
             log.debug( `Resuming camera preview after recording cleanup`, {
                 project_id
@@ -457,6 +486,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
     ] )
 
     const refresh_environment_state = useCallback( async () => {
+        const permission_refresh_id = begin_permission_refresh()
         const [
             permission_status,
             storage_estimate,
@@ -467,7 +497,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             persisted_storage()
         ] )
 
-        set_permission_status( permission_status )
+        apply_passive_permission_status( permission_status, permission_refresh_id )
         set_storage_estimate( storage_estimate )
         set_storage_persisted( storage_persisted )
         log.debug( `Recording environment state refreshed`, {
@@ -477,7 +507,8 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             storage_quota: storage_estimate?.quota ?? null
         } )
     }, [
-        set_permission_status,
+        apply_passive_permission_status,
+        begin_permission_refresh,
         set_storage_estimate,
         set_storage_persisted
     ] )
@@ -771,6 +802,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                     } )
                 } catch ( error ) {
                     log.warn( `Microphone could not be added to recording; continuing video-only`, error )
+                    if( is_media_permission_denial( error ) ) {
+                        mark_media_permission_denied( { microphone: true } )
+                    }
                     capture_warning = error?.name === `NotAllowedError` || error?.name === `PermissionDeniedError`
                         ? `microphone_denied`
                         : `microphone_unavailable`
@@ -787,6 +821,7 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             }
 
             stream_ref.current = next_stream
+            set_live_media_access( get_stream_media_access( next_stream ) )
             set_media_stream_state( `active` )
 
             refresh_camera_devices( active_video_device_id ).catch( ( error ) => {
@@ -952,6 +987,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
             }
         } catch ( error ) {
             log.error( `Recording could not start`, error )
+            if( is_media_permission_denial( error ) ) {
+                mark_media_permission_denied( { camera: true } )
+            }
             if( mounted_ref.current ) {
                 set_error_message( get_capture_error_message( error ) )
                 set_permission_recovery_needed(
@@ -984,7 +1022,9 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         request_capture_with_camera_fallback,
         reset_startup_after_forced_stop,
         saved_video_device_id,
+        mark_media_permission_denied,
         set_phase,
+        set_live_media_access,
         set_media_stream_state,
         settings.haptics_enabled,
         settings?.recording_audio_mode,
@@ -1101,7 +1141,12 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
                 if( preview_resume_requested_ref.current ) preview_resume_after_idle_ref.current = true
                 return
             }
-            if( !can_attempt_recording( permission_status ) ) return
+            const resume_requested = preview_resume_requested_ref.current
+            const can_refresh_preview = resume_requested
+                ? can_resume_previously_open_preview( permission_status )
+                : can_attempt_recording( permission_status )
+
+            if( !can_refresh_preview ) return
 
             const current_stream = stream_ref.current
             const should_check_preview = preview_resume_requested_ref.current
@@ -1129,23 +1174,19 @@ export function useRecordingController( { project_id, settings, on_clip_saved } 
         const handle_visibility_change = () => {
             if( document.hidden ) {
                 suspend_preview_for_background()
-                return
             }
-
-            refresh_preview_after_return()
         }
 
         document.addEventListener( `visibilitychange`, handle_visibility_change )
         window.addEventListener( `pagehide`, suspend_preview_for_background )
         document.addEventListener( `freeze`, suspend_preview_for_background )
-        window.addEventListener( `pageshow`, refresh_preview_after_return )
-        window.addEventListener( `focus`, refresh_preview_after_return )
+        const stop_listening_for_app_return = listen_for_app_return_event( refresh_preview_after_return )
+
         return () => {
             document.removeEventListener( `visibilitychange`, handle_visibility_change )
             window.removeEventListener( `pagehide`, suspend_preview_for_background )
             document.removeEventListener( `freeze`, suspend_preview_for_background )
-            window.removeEventListener( `pageshow`, refresh_preview_after_return )
-            window.removeEventListener( `focus`, refresh_preview_after_return )
+            stop_listening_for_app_return()
         }
     }, [
         cancel_record,
