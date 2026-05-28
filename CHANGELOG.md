@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.1] - 2026-05-28
+
+### Fixed
+- preserve explicit telephoto camera shortcut zoom labels
+
 ## [0.9.0] - 2026-05-28
 
 ### Added

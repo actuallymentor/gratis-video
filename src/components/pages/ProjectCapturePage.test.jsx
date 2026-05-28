@@ -352,6 +352,14 @@ describe( `project capture page`, () => {
                 label: `Back Camera`
             },
             {
+                device_id: `rear-tele-camera`,
+                label: `Back 2x Telephoto Camera`
+            },
+            {
+                device_id: `rear-tele-unlabeled-camera`,
+                label: `Back Telephoto Camera`
+            },
+            {
                 device_id: `front-camera`,
                 label: `Facing Front Camera`
             }
@@ -364,6 +372,8 @@ describe( `project capture page`, () => {
         expect( screen.getByRole( `group`, { name: `Back cameras` } ) ).toBeTruthy()
         expect( screen.getByRole( `button`, { name: `Switch to Back Ultra Wide Camera` } ).textContent ).toBe( `0.5x` )
         expect( screen.getByRole( `button`, { name: `Switch to Back Camera` } ).textContent ).toBe( `1x` )
+        expect( screen.getByRole( `button`, { name: `Switch to Back 2x Telephoto Camera` } ).textContent ).toBe( `2x` )
+        expect( screen.getByRole( `button`, { name: `Switch to Back Telephoto Camera` } ).textContent ).toBe( `T` )
 
         await user.click( screen.getByRole( `button`, { name: `Switch to Back Ultra Wide Camera` } ) )
 

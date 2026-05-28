@@ -79,3 +79,5 @@
 - 2026-05-18T12:15:00Z: Investigated GitHub Actions Cloudflare deploy authentication failure, pinned the deploy workflow to Wrangler 4, and documented Cloudflare token rotation/permission expectations.
 - 2026-05-18T12:20:00Z: Prepared `0.3.17` patch notes and version bump so the deploy workflow path filter will run with the Wrangler 4 pin.
 - 2026-05-28: Switched PWA registration to `vite-plugin-pwa` with `injectManifest`, added a persistent React reload badge driven by `onNeedRefresh`, and changed the service worker to wait for `SKIP_WAITING` instead of forcing activation on install.
+- 2026-05-28T15:46:58Z: Followed up on camera shortcut review feedback by preserving explicit back-camera zoom labels and using a neutral telephoto fallback when no zoom is advertised.
+- 2026-05-28T15:46:58Z: Prepared `0.9.1` patch notes and version bump for the telephoto camera shortcut label correction.

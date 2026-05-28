@@ -472,9 +472,12 @@ const get_camera_search_text = ( camera_device ) => {
 
 const get_camera_short_label = ( camera_device, index ) => {
     const search_text = get_camera_search_text( camera_device )
+    const [ , raw_zoom_label = null ] = search_text.match( /\b(\d+(?:[.,]\d+)?)\s*x\b/ ) ?? []
+    const zoom_label = raw_zoom_label?.replace( `,`, `.` )
 
-    if( /\b(ultra\s*wide|ultrawide|0\.5x)\b/.test( search_text ) ) return `0.5x`
-    if( /\b(telephoto|tele|3x)\b/.test( search_text ) ) return `3x`
+    if( zoom_label ) return `${ zoom_label }x`
+    if( /\b(ultra\s*wide|ultrawide)\b/.test( search_text ) ) return `0.5x`
+    if( /\b(telephoto|tele)\b/.test( search_text ) ) return `T`
     if( /\bmacro\b/.test( search_text ) ) return `M`
     if( /\b(back|rear|environment|main|wide|world)\b/.test( search_text ) ) return `1x`
 
