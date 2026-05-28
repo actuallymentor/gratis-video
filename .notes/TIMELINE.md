@@ -81,3 +81,5 @@
 - 2026-05-28: Switched PWA registration to `vite-plugin-pwa` with `injectManifest`, added a persistent React reload badge driven by `onNeedRefresh`, and changed the service worker to wait for `SKIP_WAITING` instead of forcing activation on install.
 - 2026-05-28T15:46:58Z: Followed up on camera shortcut review feedback by preserving explicit back-camera zoom labels and using a neutral telephoto fallback when no zoom is advertised.
 - 2026-05-28T15:46:58Z: Prepared `0.9.1` patch notes and version bump for the telephoto camera shortcut label correction.
+- 2026-05-28T15:56:44Z: Followed up on independent review feedback by making the bare capture record button black-backed over full-height video previews.
+- 2026-05-28T15:56:44Z: Prepared `0.9.2` patch notes and version bump for the record-control visibility correction.

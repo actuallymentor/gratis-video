@@ -24,7 +24,7 @@ const Button = styled.button`
     color: var(--color-on-filled);
     background: ${ ( { $bare, $recording } ) => {
         if( $recording ) return `var(--color-recording)`
-        if( $bare ) return `transparent`
+        if( $bare ) return `#000000`
         return `var(--color-filled)`
     } };
     box-shadow: ${ ( { $bare } ) => $bare ? `0 0.75rem 1.5rem rgba( 0, 0, 0, 0.26 )` : `var(--shadow-soft)` };

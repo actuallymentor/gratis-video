@@ -53,6 +53,14 @@ describe( `record button`, () => {
         expect( screen.getByRole( `button`, { name: `Saving recording` } ) ).toBeTruthy()
     } )
 
+    test( `keeps bare controls readable on top of camera previews`, () => {
+        render( <RecordButton { ...default_props } recording_state="idle" bare /> )
+
+        const button = screen.getByRole( `button`, { name: `Record clip` } )
+
+        expect( getComputedStyle( button ).backgroundColor ).toBe( `rgb(0, 0, 0)` )
+    } )
+
     test( `ignores repeated keyboard activation while a key is held`, () => {
         render( <RecordButton { ...default_props } recording_state="idle" /> )
 

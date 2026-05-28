@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.2] - 2026-05-28
+
+### Fixed
+- keep the bare capture record control visible over bright previews
+
 ## [0.9.1] - 2026-05-28
 
 ### Fixed
