@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.0] - 2026-05-28
+
+### Added
+- add front/back camera switching and multi-back camera shortcuts
+
+### Changed
+- default untouched recording audio mode to unfiltered
+- fill the capture preview height and show clip previews globally
+
 ## [0.8.0] - 2026-05-28
 
 ### Added

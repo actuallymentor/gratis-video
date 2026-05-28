@@ -407,9 +407,9 @@ test.describe( `daily video journal app`, () => {
 
         expect( recording_constraints.video ).toBe( false )
         expect( recording_constraints.audio ).toMatchObject( {
-            autoGainControl: true,
-            echoCancellation: true,
-            noiseSuppression: true
+            autoGainControl: false,
+            echoCancellation: false,
+            noiseSuppression: false
         } )
         if( preview_device_id ) expect( video_capture_call_count ).toBe( 1 )
 

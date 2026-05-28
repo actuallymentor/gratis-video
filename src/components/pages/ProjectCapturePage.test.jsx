@@ -146,7 +146,8 @@ const settings = {
     export_quality: `standard`,
     export_resolution: `source`,
     preferred_mime_type: null,
-    recording_audio_mode: `noise_cancelling`,
+    recording_audio_mode: `unfiltered`,
+    recording_audio_mode_user_selected: false,
     recording_video_preset: `1080p30`,
     haptics_enabled: true,
     sounds_enabled: false
@@ -289,6 +290,84 @@ describe( `project capture page`, () => {
         expect( recording_state.select_camera_device ).toHaveBeenCalledWith( `rear-normal-camera` )
     } )
 
+    test( `switches between the selected back camera and the first front camera`, async () => {
+        const user = userEvent.setup()
+        const view = render_capture()
+
+        recording_state.camera_devices = [
+            {
+                device_id: `rear-wide-camera`,
+                label: `Back Ultra Wide Camera`
+            },
+            {
+                device_id: `rear-normal-camera`,
+                label: `Back Camera`
+            },
+            {
+                device_id: `front-camera`,
+                label: `Facing Front Camera`
+            }
+        ]
+        recording_state.selected_video_device_id = `rear-normal-camera`
+
+        view.rerender(
+            <MemoryRouter initialEntries={ [ `/projects/project-1` ] }>
+                <Routes>
+                    <Route path="/projects" element={ <LocationProbe /> } />
+                    <Route path="/projects/:project_id" element={ <ProjectCapturePage /> } />
+                </Routes>
+            </MemoryRouter>
+        )
+
+        await screen.findByText( project.title )
+        await user.click( screen.getByRole( `button`, { name: `Switch to front camera` } ) )
+
+        expect( recording_state.select_camera_device ).toHaveBeenLastCalledWith( `front-camera` )
+
+        recording_state.selected_video_device_id = `front-camera`
+        view.rerender(
+            <MemoryRouter initialEntries={ [ `/projects/project-1` ] }>
+                <Routes>
+                    <Route path="/projects" element={ <LocationProbe /> } />
+                    <Route path="/projects/:project_id" element={ <ProjectCapturePage /> } />
+                </Routes>
+            </MemoryRouter>
+        )
+
+        await user.click( screen.getByRole( `button`, { name: `Switch to back camera` } ) )
+
+        expect( recording_state.select_camera_device ).toHaveBeenLastCalledWith( `rear-normal-camera` )
+    } )
+
+    test( `lists multiple back cameras above the record control`, async () => {
+        const user = userEvent.setup()
+
+        recording_state.camera_devices = [
+            {
+                device_id: `rear-wide-camera`,
+                label: `Back Ultra Wide Camera`
+            },
+            {
+                device_id: `rear-normal-camera`,
+                label: `Back Camera`
+            },
+            {
+                device_id: `front-camera`,
+                label: `Facing Front Camera`
+            }
+        ]
+        recording_state.selected_video_device_id = `rear-wide-camera`
+
+        render_capture()
+
+        await screen.findByText( project.title )
+        expect( screen.getByRole( `group`, { name: `Back cameras` } ) ).toBeTruthy()
+
+        await user.click( screen.getByRole( `button`, { name: `Switch to Back Camera` } ) )
+
+        expect( recording_state.select_camera_device ).toHaveBeenCalledWith( `rear-normal-camera` )
+    } )
+
     test( `saves the selected recording preset from media settings`, async () => {
         const user = userEvent.setup()
 
@@ -317,11 +396,11 @@ describe( `project capture page`, () => {
         await user.click( screen.getByRole( `button`, { name: `Open media settings` } ) )
         expect( await screen.findByRole( `dialog`, { name: `Media settings` } ) ).toBeTruthy()
 
-        await user.click( screen.getByRole( `button`, { name: `Unfiltered` } ) )
+        await user.click( screen.getByRole( `button`, { name: `Noise cancelling` } ) )
 
         await waitFor( () => {
             expect( save_settings ).toHaveBeenCalledWith( {
-                recording_audio_mode: `unfiltered`
+                recording_audio_mode: `noise_cancelling`
             } )
         } )
     } )
@@ -355,7 +434,11 @@ describe( `project capture page`, () => {
         await open_clip_list( user )
         await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
 
-        expect( await screen.findByRole( `dialog`, { name: `Clip preview` } ) ).toBeTruthy()
+        const clip_list_dialog = screen.getByRole( `dialog`, { name: `Clips` } )
+        const preview_dialog = await screen.findByRole( `dialog`, { name: `Clip preview` } )
+
+        expect( preview_dialog ).toBeTruthy()
+        expect( clip_list_dialog.contains( preview_dialog ) ).toBe( false )
 
         await user.keyboard( `{Escape}` )
 

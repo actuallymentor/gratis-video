@@ -157,7 +157,7 @@ describe( `recorder helpers`, () => {
         expect( get_capture_error_message( new Error( `Offline media failed` ) ) ).toMatch( /available offline/ )
     } )
 
-    test( `retries capture as video-only when microphone capture fails`, async () => {
+    test( `requests unfiltered capture audio by default before a video-only retry`, async () => {
         const video_only_stream = { getTracks: () => [] }
         const getUserMedia = vi.fn()
             .mockRejectedValueOnce( new DOMException( `No microphone`, `NotFoundError` ) )
@@ -173,9 +173,9 @@ describe( `recorder helpers`, () => {
         expect( getUserMedia ).toHaveBeenCalledTimes( 2 )
         expect( getUserMedia.mock.calls[ 0 ][ 0 ] ).toMatchObject( {
             audio: {
-                autoGainControl: true,
-                echoCancellation: true,
-                noiseSuppression: true
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false
             }
         } )
         expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
@@ -202,7 +202,7 @@ describe( `recorder helpers`, () => {
         expect_unsized_video_constraints( getUserMedia.mock.calls[ 0 ][ 0 ] )
     } )
 
-    test( `requests only microphone audio when adding audio to an existing preview`, async () => {
+    test( `requests unfiltered microphone audio by default when adding audio to an existing preview`, async () => {
         const audio_stream = { getTracks: () => [] }
         const getUserMedia = vi.fn().mockResolvedValue( audio_stream )
 
@@ -212,6 +212,28 @@ describe( `recorder helpers`, () => {
         } )
 
         await expect( request_audio_stream() ).resolves.toBe( audio_stream )
+        expect( getUserMedia ).toHaveBeenCalledWith( {
+            video: false,
+            audio: {
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false
+            }
+        } )
+    } )
+
+    test( `requests noise cancelling microphone audio when selected`, async () => {
+        const audio_stream = { getTracks: () => [] }
+        const getUserMedia = vi.fn().mockResolvedValue( audio_stream )
+
+        vi.stubGlobal( `isSecureContext`, true )
+        vi.stubGlobal( `navigator`, {
+            mediaDevices: { getUserMedia }
+        } )
+
+        await expect( request_audio_stream( {
+            recording_audio_mode: `noise_cancelling`
+        } ) ).resolves.toBe( audio_stream )
         expect( getUserMedia ).toHaveBeenCalledWith( {
             video: false,
             audio: {

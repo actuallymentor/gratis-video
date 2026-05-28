@@ -45,13 +45,13 @@ describe( `clip queue`, () => {
 
     test( `previews a clip from local storage and releases the object URL`, async () => {
         const user = userEvent.setup()
-        const { container } = render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
+        render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } /> )
 
         await user.click( screen.getByRole( `button`, { name: `Preview clip 1` } ) )
 
         expect( await screen.findByRole( `dialog`, { name: `Clip preview` } ) ).toBeTruthy()
         await waitFor( () => {
-            expect( container.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:preview` )
+            expect( document.body.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:preview` )
         } )
         expect( get_clip_blob ).toHaveBeenCalledWith( clip.id )
 
@@ -134,7 +134,7 @@ describe( `clip queue`, () => {
             id: `clip-2`,
             created_at: `2026-05-17T10:00:02.000Z`
         }
-        const { container } = render( <ClipQueue clips={ [ clip, second_clip ] } on_delete={ vi.fn() } /> )
+        render( <ClipQueue clips={ [ clip, second_clip ] } on_delete={ vi.fn() } /> )
 
         vi.mocked( get_clip_blob ).mockImplementation( ( clip_id ) => {
             if( clip_id === `clip-1` ) return first_preview.promise
@@ -148,13 +148,13 @@ describe( `clip queue`, () => {
         await user.click( screen.getByRole( `button`, { name: `Preview clip 2` } ) )
 
         await waitFor( () => {
-            expect( container.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:second-preview` )
+            expect( document.body.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:second-preview` )
         } )
 
         first_preview.resolve( new Blob( [ `first` ], { type: `video/webm` } ) )
 
         await waitFor( () => {
-            expect( container.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:second-preview` )
+            expect( document.body.querySelector( `video` )?.getAttribute( `src` ) ).toBe( `blob:second-preview` )
         } )
         expect( URL.createObjectURL ).toHaveBeenCalledTimes( 1 )
     } )

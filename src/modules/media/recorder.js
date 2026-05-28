@@ -10,7 +10,7 @@ export const HOLD_THRESHOLD_MS = 250
 export const MINIMUM_CLIP_MS = 400
 export const CAPTURE_WARNING_KEY = `daily_video_journal_capture_warning`
 export const DEFAULT_RECORDING_VIDEO_PRESET = `1080p30`
-export const DEFAULT_RECORDING_AUDIO_MODE = `noise_cancelling`
+export const DEFAULT_RECORDING_AUDIO_MODE = `unfiltered`
 const VIDEO_EVENT_TIMEOUT_MS = 3_000
 
 const capture_video_constraints = {
@@ -73,7 +73,7 @@ export const recording_audio_modes = [
         autoGainControl: false
     },
     {
-        value: DEFAULT_RECORDING_AUDIO_MODE,
+        value: `noise_cancelling`,
         label: `Noise cancelling`,
         echoCancellation: true,
         noiseSuppression: true,

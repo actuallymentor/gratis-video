@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import styled from 'styled-components'
 import { ArrowDown, ArrowUp, Trash2, VideoOff, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
@@ -80,7 +81,7 @@ const RowActions = styled.div`
 const Dialog = styled.div`
     position: fixed;
     inset: 0;
-    z-index: 40;
+    z-index: 48;
     display: grid;
     place-items: center;
     padding: 1rem;
@@ -107,6 +108,25 @@ const PreviewMessage = styled.p`
     color: var(--color-muted);
     line-height: 1.5;
 `
+
+const ClipPreviewDialog = ( {
+    preview_dialog_ref,
+    preview_error,
+    preview_url,
+    on_close
+} ) => {
+    return createPortal(
+        <Dialog role="dialog" aria-modal="true" aria-label="Clip preview" onClick={ on_close }>
+            <Preview ref={ preview_dialog_ref } tabIndex={ -1 } onClick={ ( event ) => event.stopPropagation() }>
+                { preview_url ? <video src={ preview_url } controls playsInline autoPlay /> : null }
+                { !preview_url && !preview_error ? <PreviewMessage aria-live="polite">Loading clip preview...</PreviewMessage> : null }
+                { preview_error ? <PreviewMessage>{ preview_error }</PreviewMessage> : null }
+                <IconButton icon={ X } label="Close preview" onClick={ on_close } />
+            </Preview>
+        </Dialog>,
+        document.body
+    )
+}
 
 function ClipThumbnail( { clip, label, on_preview } ) {
     const [ thumbnail_url, set_thumbnail_url ] = useState( null )
@@ -256,13 +276,11 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
             </Row> ) }
         </Queue>
 
-        { preview_clip ? <Dialog role="dialog" aria-modal="true" aria-label="Clip preview" onClick={ close_preview }>
-            <Preview ref={ preview_dialog_ref } tabIndex={ -1 } onClick={ ( event ) => event.stopPropagation() }>
-                { preview_url ? <video src={ preview_url } controls playsInline autoPlay /> : null }
-                { !preview_url && !preview_error ? <PreviewMessage aria-live="polite">Loading clip preview...</PreviewMessage> : null }
-                { preview_error ? <PreviewMessage>{ preview_error }</PreviewMessage> : null }
-                <IconButton icon={ X } label="Close preview" onClick={ close_preview } />
-            </Preview>
-        </Dialog> : null }
+        { preview_clip ? <ClipPreviewDialog
+            preview_dialog_ref={ preview_dialog_ref }
+            preview_error={ preview_error }
+            preview_url={ preview_url }
+            on_close={ close_preview }
+        /> : null }
     </>
 }

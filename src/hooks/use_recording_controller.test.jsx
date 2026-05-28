@@ -53,7 +53,7 @@ vi.mock( '../modules/permissions/permissions.js', () => ( {
 
 vi.mock( '../modules/media/recorder.js', () => ( {
     CAPTURE_WARNING_KEY: `daily_video_journal_capture_warning`,
-    DEFAULT_RECORDING_AUDIO_MODE: `noise_cancelling`,
+    DEFAULT_RECORDING_AUDIO_MODE: `unfiltered`,
     DEFAULT_RECORDING_VIDEO_PRESET: `1080p30`,
     HOLD_THRESHOLD_MS: 250,
     MINIMUM_CLIP_MS: 400,
@@ -205,7 +205,7 @@ describe( `recording controller`, () => {
         clip_saved.mockReset()
         recording_settings = {
             haptics_enabled: false,
-            recording_audio_mode: `noise_cancelling`,
+            recording_audio_mode: `unfiltered`,
             recording_video_preset: `1080p30`,
             sounds_enabled: false
         }
@@ -375,7 +375,7 @@ describe( `recording controller`, () => {
         } )
         expect( request_capture_stream ).toHaveBeenCalledTimes( 1 )
         expect( request_audio_stream ).toHaveBeenCalledWith( {
-            recording_audio_mode: `noise_cancelling`
+            recording_audio_mode: `unfiltered`
         } )
         const [ [ recording_stream ] ] = vi.mocked( create_media_recorder ).mock.calls
 

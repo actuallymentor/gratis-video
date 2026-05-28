@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { StringParam, useQueryParam } from 'use-query-params'
 import { log } from 'mentie/modules/logging.js'
 import styled from 'styled-components'
-import { ArrowLeft, List, Settings as SettingsIcon, Share2, X } from 'lucide-react'
+import { ArrowLeft, Camera, List, RefreshCw, Settings as SettingsIcon, Share2, X } from 'lucide-react'
 import { Content, AppFrame } from '../atoms/Layout.jsx'
 import { IconButton } from '../atoms/IconButton.jsx'
 import { SegmentedControl } from '../atoms/SegmentedControl.jsx'
@@ -83,8 +83,8 @@ const Preview = styled.div`
         display: block;
         width: 100%;
         height: 100%;
-        object-fit: contain;
-        background: #0d1718;
+        object-fit: cover;
+        background: #000000;
     }
 `
 
@@ -103,19 +103,18 @@ const TopChrome = styled.header`
 const floating_icon_style = `
     border-color: rgba( 255, 255, 255, 0.28 );
     color: #ffffff;
-    background: rgba( 13, 23, 24, 0.62 );
+    background: #000000;
     box-shadow: 0 0.7rem 1.4rem rgba( 0, 0, 0, 0.24 );
-    backdrop-filter: blur( 10px );
 
     &:hover,
     &:focus-visible {
         border-color: rgba( 126, 192, 208, 0.9 );
-        background: rgba( 18, 49, 51, 0.82 );
+        background: #051012;
     }
 
     &:disabled {
         color: rgba( 255, 255, 255, 0.42 );
-        background: rgba( 13, 23, 24, 0.46 );
+        background: rgba( 0, 0, 0, 0.66 );
     }
 `
 
@@ -172,6 +171,7 @@ const BottomControls = styled.div`
     z-index: 4;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
+    grid-template-rows: auto auto;
     align-items: center;
     gap: 0.75rem;
     pointer-events: none;
@@ -183,12 +183,64 @@ const BottomControls = styled.div`
 
 const RecordDock = styled.div`
     grid-column: 2;
+    grid-row: 2;
     justify-self: center;
 `
 
-const ClipListButton = styled( FloatingIconButton )`
+const RightControlDock = styled.div`
     grid-column: 3;
+    grid-row: 2;
     justify-self: end;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+`
+
+const ClipListButton = styled( FloatingIconButton )``
+
+const CameraPickerDock = styled.div`
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.35rem;
+    border: 1px solid rgba( 255, 255, 255, 0.22 );
+    border-radius: 999px;
+    background: #000000;
+    box-shadow: 0 0.7rem 1.4rem rgba( 0, 0, 0, 0.24 );
+`
+
+const CameraChoiceButton = styled.button`
+    display: inline-grid;
+    place-items: center;
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+    border: 1px solid ${ ( { $active } ) => $active ? `var(--color-accent)` : `rgba( 255, 255, 255, 0.26 )` };
+    border-radius: 999px;
+    color: ${ ( { $active } ) => $active ? `var(--color-accent)` : `#ffffff` };
+    background: #000000;
+    transition: transform 140ms ease, border-color 140ms ease, color 140ms ease;
+
+    &:hover,
+    &:focus-visible {
+        border-color: rgba( 126, 192, 208, 0.9 );
+        color: var(--color-accent);
+    }
+
+    &:active {
+        transform: scale( 0.96 );
+    }
+
+    &:disabled {
+        color: rgba( 255, 255, 255, 0.42 );
+        border-color: rgba( 255, 255, 255, 0.16 );
+        cursor: not-allowed;
+    }
 `
 
 const PreviewNotice = styled.div`
@@ -402,6 +454,63 @@ const get_camera_label = ( camera_device, index ) => {
     return camera_device.label || `Camera ${ index + 1 }`
 }
 
+const get_camera_search_text = ( camera_device ) => {
+    return [
+        camera_device.label,
+        camera_device.device_id,
+        camera_device.group_id
+    ].filter( Boolean ).join( ` ` ).toLowerCase()
+}
+
+const is_front_facing_camera = ( camera_device ) => {
+    return /\b(front|user|selfie|facetime)\b|front[-\s]?facing|facing\s+front/.test(
+        get_camera_search_text( camera_device )
+    )
+}
+
+const is_back_facing_camera = ( camera_device ) => {
+    if( is_front_facing_camera( camera_device ) ) return false
+
+    return /\b(back|rear|environment|world|main|wide|telephoto|macro)\b|back[-\s]?facing|facing\s+back/.test(
+        get_camera_search_text( camera_device )
+    )
+}
+
+const find_camera_device = ( camera_devices, video_device_id ) => {
+    if( !video_device_id ) return null
+
+    return camera_devices.find( ( { device_id } ) => device_id === video_device_id ) ?? null
+}
+
+const CameraPicker = ( {
+    back_camera_devices,
+    disabled,
+    selected_video_device_id,
+    on_select_camera
+} ) => {
+    if( back_camera_devices.length <= 1 ) return null
+
+    return <CameraPickerDock role="group" aria-label="Back cameras">
+        { back_camera_devices.map( ( camera_device, index ) => {
+            const camera_label = get_camera_label( camera_device, index )
+            const is_selected = camera_device.device_id === selected_video_device_id
+
+            return <CameraChoiceButton
+                key={ camera_device.device_id }
+                type="button"
+                $active={ is_selected }
+                aria-label={ `Switch to ${ camera_label }` }
+                aria-pressed={ is_selected }
+                title={ camera_label }
+                disabled={ disabled }
+                onClick={ () => on_select_camera( camera_device.device_id ) }
+            >
+                <Camera size={ 20 } strokeWidth={ 2.2 } aria-hidden="true" />
+            </CameraChoiceButton>
+        } ) }
+    </CameraPickerDock>
+}
+
 const MediaSettingsModal = ( {
     camera_devices,
     disabled,
@@ -542,6 +651,7 @@ export function ProjectCapturePage() {
     const project_id_ref = useRef( project_id )
     const settings_ref = useRef( null )
     const previous_recording_video_preset_ref = useRef( null )
+    const previous_back_video_device_id_ref = useRef( null )
     const permission_status = useAppStore( ( state ) => state.permission_status )
     const storage_estimate = useAppStore( ( state ) => state.storage_estimate )
     const media_stream_state = useAppStore( ( state ) => state.media_stream_state )
@@ -653,6 +763,7 @@ export function ProjectCapturePage() {
     } )
     const open_camera_preview = recording.open_preview
     const refresh_camera_preview = recording.refresh_preview
+    const camera_devices = recording.camera_devices ?? []
 
     const update_media_setting = useCallback( async ( patch ) => {
         const previous_settings = settings_ref.current
@@ -723,6 +834,26 @@ export function ProjectCapturePage() {
     }, [
         refresh_camera_preview,
         settings?.recording_video_preset
+    ] )
+
+    useEffect( () => {
+        const selected_camera_device = find_camera_device(
+            camera_devices,
+            recording.selected_video_device_id
+        )
+        const fallback_back_camera_device = camera_devices.find( is_back_facing_camera )
+
+        if( selected_camera_device && is_back_facing_camera( selected_camera_device ) ) {
+            previous_back_video_device_id_ref.current = selected_camera_device.device_id
+            return
+        }
+
+        if( !previous_back_video_device_id_ref.current && fallback_back_camera_device ) {
+            previous_back_video_device_id_ref.current = fallback_back_camera_device.device_id
+        }
+    }, [
+        camera_devices,
+        recording.selected_video_device_id
     ] )
 
     useEffect( () => {
@@ -1136,13 +1267,48 @@ export function ProjectCapturePage() {
         ? status_message
         : null
     const preview_status_message = storage_error || ( bottom_status_message ? null : status_message )
-    const camera_devices = recording.camera_devices ?? []
+    const back_camera_devices = camera_devices.filter( is_back_facing_camera )
+    const front_camera_device = camera_devices.find( is_front_facing_camera ) ?? null
+    const selected_camera_device = find_camera_device(
+        camera_devices,
+        recording.selected_video_device_id
+    )
+    const selected_camera_is_front = Boolean(
+        selected_camera_device && is_front_facing_camera( selected_camera_device )
+    )
+    const camera_switching_disabled = recording_in_progress || media_stream_state === `opening`
+    const selected_front_has_no_back_camera = selected_camera_is_front && !back_camera_devices.length
+    const facing_camera_switch_disabled = camera_switching_disabled
+        || selected_front_has_no_back_camera
     const selected_recording_video_preset = get_recording_video_preset(
         settings.recording_video_preset ?? DEFAULT_RECORDING_VIDEO_PRESET
     ).value
     const selected_recording_audio_mode = get_recording_audio_mode(
         settings.recording_audio_mode ?? DEFAULT_RECORDING_AUDIO_MODE
     ).value
+    const switch_facing_camera = () => {
+        if( !front_camera_device || camera_switching_disabled ) return
+
+        if( selected_camera_is_front ) {
+            const previous_back_camera_device = camera_devices.find( ( camera_device ) => {
+                return camera_device.device_id === previous_back_video_device_id_ref.current
+                    && is_back_facing_camera( camera_device )
+            } )
+            const next_back_camera_device = previous_back_camera_device
+                ?? back_camera_devices.at( 0 )
+
+            if( next_back_camera_device ) recording.select_camera_device( next_back_camera_device.device_id )
+            return
+        }
+
+        if( selected_camera_device && is_back_facing_camera( selected_camera_device ) ) {
+            previous_back_video_device_id_ref.current = selected_camera_device.device_id
+        } else if( !previous_back_video_device_id_ref.current && back_camera_devices.at( 0 ) ) {
+            previous_back_video_device_id_ref.current = back_camera_devices.at( 0 ).device_id
+        }
+
+        recording.select_camera_device( front_camera_device.device_id )
+    }
 
     return <CaptureFrame>
         <CaptureShell aria-label="Project capture">
@@ -1184,6 +1350,12 @@ export function ProjectCapturePage() {
             </PreviewNotice> : null }
 
             <BottomControls role="group" aria-label="Capture controls">
+                <CameraPicker
+                    back_camera_devices={ back_camera_devices }
+                    disabled={ camera_switching_disabled }
+                    selected_video_device_id={ recording.selected_video_device_id }
+                    on_select_camera={ recording.select_camera_device }
+                />
                 <RecordDock>
                     <RecordButton
                         recording_state={ recording.recording_state }
@@ -1196,11 +1368,19 @@ export function ProjectCapturePage() {
                         bare
                     />
                 </RecordDock>
-                <ClipListButton
-                    icon={ List }
-                    label="Open clip list"
-                    onClick={ () => set_clip_queue_open( true ) }
-                />
+                <RightControlDock>
+                    <ClipListButton
+                        icon={ List }
+                        label="Open clip list"
+                        onClick={ () => set_clip_queue_open( true ) }
+                    />
+                    { front_camera_device ? <FloatingIconButton
+                        icon={ RefreshCw }
+                        label={ selected_camera_is_front ? `Switch to back camera` : `Switch to front camera` }
+                        onClick={ switch_facing_camera }
+                        disabled={ facing_camera_switch_disabled }
+                    /> : null }
+                </RightControlDock>
             </BottomControls>
         </CaptureShell>
 

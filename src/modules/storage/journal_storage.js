@@ -32,10 +32,44 @@ export const default_settings = {
     export_resolution: `source`,
     preferred_mime_type: null,
     recording_audio_mode: DEFAULT_RECORDING_AUDIO_MODE,
+    recording_audio_mode_user_selected: false,
     recording_video_preset: DEFAULT_RECORDING_VIDEO_PRESET,
     haptics_enabled: true,
     sounds_enabled: false,
     last_video_device_id: null
+}
+
+const mark_explicit_audio_mode_selection = ( settings = {} ) => {
+    const settings_patch = { ...settings }
+    const includes_audio_mode = Object.hasOwn( settings_patch, `recording_audio_mode` )
+    const includes_selection_marker = Object.hasOwn( settings_patch, `recording_audio_mode_user_selected` )
+
+    if( includes_audio_mode && !includes_selection_marker ) {
+        settings_patch.recording_audio_mode_user_selected = true
+    }
+
+    return settings_patch
+}
+
+const normalize_settings_record = ( settings = {} ) => {
+    const settings_without_key = { ...settings }
+
+    delete settings_without_key.key
+
+    const normalized_settings = {
+        ...default_settings,
+        ...settings_without_key
+    }
+    const audio_mode_was_user_selected = settings_without_key.recording_audio_mode_user_selected === true
+    const has_legacy_implicit_noise_cancelling = !audio_mode_was_user_selected
+        && settings_without_key.recording_audio_mode === `noise_cancelling`
+
+    if( has_legacy_implicit_noise_cancelling ) {
+        normalized_settings.recording_audio_mode = DEFAULT_RECORDING_AUDIO_MODE
+        normalized_settings.recording_audio_mode_user_selected = false
+    }
+
+    return normalized_settings
 }
 
 const new_id = () => {
@@ -1072,11 +1106,7 @@ export async function move_clip( clip_id, direction ) {
 export async function load_settings() {
     const stored_settings = await get_record( `settings`, SETTINGS_KEY )
 
-    if( stored_settings ) {
-        const settings = { ...stored_settings }
-        delete settings.key
-        return { ...default_settings, ...settings }
-    }
+    if( stored_settings ) return normalize_settings_record( stored_settings )
 
     await save_settings( default_settings )
     return default_settings
@@ -1088,8 +1118,10 @@ export async function load_settings() {
  * @returns {Promise<Object>} Saved settings.
  */
 export async function save_settings( settings ) {
+    const settings_patch = mark_explicit_audio_mode_selection( settings )
+
     log.debug( `Storage save_settings queued`, {
-        settings_keys: Object.keys( settings )
+        settings_keys: Object.keys( settings_patch )
     } )
 
     return enqueue_settings_save( async () => {
@@ -1102,21 +1134,16 @@ export async function save_settings( settings ) {
             settings_request.onerror = fail_request( fail, `Could not load settings before saving.` )
             settings_request.onsuccess = () => {
                 const existing_settings = settings_request.result ?? null
-                const previous_settings = {
-                    ...default_settings,
-                    ...existing_settings
-                }
-                const saved_settings = {
-                    ...default_settings,
-                    ...existing_settings,
-                    ...settings,
+                const previous_settings = normalize_settings_record( existing_settings )
+                const settings_without_key = normalize_settings_record( {
+                    ...previous_settings,
+                    ...settings_patch
+                } )
+
+                stores.settings.put( {
+                    ...settings_without_key,
                     key: SETTINGS_KEY
-                }
-                const settings_without_key = { ...saved_settings }
-
-                delete settings_without_key.key
-
-                stores.settings.put( saved_settings )
+                } )
                 complete( {
                     previous_settings,
                     settings_without_key
@@ -1129,7 +1156,7 @@ export async function save_settings( settings ) {
         }
 
         log.info( `Storage settings saved`, {
-            settings_keys: Object.keys( settings )
+            settings_keys: Object.keys( settings_patch )
         } )
         log.insane( `Storage settings payload`, settings_without_key )
 

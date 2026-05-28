@@ -806,9 +806,40 @@ describe( `journal storage`, () => {
             export_resolution: `source`,
             haptics_enabled: true,
             last_video_device_id: null,
-            recording_audio_mode: `noise_cancelling`,
+            recording_audio_mode: `unfiltered`,
+            recording_audio_mode_user_selected: false,
             recording_video_preset: `1080p30`,
             sounds_enabled: false
+        } )
+    } )
+
+    test( `keeps manually selected noise cancelling audio mode`, async () => {
+        await save_settings( { recording_audio_mode: `noise_cancelling` } )
+
+        await expect( load_settings() ).resolves.toMatchObject( {
+            recording_audio_mode: `noise_cancelling`,
+            recording_audio_mode_user_selected: true
+        } )
+    } )
+
+    test( `treats legacy implicit noise cancelling as unfiltered until selected`, async () => {
+        await put_record( `settings`, {
+            key: `global`,
+            export_quality: `standard`,
+            recording_audio_mode: `noise_cancelling`
+        } )
+
+        await expect( load_settings() ).resolves.toMatchObject( {
+            recording_audio_mode: `unfiltered`,
+            recording_audio_mode_user_selected: false
+        } )
+
+        await save_settings( { haptics_enabled: false } )
+
+        await expect( load_settings() ).resolves.toMatchObject( {
+            haptics_enabled: false,
+            recording_audio_mode: `unfiltered`,
+            recording_audio_mode_user_selected: false
         } )
     } )
 
