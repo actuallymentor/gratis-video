@@ -3,7 +3,7 @@
 ## [0.9.0] - 2026-05-28
 
 ### Added
-- add front/back camera switching and multi-back camera shortcuts
+- add front/back camera switching and labeled multi-back camera shortcuts
 
 ### Changed
 - default untouched recording audio mode to unfiltered

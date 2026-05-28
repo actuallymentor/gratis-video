@@ -215,11 +215,13 @@ const CameraPickerDock = styled.div`
 
 const CameraChoiceButton = styled.button`
     display: inline-grid;
+    grid-template-rows: auto auto;
     place-items: center;
-    width: 2.75rem;
-    min-width: 2.75rem;
-    height: 2.75rem;
-    min-height: 2.75rem;
+    gap: 0.05rem;
+    width: 3.2rem;
+    min-width: 3.2rem;
+    height: 3.2rem;
+    min-height: 3.2rem;
     border: 1px solid ${ ( { $active } ) => $active ? `var(--color-accent)` : `rgba( 255, 255, 255, 0.26 )` };
     border-radius: 999px;
     color: ${ ( { $active } ) => $active ? `var(--color-accent)` : `#ffffff` };
@@ -241,12 +243,18 @@ const CameraChoiceButton = styled.button`
         border-color: rgba( 255, 255, 255, 0.16 );
         cursor: not-allowed;
     }
+
+    span {
+        font-size: 0.64rem;
+        font-weight: 900;
+        line-height: 1;
+    }
 `
 
 const PreviewNotice = styled.div`
     position: absolute;
     right: 1rem;
-    bottom: calc( 7.5rem + env( safe-area-inset-bottom ) );
+    bottom: calc( ${ ( { $has_camera_picker } ) => $has_camera_picker ? `12rem` : `7.5rem` } + env( safe-area-inset-bottom ) );
     left: 1rem;
     z-index: 4;
     display: grid;
@@ -328,7 +336,7 @@ const ReadyState = styled.div`
 const BottomNotice = styled.div`
     position: fixed;
     right: 1rem;
-    bottom: calc( 7.5rem + env( safe-area-inset-bottom ) );
+    bottom: calc( ${ ( { $has_camera_picker } ) => $has_camera_picker ? `12rem` : `7.5rem` } + env( safe-area-inset-bottom ) );
     left: 1rem;
     z-index: 22;
     display: grid;
@@ -462,6 +470,17 @@ const get_camera_search_text = ( camera_device ) => {
     ].filter( Boolean ).join( ` ` ).toLowerCase()
 }
 
+const get_camera_short_label = ( camera_device, index ) => {
+    const search_text = get_camera_search_text( camera_device )
+
+    if( /\b(ultra\s*wide|ultrawide|0\.5x)\b/.test( search_text ) ) return `0.5x`
+    if( /\b(telephoto|tele|3x)\b/.test( search_text ) ) return `3x`
+    if( /\bmacro\b/.test( search_text ) ) return `M`
+    if( /\b(back|rear|environment|main|wide|world)\b/.test( search_text ) ) return `1x`
+
+    return `${ index + 1 }`
+}
+
 const is_front_facing_camera = ( camera_device ) => {
     return /\b(front|user|selfie|facetime)\b|front[-\s]?facing|facing\s+front/.test(
         get_camera_search_text( camera_device )
@@ -493,7 +512,13 @@ const CameraPicker = ( {
     return <CameraPickerDock role="group" aria-label="Back cameras">
         { back_camera_devices.map( ( camera_device, index ) => {
             const camera_label = get_camera_label( camera_device, index )
+            const camera_short_label = get_camera_short_label( camera_device, index )
             const is_selected = camera_device.device_id === selected_video_device_id
+            const select_camera = () => {
+                if( is_selected ) return
+
+                on_select_camera( camera_device.device_id )
+            }
 
             return <CameraChoiceButton
                 key={ camera_device.device_id }
@@ -503,9 +528,10 @@ const CameraPicker = ( {
                 aria-pressed={ is_selected }
                 title={ camera_label }
                 disabled={ disabled }
-                onClick={ () => on_select_camera( camera_device.device_id ) }
+                onClick={ select_camera }
             >
                 <Camera size={ 20 } strokeWidth={ 2.2 } aria-hidden="true" />
+                <span aria-hidden="true">{ camera_short_label }</span>
             </CameraChoiceButton>
         } ) }
     </CameraPickerDock>
@@ -1268,6 +1294,7 @@ export function ProjectCapturePage() {
         : null
     const preview_status_message = storage_error || ( bottom_status_message ? null : status_message )
     const back_camera_devices = camera_devices.filter( is_back_facing_camera )
+    const has_back_camera_picker = back_camera_devices.length > 1
     const front_camera_device = camera_devices.find( is_front_facing_camera ) ?? null
     const selected_camera_device = find_camera_device(
         camera_devices,
@@ -1340,7 +1367,7 @@ export function ProjectCapturePage() {
                 </TopActions>
             </TopChrome>
 
-            { preview_status_message ? <PreviewNotice>
+            { preview_status_message ? <PreviewNotice $has_camera_picker={ has_back_camera_picker }>
                 <PermissionNotice
                     message={ preview_status_message }
                     action_to={ permission_recovery_needed ? settings_return_path : null }
@@ -1384,7 +1411,7 @@ export function ProjectCapturePage() {
             </BottomControls>
         </CaptureShell>
 
-        { bottom_status_message ? <BottomNotice>
+        { bottom_status_message ? <BottomNotice $has_camera_picker={ has_back_camera_picker }>
             <PermissionNotice
                 message={ bottom_status_message }
                 action_to={ permission_recovery_needed ? settings_return_path : null }

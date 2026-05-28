@@ -362,6 +362,12 @@ describe( `project capture page`, () => {
 
         await screen.findByText( project.title )
         expect( screen.getByRole( `group`, { name: `Back cameras` } ) ).toBeTruthy()
+        expect( screen.getByRole( `button`, { name: `Switch to Back Ultra Wide Camera` } ).textContent ).toBe( `0.5x` )
+        expect( screen.getByRole( `button`, { name: `Switch to Back Camera` } ).textContent ).toBe( `1x` )
+
+        await user.click( screen.getByRole( `button`, { name: `Switch to Back Ultra Wide Camera` } ) )
+
+        expect( recording_state.select_camera_device ).not.toHaveBeenCalled()
 
         await user.click( screen.getByRole( `button`, { name: `Switch to Back Camera` } ) )
 
