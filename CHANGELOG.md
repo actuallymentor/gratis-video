@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.0] - 2026-05-28
+
+### Added
+- use vite-plugin-pwa for offline builds and update prompts
+- show a persistent reload badge when a PWA update is ready
+
 ## [0.7.1] - 2026-05-24
 
 ### Fixed

@@ -1,20 +1,40 @@
-const CACHE_NAME = `daily-video-journal-v4`
+const CACHE_NAME = `daily-video-journal-v5`
 const APP_SHELL_URL = `/`
 
 // Fetch `/` to avoid Cloudflare's canonical `/index.html` redirect, but keep
 // the cached shell under `/index.html` so direct file-path lookups share it.
 const APP_SHELL_CACHE_KEY = `/index.html`
 
+const INJECTED_PRECACHE_MANIFEST = self.__WB_MANIFEST
+
+const normalize_precache_asset_urls = ( precache_manifest ) => {
+    if( !Array.isArray( precache_manifest ) ) return []
+
+    return precache_manifest
+        .map( ( entry ) => typeof entry === `string` ? entry : entry?.url )
+        .filter( Boolean )
+        .map( ( asset_url ) => new URL( asset_url, self.location.origin ).pathname )
+        .filter( ( asset_url ) => {
+            return asset_url !== APP_SHELL_URL
+                && asset_url !== APP_SHELL_CACHE_KEY
+                && asset_url !== `/sw.js`
+        } )
+}
+
 const STATIC_APP_ASSETS = [
     `/manifest.webmanifest`,
     `/assets/icon.svg`,
     `/assets/icon-192.png`,
-    `/assets/icon-512.png`
-]
+    `/assets/icon-512.png`,
+    ...normalize_precache_asset_urls( INJECTED_PRECACHE_MANIFEST )
+].filter( ( asset_url, index, asset_urls ) => asset_urls.indexOf( asset_url ) === index )
 
 self.addEventListener( `install`, ( event ) => {
     event.waitUntil( cache_app_shell().catch( () => null ) )
-    self.skipWaiting()
+} )
+
+self.addEventListener( `message`, ( event ) => {
+    if( event.data?.type === `SKIP_WAITING` ) self.skipWaiting()
 } )
 
 const get_build_asset_urls = ( html ) => {
@@ -47,7 +67,9 @@ const cached_shell_matches_build_assets = async ( cache, build_asset_urls ) => {
 }
 
 const prune_stale_build_assets = async ( cache, build_asset_urls ) => {
-    if( !( await cached_shell_matches_build_assets( cache, build_asset_urls ) ) ) return
+    const has_matching_cached_shell = await cached_shell_matches_build_assets( cache, build_asset_urls )
+
+    if( !has_matching_cached_shell ) return
 
     const cached_requests = await cache.keys()
     const current_assets = new Set( build_asset_urls )

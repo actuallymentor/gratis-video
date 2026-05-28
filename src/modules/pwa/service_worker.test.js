@@ -56,7 +56,7 @@ const load_service_worker = async ( overrides = {} ) => {
 }
 
 describe( `service worker`, () => {
-    test( `activates even when shell precaching fails`, async () => {
+    test( `installs without forcing a waiting update to activate`, async () => {
         const { cache, listeners, self } = await load_service_worker()
         let install_promise = null
 
@@ -69,7 +69,19 @@ describe( `service worker`, () => {
         } )
 
         await expect( install_promise ).resolves.toBe( null )
-        expect( self.skipWaiting ).toHaveBeenCalled()
+        expect( self.skipWaiting ).not.toHaveBeenCalled()
+    } )
+
+    test( `activates a waiting update after the page asks to skip waiting`, async () => {
+        const { listeners, self } = await load_service_worker()
+
+        listeners.message( {
+            data: {
+                type: `SKIP_WAITING`
+            }
+        } )
+
+        expect( self.skipWaiting ).toHaveBeenCalledTimes( 1 )
     } )
 
     test( `refreshes navigations from the root app shell without sending route metadata`, async () => {
@@ -277,7 +289,7 @@ describe( `service worker`, () => {
         let activate_promise = null
 
         cache.match.mockResolvedValue( null )
-        caches.keys.mockResolvedValue( [ `daily-video-journal-v3`, `daily-video-journal-v4` ] )
+        caches.keys.mockResolvedValue( [ `daily-video-journal-v4`, `daily-video-journal-v5` ] )
 
         listeners.activate( {
             waitUntil: ( promise ) => {
@@ -304,7 +316,7 @@ describe( `service worker`, () => {
             if( asset_url === `/assets/current.js` ) return Promise.resolve( new Response( `current js` ) )
             return Promise.resolve( null )
         } )
-        caches.keys.mockResolvedValue( [ `daily-video-journal-v3`, `daily-video-journal-v4` ] )
+        caches.keys.mockResolvedValue( [ `daily-video-journal-v4`, `daily-video-journal-v5` ] )
 
         listeners.activate( {
             waitUntil: ( promise ) => {
@@ -314,8 +326,8 @@ describe( `service worker`, () => {
 
         await activate_promise
 
-        expect( caches.delete ).toHaveBeenCalledWith( `daily-video-journal-v3` )
-        expect( caches.delete ).not.toHaveBeenCalledWith( `daily-video-journal-v4` )
+        expect( caches.delete ).toHaveBeenCalledWith( `daily-video-journal-v4` )
+        expect( caches.delete ).not.toHaveBeenCalledWith( `daily-video-journal-v5` )
     } )
 
     test( `returns a controlled offline response when navigation shell is uncached`, async () => {
