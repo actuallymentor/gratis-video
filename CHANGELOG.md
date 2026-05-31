@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.11.0] - 2026-05-31
+
+### Added
+- add bottom-left PWA install prompt pill
+
 ## [0.10.1] - 2026-05-31
 
 ### Fixed

@@ -1,5 +1,7 @@
 # Timeline
 
+- 2026-05-31T13:55:15Z: Added a global bottom-left PWA install pill that captures `beforeinstallprompt`, triggers installation from a user tap, clears after prompt/app install, and hides while running in installed display modes.
+- 2026-05-31T13:55:15Z: Prepared `0.11.0` release notes, README behavior note, and version bump for the install-app pill.
 - 2026-05-28T15:26:49Z: Updated capture defaults and controls so unfiltered audio is the implicit default unless the user explicitly chooses another mode, front/back and multi-back camera switching live over the full-height preview, and clip previews render through a global modal portal.
 - 2026-05-28T15:28:00Z: Prepared 0.9.0 release notes and version bump for the capture audio, camera switching, full-height preview, and global clip-preview modal changes.
 - 2026-05-28T15:31:00Z: Installed Playwright Chromium system dependencies in the container after `libglib-2.0.so.0` was missing, then verified the full Playwright suite passed.

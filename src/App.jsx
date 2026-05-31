@@ -4,6 +4,7 @@ import { ReactRouter6Adapter } from 'use-query-params/adapters/react-router-6'
 import { Toaster } from 'react-hot-toast'
 import AppRoutes from './routes/Routes.jsx'
 import { useAppBootstrap } from './hooks/use_app_bootstrap.js'
+import { PwaInstallPill } from './components/molecules/PwaInstallPill.jsx'
 import { PwaRefreshBadge } from './components/molecules/PwaRefreshBadge.jsx'
 
 function AppShell() {
@@ -12,6 +13,7 @@ function AppShell() {
 
     return <>
         <AppRoutes />
+        <PwaInstallPill />
         <PwaRefreshBadge />
         <Toaster
             position="top-center"

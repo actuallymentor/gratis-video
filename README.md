@@ -65,3 +65,4 @@ Treat API tokens as single-use secrets. If a token is pasted into chat, logs, or
 - The Vite PWA service worker caches the app shell for offline startup after first load.
 - Service-worker updates validate cached build assets before reusing an older app shell.
 - Waiting PWA updates show a persistent reload badge.
+- Installable browsers show a bottom-left Install App pill until the app runs as a PWA.
