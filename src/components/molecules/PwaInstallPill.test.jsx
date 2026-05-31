@@ -6,13 +6,20 @@ import { PwaInstallPill } from './PwaInstallPill.jsx'
 
 const original_match_media = window.matchMedia
 
-const make_install_event = () => {
+const make_install_event = ( {
+    prompt_result = { outcome: `accepted` },
+    user_choice = prompt_result
+} = {} ) => {
     const event = new Event( `beforeinstallprompt`, { cancelable: true } )
-    const prompt = vi.fn().mockResolvedValue( { outcome: `accepted` } )
+    const prompt = vi.fn().mockResolvedValue( prompt_result )
 
     Object.defineProperty( event, `prompt`, {
         configurable: true,
         value: prompt
+    } )
+    Object.defineProperty( event, `userChoice`, {
+        configurable: true,
+        value: Promise.resolve( user_choice )
     } )
 
     return {
@@ -89,6 +96,26 @@ describe( `PWA install pill`, () => {
             window.dispatchEvent( new Event( `appinstalled` ) )
         } )
 
+        expect( screen.queryByRole( `button`, { name: /Install app/i } ) ).toBe( null )
+    } )
+
+    test( `handles dismissed prompts that resolve through userChoice`, async () => {
+        const { event, prompt } = make_install_event( {
+            prompt_result: undefined,
+            user_choice: { outcome: `dismissed` }
+        } )
+
+        render( <PwaInstallPill /> )
+
+        await act( async () => {
+            window.dispatchEvent( event )
+        } )
+
+        fireEvent.click( screen.getByRole( `button`, { name: /Install app/i } ) )
+
+        await waitFor( () => {
+            expect( prompt ).toHaveBeenCalledTimes( 1 )
+        } )
         expect( screen.queryByRole( `button`, { name: /Install app/i } ) ).toBe( null )
     } )
 } )
