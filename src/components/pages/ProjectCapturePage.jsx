@@ -661,6 +661,7 @@ const MediaSettingsModal = ( {
 
 const ClipListSheet = ( {
     clips,
+    queue_actions_disabled,
     upload_disabled,
     on_close,
     on_delete,
@@ -690,6 +691,7 @@ const ClipListSheet = ( {
             </ClipSheetHeader>
             <ClipQueue
                 clips={ clips }
+                queue_actions_disabled={ queue_actions_disabled }
                 upload_disabled={ upload_disabled }
                 on_delete={ on_delete }
                 on_move={ on_move }
@@ -721,6 +723,7 @@ export function ProjectCapturePage() {
     const [ media_settings_open, set_media_settings_open ] = useState( false )
     const [ clip_queue_open, set_clip_queue_open ] = useState( false )
     const cached_export_blob_ref = useRef( null )
+    const queue_mutation_pending_ref = useRef( false )
     const project_id_ref = useRef( project_id )
     const settings_ref = useRef( null )
     const previous_recording_video_preset_ref = useRef( null )
@@ -755,6 +758,23 @@ export function ProjectCapturePage() {
         set_cached_export_record( null )
         set_cached_export_key( null )
         set_cached_export_ready( false )
+    }, [] )
+
+    const begin_queue_mutation = useCallback( () => {
+        if( queue_mutation_pending_ref.current ) {
+            toast( `Clip queue is updating. Try again in a moment.` )
+            return false
+        }
+
+        queue_mutation_pending_ref.current = true
+        set_queue_mutation_pending( true )
+        clear_cached_export()
+        return true
+    }, [ clear_cached_export ] )
+
+    const finish_queue_mutation = useCallback( () => {
+        queue_mutation_pending_ref.current = false
+        set_queue_mutation_pending( false )
     }, [] )
 
     const load_initial_export_blob = useCallback( async ( export_record ) => {
@@ -1070,6 +1090,11 @@ export function ProjectCapturePage() {
     }, [ clear_cached_export, clips, project, project_id, settings ] )
 
     const remove_clip = async ( clip ) => {
+        if( queue_mutation_pending_ref.current ) {
+            toast( `Clip queue is updating. Try again in a moment.` )
+            return
+        }
+
         const confirmed = window.confirm( `Delete this clip from the project?` )
         if( !confirmed ) {
             log.debug( `Clip deletion cancelled`, {
@@ -1078,12 +1103,12 @@ export function ProjectCapturePage() {
             return
         }
 
+        if( !begin_queue_mutation() ) return
+
         log.info( `Clip deletion requested`, {
             project_id,
             clip_id: clip.id
         } )
-        set_queue_mutation_pending( true )
-        clear_cached_export()
 
         try {
             await delete_clip( clip.id )
@@ -1097,18 +1122,18 @@ export function ProjectCapturePage() {
             log.error( `Clip could not be deleted`, error )
             toast.error( `Clip could not be deleted` )
         } finally {
-            set_queue_mutation_pending( false )
+            finish_queue_mutation()
         }
     }
 
     const move_existing_clip = async ( clip, direction ) => {
+        if( !begin_queue_mutation() ) return
+
         log.debug( `Clip move requested`, {
             project_id,
             clip_id: clip.id,
             direction
         } )
-        set_queue_mutation_pending( true )
-        clear_cached_export()
 
         try {
             await move_clip( clip.id, direction )
@@ -1122,7 +1147,7 @@ export function ProjectCapturePage() {
             log.error( `Clip could not be moved`, error )
             toast.error( `Clip could not be moved` )
         } finally {
-            set_queue_mutation_pending( false )
+            finish_queue_mutation()
         }
     }
 
@@ -1139,11 +1164,6 @@ export function ProjectCapturePage() {
             return
         }
 
-        if( queue_mutation_pending ) {
-            toast( `Clip queue is updating. Try again in a moment.` )
-            return
-        }
-
         if( !mime_type ) {
             toast.error( `Choose a video file to upload.` )
             return
@@ -1154,6 +1174,8 @@ export function ProjectCapturePage() {
             return
         }
 
+        if( !begin_queue_mutation() ) return
+
         const upload_toast = toast.loading( `Uploading clip...` )
         const blob = make_uploaded_video_blob( file, mime_type )
 
@@ -1163,8 +1185,6 @@ export function ProjectCapturePage() {
             size: file.size,
             mime_type
         } )
-        set_queue_mutation_pending( true )
-        clear_cached_export()
 
         try {
             const metadata = await get_video_metadata( blob ).catch( () => {
@@ -1203,7 +1223,7 @@ export function ProjectCapturePage() {
 
             toast.error( message, { id: upload_toast } )
         } finally {
-            set_queue_mutation_pending( false )
+            finish_queue_mutation()
         }
     }
 
@@ -1212,7 +1232,7 @@ export function ProjectCapturePage() {
             project_id,
             clip_count: clips.length,
             recording_state: recording.recording_state,
-            queue_mutation_pending
+            queue_mutation_pending: queue_mutation_pending_ref.current
         } )
 
         if( recording_busy ) {
@@ -1227,7 +1247,7 @@ export function ProjectCapturePage() {
             return
         }
 
-        if( queue_mutation_pending ) {
+        if( queue_mutation_pending_ref.current ) {
             log.debug( `Share or export blocked by queue mutation` )
             toast( `Clip queue is updating. Try again in a moment.` )
             return
@@ -1546,6 +1566,7 @@ export function ProjectCapturePage() {
 
         { clip_queue_open ? <ClipListSheet
             clips={ clips }
+            queue_actions_disabled={ queue_mutation_pending }
             upload_disabled={ upload_disabled }
             on_close={ () => set_clip_queue_open( false ) }
             on_delete={ remove_clip }

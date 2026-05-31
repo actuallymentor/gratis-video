@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.10.1] - 2026-05-31
+
+### Fixed
+- block queue actions while local clip upload is pending
+
 ## [0.10.0] - 2026-05-31
 
 ### Added

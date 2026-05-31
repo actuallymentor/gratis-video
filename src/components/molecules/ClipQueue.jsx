@@ -231,6 +231,7 @@ export function ClipQueue( {
     on_delete,
     on_move = null,
     on_upload = null,
+    queue_actions_disabled = false,
     upload_disabled = false
 } ) {
     const [ preview_clip, set_preview_clip ] = useState( null )
@@ -336,18 +337,19 @@ export function ClipQueue( {
                         icon={ ArrowUp }
                         label={ `Move clip ${ index + 1 } earlier` }
                         onClick={ () => on_move?.( clip, `earlier` ) }
-                        disabled={ !on_move || index === 0 }
+                        disabled={ queue_actions_disabled || !on_move || index === 0 }
                     />
                     <IconButton
                         icon={ ArrowDown }
                         label={ `Move clip ${ index + 1 } later` }
                         onClick={ () => on_move?.( clip, `later` ) }
-                        disabled={ !on_move || index === clips.length - 1 }
+                        disabled={ queue_actions_disabled || !on_move || index === clips.length - 1 }
                     />
                     <IconButton
                         icon={ Trash2 }
                         label={ `Delete clip ${ index + 1 }` }
                         onClick={ () => on_delete( clip ) }
+                        disabled={ queue_actions_disabled }
                     />
                 </RowActions>
             </Row> ) }

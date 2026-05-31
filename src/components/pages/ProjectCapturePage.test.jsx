@@ -512,6 +512,65 @@ describe( `project capture page`, () => {
         expect( await screen.findByText( `Clip 11:00` ) ).toBeTruthy()
     } )
 
+    test( `blocks queue actions while an upload is pending`, async () => {
+        const user = userEvent.setup()
+        const pending_metadata = make_deferred()
+        const second_clip = {
+            ...clip,
+            id: `clip-2`,
+            order_index: 1,
+            created_at: `2026-05-17T10:00:02.000Z`
+        }
+
+        vi.mocked( get_project_clips ).mockResolvedValue( [ clip, second_clip ] )
+        vi.mocked( get_video_metadata ).mockReturnValue( pending_metadata.promise )
+
+        render_capture()
+
+        await open_clip_list( user )
+        const upload_input = screen.getByLabelText( `Upload clip` )
+        const [ share_button ] = screen.getAllByRole( `button`, { name: `Share or export project` } )
+
+        vi.mocked( get_valid_cached_export ).mockClear()
+
+        await act( async () => {
+            Object.defineProperty( upload_input, `files`, {
+                configurable: true,
+                value: [
+                    new File( [ `uploaded video` ], `walk.mp4`, { type: `video/mp4` } )
+                ]
+            } )
+            upload_input.dispatchEvent( new Event( `change`, { bubbles: true } ) )
+            share_button.click()
+        } )
+
+        await waitFor( () => {
+            expect( get_video_metadata ).toHaveBeenCalled()
+        } )
+        expect( get_valid_cached_export ).not.toHaveBeenCalled()
+        expect( screen.queryByText( /Export panel open/ ) ).toBe( null )
+        await waitFor( () => {
+            expect( screen.getByRole( `button`, { name: `Delete clip 1` } ).disabled ).toBe( true )
+            expect( screen.getByRole( `button`, { name: `Move clip 2 earlier` } ).disabled ).toBe( true )
+            expect( screen.getByLabelText( `Upload clip` ).disabled ).toBe( true )
+            screen.getAllByRole( `button`, { name: `Share or export project` } ).forEach( ( button ) => {
+                expect( button.disabled ).toBe( true )
+            } )
+        } )
+
+        await act( async () => {
+            pending_metadata.resolve( {
+                duration_ms: 2300,
+                width: 1920,
+                height: 1080
+            } )
+            await pending_metadata.promise
+        } )
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalled()
+        } )
+    } )
+
     test( `keeps the clip list open when Escape closes a nested clip preview`, async () => {
         const user = userEvent.setup()
 
