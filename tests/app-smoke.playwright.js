@@ -575,18 +575,18 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Stop recording` } ).click()
 
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ).first() ).toBeVisible()
 
         const capture_url = page.url()
 
         await page.reload()
         await expect( page ).toHaveURL( capture_url )
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ).first() ).toBeVisible()
 
         page.once( `dialog`, ( dialog ) => dialog.accept() )
         await page.getByRole( `button`, { name: `Delete clip 1` } ).click()
-        await expect( page.getByText( `Recorded clips will appear here.` ) ).toBeVisible()
+        await expect( page.getByText( `Clips will appear here.` ) ).toBeVisible()
     } )
 
     test( `records a press-and-hold clip with browser media`, async ( { context, page } ) => {
@@ -610,7 +610,7 @@ test.describe( `daily video journal app`, () => {
         await page.mouse.up()
 
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ).first() ).toBeVisible()
         await close_clip_list( page )
         await expect( page.getByRole( `button`, { name: `Record clip` } ) ).toBeVisible()
     } )
@@ -622,15 +622,15 @@ test.describe( `daily video journal app`, () => {
 
         await record_clip_for( page, 700 )
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ).first() ).toBeVisible()
         await close_clip_list( page )
 
         await record_clip_for( page, 1700 )
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 2` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ) ).toHaveCount( 2 )
 
         const clip_rows = () => page.getByRole( `dialog`, { name: `Clips` } ).locator( `article` ).filter( {
-            hasText: /Clip [12]/
+            hasText: /Clip \d{2}:\d{2}/
         } )
         const capture_url = page.url()
 
@@ -658,12 +658,12 @@ test.describe( `daily video journal app`, () => {
 
         await record_clip_for( page, 700 )
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ).first() ).toBeVisible()
         await close_clip_list( page )
 
         await record_clip_for( page, 900 )
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 2` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ) ).toHaveCount( 2 )
         await close_clip_list( page )
 
         await page.getByRole( `button`, { name: `Share or export project` } ).first().click()
@@ -729,7 +729,7 @@ test.describe( `daily video journal app`, () => {
         await page.getByRole( `button`, { name: `Stop recording` } ).click()
 
         await open_clip_list( page )
-        await expect( page.getByText( `Clip 1` ) ).toBeVisible()
+        await expect( page.getByText( /Clip \d{2}:\d{2}/ ).first() ).toBeVisible()
         await expect.poll( async () => {
             const metadata = await read_playable_video_metadata( page, {
                 clip_blob: true

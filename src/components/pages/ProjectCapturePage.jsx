@@ -19,8 +19,10 @@ import { normalize_export_settings } from '../../modules/export/exporter.js'
 import {
     DEFAULT_RECORDING_AUDIO_MODE,
     DEFAULT_RECORDING_VIDEO_PRESET,
+    generate_video_thumbnail,
     get_recording_audio_mode,
     get_recording_video_preset,
+    get_video_metadata,
     recording_audio_modes,
     recording_video_presets
 } from '../../modules/media/recorder.js'
@@ -31,6 +33,7 @@ import {
 } from '../../modules/permissions/permissions.js'
 import { share_export_file } from '../../modules/sharing/share.js'
 import {
+    add_clip_to_project,
     delete_clip,
     get_active_project,
     get_export_blob,
@@ -458,6 +461,39 @@ const format_bitrate = ( bits_per_second ) => {
     return `${ Math.round( bits_per_second / 1_000_000 ) } Mbps`
 }
 
+const upload_video_mime_types = new Map( [
+    [ `m4v`, `video/mp4` ],
+    [ `mov`, `video/quicktime` ],
+    [ `mp4`, `video/mp4` ],
+    [ `ogv`, `video/ogg` ],
+    [ `webm`, `video/webm` ]
+] )
+
+const get_file_extension = ( file_name = `` ) => {
+    const [ extension = `` ] = file_name.toLowerCase().split( `.` ).slice( -1 )
+    return extension
+}
+
+const get_uploaded_video_mime_type = ( file ) => {
+    const file_type = file?.type ?? ``
+
+    if( file_type.startsWith( `video/` ) ) return file_type
+
+    return upload_video_mime_types.get( get_file_extension( file?.name ) ) ?? null
+}
+
+const make_uploaded_video_blob = ( file, mime_type ) => {
+    if( file.type === mime_type ) return file
+    return file.slice( 0, file.size, mime_type )
+}
+
+const is_storage_quota_error = ( error ) => {
+    return error?.name === `QuotaExceededError`
+        || error?.name === `NS_ERROR_DOM_QUOTA_REACHED`
+        || error?.code === 22
+        || error?.code === 1014
+}
+
 const get_camera_label = ( camera_device, index ) => {
     return camera_device.label || `Camera ${ index + 1 }`
 }
@@ -625,9 +661,11 @@ const MediaSettingsModal = ( {
 
 const ClipListSheet = ( {
     clips,
+    upload_disabled,
     on_close,
     on_delete,
-    on_move
+    on_move,
+    on_upload
 } ) => {
     const sheet_ref = useModalFocus( {
         active: true,
@@ -650,7 +688,13 @@ const ClipListSheet = ( {
                 <h2 id="clip-list-title">Clips</h2>
                 <IconButton icon={ X } label="Close clip list" onClick={ on_close } />
             </ClipSheetHeader>
-            <ClipQueue clips={ clips } on_delete={ on_delete } on_move={ on_move } />
+            <ClipQueue
+                clips={ clips }
+                upload_disabled={ upload_disabled }
+                on_delete={ on_delete }
+                on_move={ on_move }
+                on_upload={ on_upload }
+            />
         </ClipSheetPanel>
     </ClipSheetBackdrop>
 }
@@ -1083,8 +1127,85 @@ export function ProjectCapturePage() {
     }
 
     const recording_busy = recording.recording_state !== `idle`
+    const upload_disabled = queue_mutation_pending || recording_busy
     const export_disabled = queue_mutation_pending || recording_busy
     const export_flow_open = export_requested && ( panel === `export` || export_progress_active )
+
+    const upload_clip = async ( file ) => {
+        const mime_type = get_uploaded_video_mime_type( file )
+
+        if( recording_busy ) {
+            toast( `Finish recording before uploading.` )
+            return
+        }
+
+        if( queue_mutation_pending ) {
+            toast( `Clip queue is updating. Try again in a moment.` )
+            return
+        }
+
+        if( !mime_type ) {
+            toast.error( `Choose a video file to upload.` )
+            return
+        }
+
+        if( file.size <= 0 ) {
+            toast.error( `The selected video file is empty.` )
+            return
+        }
+
+        const upload_toast = toast.loading( `Uploading clip...` )
+        const blob = make_uploaded_video_blob( file, mime_type )
+
+        log.info( `Clip upload requested`, {
+            project_id,
+            file_name: file.name || null,
+            size: file.size,
+            mime_type
+        } )
+        set_queue_mutation_pending( true )
+        clear_cached_export()
+
+        try {
+            const metadata = await get_video_metadata( blob ).catch( () => {
+                throw new Error( `This video could not be read by the browser.` )
+            } )
+
+            if( !metadata.duration_ms ) {
+                throw new Error( `This video does not include readable duration metadata.` )
+            }
+
+            const thumbnail_blob = await generate_video_thumbnail( blob ).catch( () => null )
+            const clip = await add_clip_to_project( {
+                project_id,
+                blob,
+                mime_type,
+                duration_ms: metadata.duration_ms,
+                width: metadata.width,
+                height: metadata.height,
+                thumbnail_blob
+            } )
+
+            await refresh_project()
+            log.info( `Uploaded clip saved`, {
+                project_id,
+                clip_id: clip.id,
+                duration_ms: clip.duration_ms,
+                size: blob.size,
+                mime_type
+            } )
+            toast.success( `Clip uploaded`, { id: upload_toast } )
+        } catch ( error ) {
+            log.error( `Clip upload failed`, error )
+            const message = is_storage_quota_error( error )
+                ? `Local browser storage is full. Export or delete old clips before uploading more.`
+                : error?.message || `Clip upload failed.`
+
+            toast.error( message, { id: upload_toast } )
+        } finally {
+            set_queue_mutation_pending( false )
+        }
+    }
 
     const share_or_export = async () => {
         log.info( `Share or export requested`, {
@@ -1425,9 +1546,11 @@ export function ProjectCapturePage() {
 
         { clip_queue_open ? <ClipListSheet
             clips={ clips }
+            upload_disabled={ upload_disabled }
             on_close={ () => set_clip_queue_open( false ) }
             on_delete={ remove_clip }
             on_move={ move_existing_clip }
+            on_upload={ upload_clip }
         /> : null }
 
         { export_flow_open ? <ExportPanel

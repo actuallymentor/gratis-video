@@ -1,18 +1,58 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import styled from 'styled-components'
-import { ArrowDown, ArrowUp, Trash2, VideoOff, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Trash2, Upload, VideoOff, X } from 'lucide-react'
 import { IconButton } from '../atoms/IconButton.jsx'
 import { useModalFocus } from '../../hooks/use_modal_focus.js'
 import {
     get_clip_blob,
     get_clip_thumbnail_blob
 } from '../../modules/storage/journal_storage.js'
-import { format_duration, format_time } from '../../modules/media/time.js'
+import { format_clock_time, format_duration } from '../../modules/media/time.js'
 
 const Queue = styled.div`
     display: grid;
     gap: 0.65rem;
+`
+
+const QueueTools = styled.div`
+    display: flex;
+    align-items: center;
+`
+
+const UploadTile = styled.div`
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 5rem;
+    min-width: 5rem;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border: 2px dotted ${ ( { $disabled } ) => $disabled ? `rgba( 96, 114, 115, 0.42 )` : `var(--color-border)` };
+    border-radius: 0.5rem;
+    color: ${ ( { $disabled } ) => $disabled ? `var(--color-muted)` : `var(--color-accent-strong)` };
+    background: var(--color-surface-strong);
+    transition: border-color 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease;
+
+    &:hover,
+    &:focus-within {
+        border-color: ${ ( { $disabled } ) => $disabled ? `rgba( 96, 114, 115, 0.42 )` : `var(--color-accent-strong)` };
+        color: ${ ( { $disabled } ) => $disabled ? `var(--color-muted)` : `#0d1718` };
+        background: ${ ( { $disabled } ) => $disabled ? `var(--color-surface-strong)` : `var(--color-accent)` };
+    }
+
+    &:active {
+        transform: ${ ( { $disabled } ) => $disabled ? `none` : `scale( 0.97 )` };
+    }
+`
+
+const UploadInput = styled.input`
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: ${ ( { disabled } ) => disabled ? `not-allowed` : `pointer` };
 `
 
 const Row = styled.article`
@@ -109,6 +149,29 @@ const PreviewMessage = styled.p`
     line-height: 1.5;
 `
 
+function ClipUploadControl( { disabled = false, on_upload } ) {
+    const upload_clip = ( event ) => {
+        const [ file = null ] = Array.from( event.target.files ?? [] )
+
+        event.target.value = ``
+        if( file ) on_upload( file )
+    }
+
+    return <QueueTools>
+        <UploadTile $disabled={ disabled }>
+            <Upload size={ 24 } strokeWidth={ 2.2 } aria-hidden="true" />
+            <UploadInput
+                type="file"
+                accept="video/*"
+                aria-label="Upload clip"
+                title="Upload clip"
+                disabled={ disabled }
+                onChange={ upload_clip }
+            />
+        </UploadTile>
+    </QueueTools>
+}
+
 const ClipPreviewDialog = ( {
     preview_dialog_ref,
     preview_error,
@@ -163,7 +226,13 @@ function ClipThumbnail( { clip, label, on_preview } ) {
  * @param {Object} props - Queue props.
  * @returns {JSX.Element} Clip queue.
  */
-export function ClipQueue( { clips, on_delete, on_move = null } ) {
+export function ClipQueue( {
+    clips,
+    on_delete,
+    on_move = null,
+    on_upload = null,
+    upload_disabled = false
+} ) {
     const [ preview_clip, set_preview_clip ] = useState( null )
     const [ preview_url, set_preview_url ] = useState( null )
     const [ preview_error, set_preview_error ] = useState( null )
@@ -236,14 +305,22 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
         }
     }, [] )
 
+    const upload_control = on_upload
+        ? <ClipUploadControl disabled={ upload_disabled } on_upload={ on_upload } />
+        : null
+
     if( !clips.length ) {
-        return <EmptyQueue>
-            <span>Recorded clips will appear here.</span>
-        </EmptyQueue>
+        return <Queue>
+            { upload_control }
+            <EmptyQueue>
+                <span>Clips will appear here.</span>
+            </EmptyQueue>
+        </Queue>
     }
 
     return <>
         <Queue>
+            { upload_control }
             { clips.map( ( clip, index ) => <Row key={ clip.id }>
                 <ClipThumbnail
                     clip={ clip }
@@ -251,8 +328,8 @@ export function ClipQueue( { clips, on_delete, on_move = null } ) {
                     on_preview={ () => open_preview( clip ) }
                 />
                 <Details>
-                    <strong>Clip { index + 1 }</strong>
-                    <span>{ format_duration( clip.duration_ms ) } at { format_time( clip.created_at ) }</span>
+                    <strong>Clip { format_clock_time( clip.created_at ) }</strong>
+                    <span>{ format_duration( clip.duration_ms ) }</span>
                 </Details>
                 <RowActions>
                     <IconButton

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0] - 2026-05-31
+
+### Added
+- add local video upload from the clip overview
+
+### Changed
+- title clips by local `HH:MM` time
+
 ## [0.9.2] - 2026-05-28
 
 ### Fixed

@@ -61,6 +61,26 @@ describe( `clip queue`, () => {
         expect( URL.revokeObjectURL ).toHaveBeenCalledWith( `blob:preview` )
     } )
 
+    test( `shows an upload control and titles clips by clock time`, async () => {
+        const user = userEvent.setup()
+        const on_upload = vi.fn()
+        const file = new File( [ `video` ], `walk.mp4`, { type: `video/mp4` } )
+
+        render( <ClipQueue clips={ [ clip ] } on_delete={ vi.fn() } on_upload={ on_upload } /> )
+
+        expect( screen.getByText( `Clip 10:00` ) ).toBeTruthy()
+        expect( screen.queryByText( `Clip 1` ) ).toBe( null )
+
+        const upload_input = screen.getByLabelText( `Upload clip` )
+
+        expect( upload_input.getAttribute( `accept` ) ).toBe( `video/*` )
+
+        await user.upload( upload_input, file )
+
+        expect( on_upload ).toHaveBeenCalledWith( file )
+        expect( upload_input.value ).toBe( `` )
+    } )
+
     test( `announces preview loading while the clip blob is being read`, async () => {
         const user = userEvent.setup()
         const preview = make_deferred()

@@ -37,14 +37,14 @@ Treat API tokens as single-use secrets. If a token is pasted into chat, logs, or
 ## Behavior
 
 - Projects, clips, thumbnails, settings, and cached exports are stored in IndexedDB.
-- No backend, account, sync, analytics, or upload path is included.
+- No backend, account, sync, or analytics is included; imported clips stay local.
 - Recording supports tap-to-start/tap-to-stop and press-and-hold.
 - Recording opens the camera preview, reuses that video stream for the saved clip, and records without MediaRecorder timeslices.
 - The capture view uses a full-height preview with floating back, share, settings, record, and clip-list controls.
 - Camera preview refreshes itself after the browser returns from the background.
 - The preview gear opens media settings for camera selection, audio mode, and bitrate-backed 720p/1080p/4K recording presets; audio defaults to unfiltered and video defaults to 1080p30.
 - Multi-camera devices remember the last selected camera, can switch front/back from capture, and show labeled back-camera shortcuts when multiple back cameras are available.
-- The clip-list sheet supports preview, move earlier/later, and delete actions; clip previews open in a global modal.
+- The clip-list sheet supports local video upload, preview, move earlier/later, and delete actions; clip previews open in a global modal.
 - If microphone capture fails or is blocked, recording can continue as video-only with a local notice.
 - Settings include media access status, haptics, and optional sound feedback for recording state changes.
 - Export remuxes compatible clips losslessly, falls back to canvas re-encoding when needed, then opens the native share sheet from explicit Share taps or downloads as fallback.

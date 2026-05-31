@@ -17,6 +17,7 @@ import {
     useAppStore
 } from '../../stores/app_store.js'
 import {
+    add_clip_to_project,
     delete_clip,
     get_active_project,
     get_export_blob,
@@ -31,6 +32,10 @@ import {
     save_settings,
     set_active_project
 } from '../../modules/storage/journal_storage.js'
+import {
+    generate_video_thumbnail,
+    get_video_metadata
+} from '../../modules/media/recorder.js'
 import { share_export_file } from '../../modules/sharing/share.js'
 
 const recording_state = vi.hoisted( () => ( {
@@ -107,7 +112,18 @@ vi.mock( '../molecules/ExportPanel.jsx', () => ( {
     </div>
 } ) )
 
+vi.mock( '../../modules/media/recorder.js', async () => {
+    const actual = await vi.importActual( '../../modules/media/recorder.js' )
+
+    return {
+        ...actual,
+        generate_video_thumbnail: vi.fn(),
+        get_video_metadata: vi.fn()
+    }
+} )
+
 vi.mock( '../../modules/storage/journal_storage.js', () => ( {
+    add_clip_to_project: vi.fn(),
     delete_clip: vi.fn(),
     get_active_project: vi.fn(),
     get_export_blob: vi.fn(),
@@ -200,11 +216,25 @@ function SwitchableCapture() {
 
 describe( `project capture page`, () => {
     beforeEach( () => {
+        vi.mocked( add_clip_to_project ).mockResolvedValue( {
+            ...clip,
+            id: `uploaded-clip`,
+            duration_ms: 2300,
+            width: 1920,
+            height: 1080,
+            created_at: `2026-05-17T11:00:00.000Z`
+        } )
         vi.mocked( delete_clip ).mockResolvedValue()
+        vi.mocked( generate_video_thumbnail ).mockResolvedValue( new Blob( [ `thumb` ], { type: `image/jpeg` } ) )
         vi.mocked( get_active_project ).mockResolvedValue( null )
         vi.mocked( get_export_blob ).mockResolvedValue( new Blob( [ `export` ], { type: `video/webm` } ) )
         vi.mocked( get_clip_blob ).mockResolvedValue( new Blob( [ `clip` ], { type: `video/webm` } ) )
         vi.mocked( get_clip_thumbnail_blob ).mockResolvedValue( null )
+        vi.mocked( get_video_metadata ).mockResolvedValue( {
+            duration_ms: 2300,
+            width: 1920,
+            height: 1080
+        } )
         vi.mocked( get_project ).mockResolvedValue( project )
         vi.mocked( get_project_clips ).mockResolvedValue( [ clip ] )
         vi.mocked( get_valid_cached_export ).mockResolvedValue( null )
@@ -437,6 +467,49 @@ describe( `project capture page`, () => {
         await user.click( screen.getByRole( `button`, { name: `Close clip list` } ) )
 
         expect( screen.queryByRole( `dialog`, { name: `Clips` } ) ).toBe( null )
+    } )
+
+    test( `uploads a device video from the clip list`, async () => {
+        const user = userEvent.setup()
+        const uploaded_clip = {
+            ...clip,
+            id: `clip-uploaded`,
+            order_index: 1,
+            duration_ms: 2300,
+            width: 1920,
+            height: 1080,
+            created_at: `2026-05-17T11:00:00.000Z`
+        }
+        let current_clips = [ clip ]
+
+        vi.mocked( get_project_clips ).mockImplementation( async () => current_clips )
+        vi.mocked( add_clip_to_project ).mockImplementation( async () => {
+            current_clips = [ clip, uploaded_clip ]
+            return uploaded_clip
+        } )
+
+        render_capture()
+
+        await open_clip_list( user )
+
+        const file = new File( [ `uploaded video` ], `walk.mp4`, { type: `video/mp4` } )
+
+        await user.upload( screen.getByLabelText( `Upload clip` ), file )
+
+        await waitFor( () => {
+            expect( add_clip_to_project ).toHaveBeenCalledWith( {
+                project_id: project.id,
+                blob: expect.any( Blob ),
+                mime_type: `video/mp4`,
+                duration_ms: 2300,
+                width: 1920,
+                height: 1080,
+                thumbnail_blob: expect.any( Blob )
+            } )
+        } )
+        expect( get_video_metadata ).toHaveBeenCalledWith( expect.any( Blob ) )
+        expect( generate_video_thumbnail ).toHaveBeenCalledWith( expect.any( Blob ) )
+        expect( await screen.findByText( `Clip 11:00` ) ).toBeTruthy()
     } )
 
     test( `keeps the clip list open when Escape closes a nested clip preview`, async () => {
@@ -1055,7 +1128,7 @@ describe( `project capture page`, () => {
         render_capture()
 
         await open_clip_list( user )
-        expect( screen.getByText( `Clip 1` ) ).toBeTruthy()
+        expect( screen.getByText( `Clip 10:00` ) ).toBeTruthy()
         await user.click( screen.getByRole( `button`, { name: `Delete clip 1` } ) )
 
         expect( delete_clip ).toHaveBeenCalledWith( clip.id )
@@ -1075,7 +1148,7 @@ describe( `project capture page`, () => {
         render_capture()
 
         await open_clip_list( user )
-        expect( screen.getByText( `Clip 2` ) ).toBeTruthy()
+        expect( screen.getAllByText( `Clip 10:00` ) ).toHaveLength( 2 )
         await user.click( screen.getByRole( `button`, { name: `Move clip 2 earlier` } ) )
 
         expect( move_clip ).toHaveBeenCalledWith( second_clip.id, `earlier` )

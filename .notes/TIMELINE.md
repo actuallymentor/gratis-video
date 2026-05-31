@@ -83,3 +83,5 @@
 - 2026-05-28T15:46:58Z: Prepared `0.9.1` patch notes and version bump for the telephoto camera shortcut label correction.
 - 2026-05-28T15:56:44Z: Followed up on independent review feedback by making the bare capture record button black-backed over full-height video previews.
 - 2026-05-28T15:56:44Z: Prepared `0.9.2` patch notes and version bump for the record-control visibility correction.
+- 2026-05-31T13:21:34Z: Added clip upload from the clip-list sheet using a dotted square Upload control, saved uploaded videos through the existing clip storage path after browser metadata/thumbnail extraction, and changed clip titles to `Clip HH:MM`. Verified lint, Vitest, and Playwright after installing missing Chromium system dependencies.
+- 2026-05-31T13:21:34Z: Prepared `0.10.0` release notes, README behavior notes, and version bump for local clip uploads and clock-time clip titles.

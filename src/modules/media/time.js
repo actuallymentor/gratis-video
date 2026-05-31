@@ -25,6 +25,22 @@ export function format_time( iso_timestamp ) {
 }
 
 /**
+ * Formats an ISO timestamp as a zero-padded local 24-hour clock time.
+ * @param {string} iso_timestamp - ISO timestamp.
+ * @returns {string} HH:MM clock time.
+ */
+export function format_clock_time( iso_timestamp ) {
+    const date = new Date( iso_timestamp )
+
+    if( Number.isNaN( date.getTime() ) ) return `--:--`
+
+    const hours = date.getHours().toString().padStart( 2, `0` )
+    const minutes = date.getMinutes().toString().padStart( 2, `0` )
+
+    return `${ hours }:${ minutes }`
+}
+
+/**
  * Formats an ISO timestamp as a short date.
  * @param {string} iso_timestamp - ISO timestamp.
  * @returns {string} Human-friendly date.
